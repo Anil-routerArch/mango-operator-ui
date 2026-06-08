@@ -36,3 +36,6 @@ If applicable, add screenshots to help explain your problem.
 
 **Additional context**
 Add any other context about the problem here.
+
+**Reviewers Guidelines
+List what you want the reviewer to focus on during reviews. eg. API design, Security issues, Performance hits
