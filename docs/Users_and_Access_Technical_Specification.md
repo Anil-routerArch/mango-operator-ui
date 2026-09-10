@@ -21,7 +21,7 @@ The Mango Operator UI operates on a **Pragmatic Hybrid Integration Architecture*
      - **`OWSEC` (Security):** User identity lifecycle, credentials, coarse platform roles, account suspension/reactivation/deletion, avatars, administrative notes, and MFA resets.
      - **`OWPROV` (Provisioning):** Management Policies, Management Role Assignments (MRAs), Entity (Property) metadata, and Venue hierarchies.
 2. **Targeted MDU Service Aggregation (`mango-mdu-service`):**
-   * For complex multi-service queries and heavy cross-service joins—specifically the **Policy Overview** inspection—the browser does not perform multi-step HTTP joins across microservices. Instead, the UI invokes a dedicated aggregation endpoint on `mango-mdu-service` (`GET /api/v1/mdu/managementPolicy/{id}/overview`), passing the caller's JWT Bearer token.
+   * For complex multi-service queries and heavy cross-service joins—specifically the **Policy Overview** inspection—the browser does not perform multi-step HTTP joins across microservices. Instead, the UI invokes an aggregation endpoint on `mango-mdu-service` (`GET /api/v1/managementPolicy/{id}/overview` under server base path `/api/v1`; provisional contract assumption subject to final backend route alignment), passing the caller's JWT Bearer token.
    * `mango-mdu-service` performs server-side orchestration between `OWPROV` and `OWSEC`, executes an authoritative **Set Intersection** between MRA assignees and operator-visible users, resolves scope metadata, and returns a consolidated overview payload efficiently in a single round trip.
 
 ---
@@ -129,7 +129,7 @@ The Mango Operator UI implements a **Pragmatic Hybrid Integration Architecture**
 | **Management Policies** | `OWPROV` | `ManagementPolicies` table | `GET /api/v1/managementPolicy` | Direct `axiosProv` |
 | **Scoped Access Grants (MRAs)** | `OWPROV` | `ManagementRoles` table | `GET /api/v1/managementRole` | Direct `axiosProv` |
 | **Property & Venue Metadata** | `OWPROV` | `Entities`, `Venues` tables| `GET /api/v1/entity`, `/api/v1/venue` | Direct `axiosProv` |
-| **Policy Overview Aggregation** | `mango-mdu-service` | Aggregated view | `GET /api/v1/mdu/managementPolicy/{id}/overview` | Direct `axiosMdu` |
+| **Policy Overview Aggregation** | `mango-mdu-service` | Aggregated view | `GET /api/v1/managementPolicy/{id}/overview` *(Provisional)* | Direct `axiosMdu` |
 
 ---
 
@@ -264,7 +264,7 @@ When scoping an operator across multiple venues within a property, the UI submit
 `OWPROV` backend receives `venueIds`, loops through the array, and creates/upserts individual MRA records for each venue in a single batch operation.
 
 ### 8.4 Access Assignments Card Layout & UI Specification
-The Scoped Access drawer provides a dedicated, card-based interface matching the production reference design (`media_1788951154890.png` and `media_1788951207514.png`).
+The Scoped Access drawer provides a dedicated, card-based interface designed for hierarchy-scoped access management.
 
 - **Header Section:** Displays the target User's Full Name, Email Address, and Platform Role.
 - **Access Assignments Section:**
@@ -309,7 +309,7 @@ To prevent frontend/backend interpretation differences, the mutability boundary 
 
 - **Inline Expandable Assignment Form (`+ Assign access`):**
   - Displayed directly beneath the assignment cards as a full-width button with a dashed border.
-  - Clicking this button expands the **Inline Assignment Form** (`media_1788951207514.png`):
+  - Clicking this button expands the **Inline Assignment Form**:
     - **`Entity *` (Dropdown, Required):** Populated via `useGetEntities()` (`GET /api/v1/entity`). Displays all available Properties.
     - **`Venues` (Dropdown, Optional):** Populated via `useGetVenues()` and filtered to show venues under the selected Entity. Leaving unselected creates a Property-wide scope (`"All venues"`, `venue: ""`). Selecting specific venues enables single or multi-venue batch assignment (`venueIds: []`).
     - **`Policy *` (Dropdown, Required):** Dynamically populated from `OWPROV` `GET /api/v1/managementPolicy`. Lists all available policies returned by the backend. Includes an info icon `(i)` with a tooltip describing the policy.
@@ -369,7 +369,7 @@ The Policies tab operates as a centralized **Policy Definition Catalog and Permi
   - `Actions`: `View Overview` (Opens Policy Overview drawer), `Edit Policy` (Root only), `Delete Policy` (Root only, unassigned policies only).
 
 ### 9.5 Policy Overview & Inspection: Assigned Infrastructure & Users
-Clicking on any policy row or selecting "View Overview" opens the **Policy Overview Drawer**, powered by the dedicated aggregation endpoint in `mango-mdu-service` (`GET /api/v1/mdu/managementPolicy/{id}/overview`):
+Clicking on any policy row or selecting "View Overview" opens the **Policy Overview Drawer**, powered by `mango-mdu-service` (provisional contract: `GET /api/v1/managementPolicy/{id}/overview` under `/api/v1`):
 - **Header Section & KPI Stat Badges:**
   - Policy Identity: Policy Name, Description, and Creation/Modification timestamps.
   - **Headline KPI Metric Summary Cards:**
@@ -429,7 +429,7 @@ The Mango Operator UI operates on a **Pragmatic Hybrid Integration Architecture*
    - **Client Cache Management:** TanStack Query (React Query) manages in-memory caching, stale-time invalidation, and optimistic state updates for all direct microservice queries.
 
 2. **Targeted Backend Aggregation (`mango-mdu-service`):**
-   - **Policy Overview Aggregation:** Rather than forcing the browser to issue multiple parallel HTTP queries across ports and perform heavy joins client-side, the UI calls `mango-mdu-service` (`GET /api/v1/mdu/managementPolicy/{id}/overview`).
+   - **Policy Overview Aggregation:** Rather than forcing the browser to issue multiple parallel HTTP queries across ports and perform heavy joins client-side, the UI calls `mango-mdu-service` (`GET /api/v1/managementPolicy/{id}/overview`).
    - The MDU service executes upstream requests over internal service connections, performs the authoritative **Set Intersection** between MRA assignees and operator-visible users from `OWSEC`, resolves infrastructure scopes, and returns a single unified payload.
 
 ```
@@ -473,7 +473,7 @@ sequenceDiagram
     participant PROV as OWPROV (Provisioning Core)
 
     Note over UI: Operator opens Policy Overview for Policy ID
-    UI->>MDU: GET /api/v1/mdu/managementPolicy/{id}/overview<br/>(Bearer Token attached)
+    UI->>MDU: GET /api/v1/managementPolicy/{id}/overview<br/>(Bearer Token attached)
     
     par Step 1: Fetch Scoped MRAs
         MDU->>PROV: GET /api/v1/managementRole<br/>(Caller Bearer Token forwarded)
@@ -555,8 +555,11 @@ To determine whether a policy is active (to gate root deletion and display the `
 - Base path: `/api/v1`
 
 ### 11.4 Mango MDU Service Contract (`mango-mdu-service`)
-- Backend aggregation service for cross-service overviews and composite analytics.
-- Base path: `/api/v1/mdu`
+- Base path: `/api/v1`
+
+> [!NOTE]
+> **Provisional MDU Aggregation Service Contract:**
+> The `mango-mdu-service` aggregation endpoints (e.g., `GET /api/v1/managementPolicy/{id}/overview`) represent a planned, provisional contract. Because the MDU backend service is being developed and extended alongside the operator UI, these endpoint paths are architectural assumptions and may be refined or adjusted to match the final MDU OpenAPI routes during backend delivery.
 
 ---
 
@@ -799,8 +802,9 @@ To determine whether a policy is active (to gate root deletion and display the `
 
 ### 12.6 Mango MDU Aggregation APIs (`mango-mdu-service`)
 
-#### 12.6.1 Get Policy Overview (Aggregated View)
-`GET /api/v1/mdu/managementPolicy/{id}/overview`
+#### 12.6.1 Get Policy Overview (Aggregated View - Provisional)
+`GET /api/v1/managementPolicy/{id}/overview`
+*(Note: Provisional route on `mango-mdu-service`; subject to final MDU OpenAPI route definition)*
 - **Headers:** `Authorization: Bearer <token>`
 - **Behavior:** `mango-mdu-service` fetches caller-authorized MRAs from `OWPROV` (forwarding caller's Bearer token and filtering by `managementPolicy === policyId`), queries `OWSEC` for caller-visible users, executes the **Set Intersection**, resolves Property and Venue display names, and returns the aggregated summary.
 - **Response `200 OK`:**
@@ -1115,7 +1119,7 @@ This specification defines the frontend security boundaries and hardening requir
 - **FR-POL-05:** The UI shall render an interactive Permission Matrix Visualizer displaying resource categories against standard CRUD access verbs (`CREATE`, `READ`, `MODIFY`, `DELETE`, `FULL`).
 - **FR-POL-06:** The UI shall enforce that all created or edited policies have `entity: ""` and `venue: ""` to ensure global template architecture.
 - **FR-POL-07:** The UI shall gate policy deletion based on whether the policy is currently in use (`filteredMRAs.length > 0`), disabling the delete action with a tooltip when active assignments exist.
-- **FR-POL-08:** The UI shall display a Policy Overview drawer powered by `GET /api/v1/mdu/managementPolicy/{id}/overview` on `mango-mdu-service`.
+- **FR-POL-08:** The UI shall display a Policy Overview drawer powered by `GET /api/v1/managementPolicy/{id}/overview` on `mango-mdu-service` (provisional contract).
 - **FR-POL-09:** The Policy Overview drawer shall display headline KPI summary cards for Total Properties, Total Venues, and Total Users.
 - **FR-POL-10:** The Policy Overview "Assigned Users" tab shall display the deduplicated set intersection between MRA assignees and operator-visible users from `OWSEC`, without synthetic platform-role mapping or artificial source pills.
 
@@ -1154,7 +1158,7 @@ This specification defines the frontend security boundaries and hardening requir
 - **TC-POL-003 (Non-Root Read-Only Enforcement):** Log in as `admin`, navigate to `/policies`. Verify "Create Policy" button is hidden, edit/delete actions are hidden/disabled, and policy rows can only be viewed in read-only mode.
 - **TC-POL-004 (In-Use Deletion Gate):** Log in as `root`. Attempt to delete a policy that has $\ge 1$ active MRA. Verify delete button is disabled with tooltip indicating active infrastructure assignments.
 - **TC-POL-005 (Policy Overview via MDU Aggregator & Set Intersection):** Click "View Overview" on a policy. Verify:
-  - UI calls `GET /api/v1/mdu/managementPolicy/{id}/overview` on `mango-mdu-service`.
+  - UI calls `GET /api/v1/managementPolicy/{id}/overview` on `mango-mdu-service`.
   - Header displays headline KPI cards: Total Properties, Total Venues, Total Users.
   - Tab 1 displays the CRUD permission matrix.
   - Tab 2 displays assigned properties, venue scopes, and operator counts.
@@ -1173,7 +1177,7 @@ This specification defines the frontend security boundaries and hardening requir
 
 - [ ] **Endpoint Discovery directly via OWSEC:** UI dynamically discovers OpenWifi service endpoints at session start via `GET /api/v1/systemEndpoints` directly against `OWSEC`, matching `owprov-ui`.
 - [ ] **Direct Native OpenWifi CRUD:** User CRUD and identity operations hit `OWSEC` directly; Management Policy and Management Role (MRA) operations hit `OWPROV` directly.
-- [ ] **Targeted MDU Aggregation:** Policy Overview drawer retrieves its consolidated data from `mango-mdu-service` via `GET /api/v1/mdu/managementPolicy/{id}/overview`.
+- [ ] **Targeted MDU Aggregation:** Policy Overview drawer retrieves its consolidated data from `mango-mdu-service` via `GET /api/v1/managementPolicy/{id}/overview`.
 - [ ] **Policy Overview Set Intersection Model:** Assigned users in Policy Overview are resolved strictly as the intersection between MRA assignees and operator-visible users from `OWSEC`. Synthetic role mappings and artificial source pills are completely excluded.
 - [ ] **Policy Overview KPI Metrics:** Policy Overview drawer header prominently displays headline KPI metric summary cards for Total Properties, Total Venues, and Total Users.
 - [ ] **Self-Account Exclusion:** Operators never see their own account in the administrative management table (`user.id !== currentSession.userId`).
@@ -1205,13 +1209,14 @@ This specification defines the frontend security boundaries and hardening requir
 2. **Unified Bearer Token:** A single JWT Bearer token issued by `OWSEC` is accepted across `OWSEC`, `OWPROV`, and `mango-mdu-service`.
 3. **Internal Service Network:** `mango-mdu-service` communicates with `OWSEC` and `OWPROV` over internal network connections without public routing overhead.
 4. **Session Endpoint Discovery:** The UI caches discovered service endpoints in memory for the duration of the operator session.
+5. **Provisional MDU Aggregation Service:** The `mango-mdu-service` backend and its composite aggregation endpoints (e.g., `GET /api/v1/managementPolicy/{id}/overview`) are provisional design assumptions. Because backend MDU services are scheduled for subsequent development, frontend implementation may adapt to final MDU OpenAPI routes and data models upon delivery.
 
 ---
 
 ## 23. Architectural Decisions Log
 
 ### Decision 1: Pragmatic Hybrid Architecture (Direct OpenWifi CRUD + Targeted MDU Service Aggregation)
-- **Decision:** The Mango Operator UI communicates directly with `OWSEC` and `OWPROV` for native CRUD operations and session endpoint discovery (`GET /api/v1/systemEndpoints`), mirroring `ra-wlan-cloud-owprov-ui`. Multi-service composite analytics and heavy joins (specifically Policy Overview) are delegated to `mango-mdu-service` (`GET /api/v1/mdu/managementPolicy/{id}/overview`).
+- **Decision:** The Mango Operator UI communicates directly with `OWSEC` and `OWPROV` for native CRUD operations and session endpoint discovery (`GET /api/v1/systemEndpoints`), mirroring `ra-wlan-cloud-owprov-ui`. Multi-service composite analytics and heavy joins (specifically Policy Overview) are delegated to `mango-mdu-service` (`GET /api/v1/managementPolicy/{id}/overview`).
 - **Rationale:** Avoids creating redundant pass-through proxy code for standard OpenWifi operations that already work seamlessly in the browser with bearer JWT authentication, while leveraging `mango-mdu-service` as a specialized BFF aggregator where server-side join performance is genuinely needed.
 
 ### Decision 2: Decoupled User Creation and Role Assignment
@@ -1241,12 +1246,12 @@ This specification defines the frontend security boundaries and hardening requir
 - **Reference:** `ra-wlan-cloud-owprov-ui/src/hooks/Network/ManagementRoles.ts`.
 
 ### Decision 8: Policy Overview Aggregation via MDU Service & Set Intersection Model
-- **Decision:** Policy Overview data is retrieved via `GET /api/v1/mdu/managementPolicy/{id}/overview` on `mango-mdu-service`. The backend executes upstream queries to `OWPROV` (fetching active MRAs) and `OWSEC` (fetching visible users under `WasCreatedBy` ACL rules), resolves scope names, and computes the strict **Set Intersection** between MRA assignees and visible users.
+- **Decision:** Policy Overview data is retrieved via `GET /api/v1/managementPolicy/{id}/overview` on `mango-mdu-service`. The backend executes upstream queries to `OWPROV` (fetching MRAs visible/authorized for the caller and filtering by `managementPolicy == policyId`) and `OWSEC` (fetching visible users under `WasCreatedBy` ACL rules), resolves scope names, and computes the strict **Set Intersection** between MRA assignees and visible users.
 - **Rationale:** Server-side aggregation eliminates multiple cross-origin browser queries and heavy client-side joins. The Set Intersection model guarantees that only authentic operational assignees of that policy are displayed, while naturally preserving `OWSEC` tenant boundaries. Synthetic platform-role mappings and artificial source badge tags are completely eliminated.
 
 ### Decision 9: Card-Based Access Assignments Layout & Inline Expansion Form
 - **Decision:** Scoped Access is presented as a card-based list titled `"Access Assignments"` with building icon, property name, venue scope subtitle (`"All venues"` or specific venue name), dynamic policy badge, edit icon, and trash bin icon. New assignments are created via an expandable dashed button (`+ Assign access`) containing inline dropdowns (`Entity *`, `Venues`, `Policy *`) and Save/Cancel buttons.
-- **Rationale:** Matches the approved product reference designs (`media_1788951154890.png` and `media_1788951207514.png`), providing a visually intuitive, hierarchy-aware scoping experience without nested modal friction.
+- **Rationale:** Matches the approved product UX requirements, providing a visually intuitive, hierarchy-aware scoping experience without nested modal friction.
 
 ### Decision 10: Dynamic Policy Ingestion in Scoped Access
 - **Decision:** The Policy dropdown in the Access Assignments inline form dynamically fetches all policies returned by `OWPROV` `GET /api/v1/managementPolicy` (`useGetManagementPolicies`). The UI does not hardcode or filter policy templates.
