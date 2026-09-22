@@ -2,9 +2,10 @@
 
 **Document Status:** Normative Technical Specification  
 **System Layer:** Mango Cloud Operator UI (Users & Access Feature Area)  
-**Authoritative Downstream Services:** OpenWifi Security Service (`OWSEC`), OpenWifi Provisioning Service (`OWPROV`), Mango MDU Service (`mango-mdu-service`)  
+**Authoritative Downstream Services:** OpenWifi Security Service (`OWSEC`), OpenWifi Provisioning Service (`OWPROV` V1 & V2), Mango MDU Service (`mango-mdu-service`)  
+**Implementation Phase Boundary:** Single-Tab Delivery (Users directory table and per-user Scoped Access drawer; standalone Policies administration tab deferred to a subsequent release)  
 **Target Path:** `mango-operator-ui/docs/Users_and_Access_Technical_Specification.md`  
-**Architecture Reference:** Pragmatic Hybrid Architecture (Direct Upstream OpenWifi CRUD + Targeted MDU Service Aggregation)
+**Architecture Reference:** Pragmatic Hybrid Architecture (Direct Upstream OpenWifi V1/V2 CRUD + Targeted MDU Service Aggregation)
 
 ---
 
@@ -14,14 +15,19 @@ This document provides the definitive, production-grade technical specification 
 
 The Users & Access module delivers administrative management of platform users, operational management policies, and fine-grained, hierarchy-scoped access assignments across multi-tenant Property and Venue infrastructure.
 
+> [!NOTE]
+> **Single-Tab Phase 1 Implementation Focus:**  
+> The initial implementation of the Users & Access module delivers a single unified interface centered on the **Users** tab (user directory, lifecycle operations, profile metadata, administrative audit notes, avatars, and the per-user **Scoped Access** drawer). The dedicated **Policies** catalog tab, custom Policy Editor, and the composite Policy Overview drawer are planned for a subsequent release. The Scoped Access drawer actively consumes policies via `GET /api/v1/managementPolicy` to dynamically populate policy selection dropdowns.
+
 The Mango Operator UI operates on a **Pragmatic Hybrid Integration Architecture**:
 1. **Direct Upstream OpenWifi Integration (Native CRUD & Session Discovery):**
    * Aligned with `ra-wlan-cloud-owprov-ui`, the UI performs session authentication and dynamic service endpoint discovery directly against **OpenWifi Security Service (`OWSEC`)** via `GET /api/v1/systemEndpoints`.
    * Standard administrative CRUD operations hit authoritative OpenWifi microservices directly using standard JWT Bearer token authentication (`Authorization: Bearer <token>`):
-     - **`OWSEC` (Security):** User identity lifecycle, credentials, coarse platform roles, account suspension/reactivation/deletion, avatars, administrative notes, and MFA resets.
-     - **`OWPROV` (Provisioning):** Management Policies, Management Role Assignments (MRAs), Entity (Property) metadata, and Venue hierarchies.
-2. **Targeted MDU Service Aggregation (`mango-mdu-service`):**
-   * For complex multi-service queries and heavy cross-service joins—specifically the **Policy Overview** inspection—the browser does not perform multi-step HTTP joins across microservices. Instead, the UI invokes an aggregation endpoint on `mango-mdu-service` (`GET /api/v1/managementPolicy/{id}/overview` under server base path `/api/v1`; provisional contract assumption subject to final backend route alignment), passing the caller's JWT Bearer token.
+     - **`OWSEC` (Security):** User identity lifecycle, credentials, coarse platform roles, account suspension/reactivation/deletion, avatars, administrative notes, and MFA resets via `/api/v1`.
+     - **`OWPROV` V1 Client (`axiosProv` / `/api/v1`):** Filtered Management Role listing (`GET /api/v1/managementRole?userId={userId}`), Management Policy catalog read-only queries (`GET /api/v1/managementPolicy`), Entity (Property) metadata, and Venue hierarchies.
+     - **`OWPROV` V2 Client (`axiosProvV2` / `/api/v2`):** Dedicated Management Role Assignment (MRA) lifecycle CRUD operations (`POST /api/v2/managementRole/0`, `GET /api/v2/managementRole/{id}`, `PUT /api/v2/managementRole/{id}`, `DELETE /api/v2/managementRole/{id}`) matching the OpenWifi Provisioning Model V2 specification (`owprov-v2.yaml`).
+2. **Targeted MDU Service Aggregation (`mango-mdu-service` - Provisional for Phase 2):**
+   * For complex multi-service queries and heavy cross-service joins—specifically the future **Policy Overview** inspection—the browser does not perform multi-step HTTP joins across microservices. Instead, the UI invokes an aggregation endpoint on `mango-mdu-service` (`GET /api/v1/managementPolicy/{id}/overview` under server base path `/api/v1`; provisional contract assumption subject to final backend route alignment), passing the caller's JWT Bearer token.
    * `mango-mdu-service` performs server-side orchestration between `OWPROV` and `OWSEC`, executes an authoritative **Set Intersection** between MRA assignees and operator-visible users, resolves scope metadata, and returns a consolidated overview payload efficiently in a single round trip.
 
 ---
@@ -29,18 +35,18 @@ The Mango Operator UI operates on a **Pragmatic Hybrid Integration Architecture*
 ## 2. Scope
 
 This specification strictly governs:
-- **Session & Endpoint Discovery:** Dynamic discovery of OpenWifi service base URLs via `OWSEC` `GET /api/v1/systemEndpoints` executed directly by the browser client at session initialization.
+- **Session & Endpoint Discovery:** Dynamic discovery of OpenWifi service base URLs via `OWSEC` `GET /api/v1/systemEndpoints` executed directly by the browser client at session initialization, dynamically deriving `axiosProvV2` base URL as `<owprov-uri>/api/v2`.
 - **User Identity Management (Direct OWSEC):** Listing, filtering, searching, paginating, viewing, creating, updating, suspending, reactivating, and deleting platform users directly against `OWSEC`.
 - **User Security Operations (Direct OWSEC):** Resetting Multi-Factor Authentication (`resetMFA`), sending password reset emails (`forgotPassword`), and resending verification emails (`email_verification`) directly from the user context menu.
 - **Self-Account Exclusion:** Filtering out the currently logged-in operator's own record from the administrative directory to prevent accidental self-tampering, delegating personal account configuration to the top-navigation Profile view.
 - **Avatar Lifecycle Management (Direct OWSEC):** Binary retrieval, multipart upload, deletion, client-side memory caching, and initials fallback matching `owprov-ui`.
 - **Administrative Notes (Direct OWSEC):** Timestamped internal audit notes history in the User Details drawer with append popover capabilities.
 - **User Creation Options (Direct OWSEC):** Support for manual password creation as well as invitation email verification flows (`email_verification=true`), alongside force-password-change flags (`changePassword=true`). Explicit selection of operational roles with no preselected default, and strict exclusion of the `subscriber` role.
-- **Scoped Access Control (Direct OWPROV):** 1:1 backend MRA representation in a card-based list layout under "Access Assignments", policy-only card editing, single-item MRA revocation, and inline expandable assignment forms with batch multi-venue scoping (`venueIds: []`).
-- **MRA Scope Immutability:** Strict enforcement that Property (`entity`), Venue (`venue`), and Assigned User (`users`) are immutable on existing MRAs; changing spatial scope requires revoking the old assignment and creating a new one.
-- **Management Policy Administration (Direct OWPROV):** Inspecting, creating, updating, and deleting operational Management Policies directly against `OWPROV`.
-- **Auto-Seeded Default Policies & Root Mutation Authority:** Initial baseline policies are auto-seeded by `OWPROV` during service startup, contain no hardcoded or fixed permissions, and can be fully modified and customized by `root` operators (`userRole === 'root'`). Non-root operators retain read-only and scoping capabilities.
-- **Policy Overview Aggregation (via `mango-mdu-service`):** Aggregated overview drawer displaying headline KPI summary cards (Total Properties, Total Venues, Total Users), an interactive CRUD permission matrix visualizer, bound infrastructure scopes, and the **Set Intersection** of MRA assignees and operator-visible users.
+- **Scoped Access Control (Direct OWPROV V2):** 1:1 backend MRA representation in a card-based list layout under "Access Assignments", policy-only card editing, single-item MRA revocation, and inline expandable assignment forms with batch multi-venue scoping (`venueIds: []`) via `POST /api/v2/managementRole/0`.
+- **Consistent V2 Response Enveloping:** Strict enforcement of the normalized `{ "roles": [...] }` envelope (`ManagementRoleList`) returned by `POST /api/v2/managementRole/0` across all scoping scenarios (single venue, multi-venue batch, or property-wide).
+- **MRA Scope Immutability:** Strict enforcement that Property (`entity`), Venue (`venue`), and Assigned User (`users`) are immutable on existing MRAs; changing spatial scope requires revoking the old assignment (`DELETE /api/v2/managementRole/{id}`) and creating a new one (`POST /api/v2/managementRole/0`).
+- **Orphan Prevention & Policy Deletion Protection:** Authoritative microservice enforcement in `OWPROV` ensuring policies referenced by active Management Roles cannot be deleted (rejecting with `400 Bad Request` and error description `Management policy is currently assigned to one or more management roles`), guaranteeing that management roles never hold dangling/orphaned policy references.
+- **Management Policy Ingestion (Direct OWPROV V1):** Dynamic read-only ingestion of operational Management Policies via `GET /api/v1/managementPolicy` to populate assignment pickers in the Scoped Access drawer.
 - **Contracts, Mappings, Validation, and Verification:** Authoritative REST API contracts, TypeScript data mappings, validation rules, error handling, test scenarios, acceptance criteria, and architectural decisions.
 
 ---
@@ -49,6 +55,7 @@ This specification strictly governs:
 
 The following areas are explicitly outside the boundary of this document:
 - **Other UI Modules:** Dashboard, Fleet Device Inventory, Device Telemetry, Live Gateway Deployment, Gateway Default Configurations, VariableBlock Configuration Profiles, Firmware Management, and Tenant Operator Creation workflows.
+- **Standalone Policies Administration Tab:** Dedicated policy creation, editing, and deletion management workflows in the UI, alongside composite Policy Overview aggregation via `mango-mdu-service`, are scheduled for a subsequent phase. Phase 1 focuses exclusively on the Users directory and per-user Scoped Access management.
 - **Authorization Enforcement Computation:** The Mango Operator UI does not compute permissions, evaluate hierarchy inheritance trees, or calculate policy precedence. All authorization decisions are strictly enforced by upstream microservices (`OWSEC` for user access; `OWPROV` for operational entity/venue access).
 - **Proactive MRA Cleanup on User Deletion:** In accordance with downstream OpenWifi behavior, deleting a user in `OWSEC` does not initiate cascading MRA deletions in `OWPROV`.
 - **Billing & Reseller Subscriptions:** Billing accounts, invoicing, payment gateways, and commercial reseller tiers.
@@ -62,13 +69,14 @@ The following areas are explicitly outside the boundary of this document:
 | :--- | :--- |
 | **User** | A human operator, administrative engineer, or support personnel registered in the identity store (`OWSEC`). Identified uniquely by a UUID and email address. |
 | **Platform Role (`userRole`)** | A coarse platform classification stored in `OWSEC` (e.g., `root`, `admin`, `csr`, `noc`, `installer`). Governs top-level service visibility in `OWSEC` (e.g., only `root` and `admin` can list or create users). In the UI, it determines access to the Policy editor (strictly `root`). |
-| **Management Policy (`managementPolicy`)** | An authoritative operational permission ruleset stored in `OWPROV`. Defines allowed API actions (`CREATE`, `READ`, `MODIFY`, `DELETE`, `FULL`) across system resources (`entity`, `venue`, `inventory`, `configuration`, `operator`, `subscriber`, `contact`, `location`). Policies are global templates (`entity: ""`, `venue: ""`). |
+| **Management Policy (`managementPolicy`)** | An authoritative operational permission ruleset stored in `OWPROV`. Defines allowed API actions (`CREATE`, `READ`, `MODIFY`, `DELETE`, `FULL`) across system resources (`entity`, `venue`, `inventory`, `configuration`, `operator`, `subscriber`, `contact`, `location`). Policies are global templates (`entity: ""`, `venue: ""`). Referenced dynamically in Phase 1 by the Scoped Access drawer. |
 | **Default Seeded Policy** | Baseline management policies auto-seeded into the database by `OWPROV` during service startup (`service up`) as starting templates (e.g., Administrator, CSR, NOC, Installer). **These policies are not immutable and have no hardcoded permissions; root operators have full authority to modify them.** |
-| **Management Role Assignment (MRA)** | A scoped binding record stored in `OWPROV` (`managementRole`). Binds a User (`users: [userId]`) to a Management Policy (`managementPolicy: policyId`) across an explicit administrative Scope (`entity` with optional `venue`). |
+| **Management Role Assignment (MRA)** | A scoped binding record stored in `OWPROV` (`managementRole`). Binds a single User (`users: [userId]`) to a Management Policy (`managementPolicy: policyId`) across an explicit administrative Scope (`entity` with optional `venue`). |
+| **OWPROV V2 Management Role API** | The versioned REST interface (`/api/v2/managementRole/{id}`) dedicated to MRA lifecycle operations. Guarantees normalized `{ "roles": [...] }` response envelopes on creation, enforces scope immutability, validates assignable user privileges, and manages resource cleanup. |
 | **Property (`entity`)** | A customer top-level organizational boundary modeled in `OWPROV` (`entity`). Serves as the root anchor for physical Venues, managed inventory, and entity-wide role assignments. |
 | **Venue (`venue`)** | A physical subdivision within a Property (e.g., building, tower, floor, common area) modeled in `OWPROV` (`venue`). |
 | **Assignment Scope** | The spatial boundary of an MRA. An assignment is either **Property-wide** (`entity` set, `venue` empty) or **Venue-specific** (`entity` set, `venue` set to a child venue ID). |
-| **Multi-Venue Assignment** | The workflow where the UI submits an MRA payload containing `venueIds: [id1, id2, ...]`, triggering `OWPROV` backend to generate individual venue-scoped MRAs in a single batch. |
+| **Multi-Venue Assignment** | The workflow where the UI submits an MRA payload containing `venueIds: [id1, id2, ...]`, triggering `OWPROV` V2 backend to generate individual venue-scoped MRAs in a single batch, returning `{ "roles": [...] }`. |
 | **Targeted MDU Aggregator** | The backend service (`mango-mdu-service`) that provides specialized BFF endpoints for cross-service multi-system aggregation (e.g., Policy Overview) while standard CRUD routes hit OpenWifi services directly. |
 
 ---
@@ -82,38 +90,40 @@ The Mango Operator UI implements a **Pragmatic Hybrid Integration Architecture**
 |                            Mango Operator UI (Browser)                            |
 |                                                                                   |
 |  1. Session & Endpoint Discovery: Directly against OWSEC GET /systemEndpoints     |
-|  2. Direct OpenWifi Native CRUD:                                                  |
-|     - Users (/users)              -> Direct REST to OWSEC                         |
-|     - Scoped Access (/managementRole) -> Direct REST to OWPROV                    |
-|     - Policies (/managementPolicy)    -> Direct REST to OWPROV                    |
-|  3. Complex Aggregations:                                                         |
-|     - Policy Overview Drawer      -> Direct REST to mango-mdu-service             |
+|  2. Direct OpenWifi Native Operations:                                            |
+|     - Users (/users)              -> Direct REST to OWSEC (axiosSec /api/v1)      |
+|     - Role Listing                -> Direct REST to OWPROV (axiosProv /api/v1)    |
+|     - MRA CRUD (Create/Edit/Del)  -> Direct REST to OWPROV (axiosProvV2 /api/v2)  |
+|     - Policies / Hierarchy        -> Direct REST to OWPROV (axiosProv /api/v1)    |
+|  3. Complex Aggregations (Future Phase):                                          |
+|     - Policy Overview Drawer      -> Direct REST to mango-mdu-service (axiosMdu)  |
 +-----------------------------------------------------------------------------------+
-        |                                 |                                 |
-        | Direct HTTPS                    | Direct HTTPS                    | Direct HTTPS
-        | (Bearer JWT)                    | (Bearer JWT)                    | (Bearer JWT)
-        v                                 v                                 v
-+------------------+             +------------------+             +------------------+
-|      OWSEC       |             |      OWPROV      |             | mango-mdu-service|
-| (Identity Core)  |             | (Provision Core) |             |  (BFF Aggregator)|
-|------------------|             |------------------|             |------------------|
-| • Login / Auth   |             | • MRAs (CRUD)    |             | • Policy Overview|
-| • systemEndpoints|             | • Policies (CRUD)|             |   Aggregation:   |
-| • Users (CRUD)   |             | • Entities/Venues|             |   - MRA fetch    |
-| • Avatars/Notes  |             +------------------+             |   - User fetch   |
-| • MFA / Resets   |                      ^                       |   - Intersection |
-+------------------+                      |                       |   - Scope join   |
-        ^                                 |                       +------------------+
-        |                                 |                                 |
-        +---------------------------------+---------------------------------+
-                         (Internal server-to-server calls)
+        |                         |                         |                       |
+        | Direct HTTPS            | Direct HTTPS            | Direct HTTPS          | Direct HTTPS
+        | (Bearer JWT)            | (Bearer JWT)            | (Bearer JWT)          | (Bearer JWT)
+        v                         v                         v                       v
++------------------+     +------------------+     +------------------+     +------------------+
+|      OWSEC       |     |  OWPROV (V1 API) |     |  OWPROV (V2 API) |     | mango-mdu-service|
+| (Identity Core)  |     | (Provision V1)   |     | (Provision V2)   |     |  (BFF Aggregator)|
+|------------------|     |------------------|     |------------------|     |------------------|
+| • Login / Auth   |     | • Role Listing   |     | • MRA Batch Create|    | • Policy Overview|
+| • systemEndpoints|     |   (GET /api/v1)  |     |   (POST /api/v2) |     |   Aggregation:   |
+| • Users (CRUD)   |     | • Policies (Read)|     | • Single Role GET|     |   - MRA fetch    |
+| • Avatars/Notes  |     | • Entities/Venues|     | • MRA Update/Del |     |   - User fetch   |
+| • MFA / Resets   |     +------------------+     +------------------+     |   - Intersection |
++------------------+              ^                         ^              |   - Scope join   |
+        ^                         |                         |              +------------------+
+        |                         +-------------------------+                       |
+        +---------------------------------------------------------------------------+
+                                (Internal server-to-server calls)
 ```
 
 ### Architectural Guarantees
-1. **Dynamic Service Discovery:** The browser initializes by querying `OWSEC` `GET /api/v1/systemEndpoints` to acquire the active endpoints for `owsec`, `owprov`, and related core services.
-2. **Direct CRUD Efficiency:** Standard administrative workflows (creating a user, assigning an MRA, editing policy permissions) execute directly against the authoritative OpenWifi microservices, avoiding unnecessary intermediary proxies.
-3. **Targeted Server-Side Aggregation:** Complex cross-service joins requiring multi-query coordination (Policy Overview) are delegated to `mango-mdu-service`. The backend executes upstream queries over internal service links and delivers a pre-calculated, tenant-filtered payload to the client.
-4. **Unified Authentication:** The browser attaches the single JWT Bearer token acquired from `OWSEC` login to all requests across `OWSEC`, `OWPROV`, and `mango-mdu-service`. Upstream services authoritatively validate the token and enforce RBAC.
+1. **Dynamic Service Discovery:** The browser initializes by querying `OWSEC` `GET /api/v1/systemEndpoints` to acquire the active endpoints for `owsec`, `owprov`, and related core services. The UI dynamically configures `axiosProv` with `<owprov-uri>/api/v1` and `axiosProvV2` with `<owprov-uri>/api/v2`.
+2. **Direct CRUD Efficiency:** Standard administrative workflows (creating a user, assigning an MRA, updating MRA policy) execute directly against the authoritative OpenWifi microservices, avoiding unnecessary intermediary proxies.
+3. **Dedicated V2 Scoped Access Contract:** Role creation, modification, single-role retrieval, and deletion use the dedicated `OWPROV` V2 API (`/api/v2/managementRole/{id}`) with normalized `{ "roles": [...] }` envelopes and strict scope immutability enforcement. Role listing continues on V1 (`/api/v1/managementRole`).
+4. **Targeted Server-Side Aggregation (Future Phase):** Complex cross-service joins requiring multi-query coordination (Policy Overview) are delegated to `mango-mdu-service`. The backend executes upstream queries over internal service links and delivers a pre-calculated, tenant-filtered payload to the client.
+5. **Unified Authentication:** The browser attaches the single JWT Bearer token acquired from `OWSEC` login to all requests across `OWSEC`, `OWPROV` (V1 & V2), and `mango-mdu-service`. Upstream services authoritatively validate the token and enforce RBAC.
 
 ---
 
@@ -126,10 +136,11 @@ The Mango Operator UI implements a **Pragmatic Hybrid Integration Architecture**
 | **Coarse Platform Role** | `OWSEC` | `userRole` column | `user.userRole` | Direct `axiosSec` |
 | **User Avatars** | `OWSEC` | User avatar binary | `GET /avatar/{id}`, `POST /avatar/{id}` | Direct `axiosSec` |
 | **User Administrative Notes** | `OWSEC` | `notes` array in User | `PUT /api/v1/user/{id}` | Direct `axiosSec` |
-| **Management Policies** | `OWPROV` | `ManagementPolicies` table | `GET /api/v1/managementPolicy` | Direct `axiosProv` |
-| **Scoped Access Grants (MRAs)** | `OWPROV` | `ManagementRoles` table | `GET /api/v1/managementRole` | Direct `axiosProv` |
+| **Management Policies (Catalog)** | `OWPROV` | `ManagementPolicies` table | `GET /api/v1/managementPolicy` | Direct `axiosProv` |
+| **Scoped Access Grants (List)** | `OWPROV` | `ManagementRoles` table | `GET /api/v1/managementRole?userId={userId}` | Direct `axiosProv` |
+| **Scoped Access Grants (CRUD)** | `OWPROV` | `ManagementRoles` table | `POST /api/v2/managementRole/0`, `GET/PUT/DELETE /api/v2/managementRole/{id}` | Direct `axiosProvV2` |
 | **Property & Venue Metadata** | `OWPROV` | `Entities`, `Venues` tables| `GET /api/v1/entity`, `/api/v1/venue` | Direct `axiosProv` |
-| **Policy Overview Aggregation** | `mango-mdu-service` | Aggregated view | `GET /api/v1/managementPolicy/{id}/overview` *(Provisional)* | Direct `axiosMdu` |
+| **Policy Overview Aggregation (Phase 2)** | `mango-mdu-service` | Aggregated view | `GET /api/v1/managementPolicy/{id}/overview` *(Provisional)* | Direct `axiosMdu` |
 
 ---
 
@@ -213,22 +224,22 @@ User creation is strictly separated from role assignment. Users are created firs
 - **MRA Handling:** In alignment with downstream OpenWifi behavior, deleting a user in `OWSEC` does not perform proactive cascading cleanup of MRAs in `OWPROV`. The UI gracefully handles orphaned MRAs if encountered.
 
 ### 7.8 Tenancy & Visibility Rules in OWSEC
-- Built into `OWSEC`'s core `ACLProcessor`:
+- When calling `GET /api/v1/users`, `OWSEC` returns only the users that the calling operator is authorized to see:
   - **`root` User:** Can list all users across the entire system and create users with any role.
-  - **`admin` User:** When calling `GET /api/v1/users`, `OWSEC` automatically filters results to return **only users created by that specific admin** (`WasCreatedBy` check). Admins can only create users assigned to their ownership.
+  - **`admin` User:** When calling `GET /api/v1/users`, `OWSEC` automatically filters results to return only users within that admin's tenant hierarchy. Admins can only create users assigned to their ownership.
   - **Other Roles (`csr`, `noc`, `installer`):** Receive `403 Forbidden` from `OWSEC` if attempting to call user management endpoints.
 
 ---
 
 ## 8. Scoped Access (Management Role Assignments)
 
-Scoped Access is the authoritative mechanism in OpenWifi that grants a user operational permissions over specific physical infrastructure. It is managed directly via `OWPROV`'s `managementRole` resource.
+Scoped Access is the authoritative mechanism in OpenWifi that grants a user operational permissions over specific physical infrastructure. It is managed directly via `OWPROV`'s `managementRole` resource, utilizing the dedicated **OWPROV V2 Management Role API** (`/api/v2/managementRole/{id}`) for creation, retrieval, modification, and revocation, while filtered listing operations use the V1 endpoint (`GET /api/v1/managementRole?userId={userId}`).
 
 ### 8.1 Management Role Assignment (MRA) Model
 An MRA binds:
-$$\text{MRA} = \langle \text{User ID}, \text{Property (Entity ID)}, \text{Venue ID (Optional)}, \text{Management Policy ID} \rangle$$
+$$	ext{MRA} = \langle 	ext{User ID}, 	ext{Property (Entity ID)}, 	ext{Venue ID (Optional)}, 	ext{Management Policy ID} angle$$
 
-In `OWPROV`, `managementRole` records are stored as:
+In `OWPROV` V2 (`owprov-v2.yaml`), `managementRole` records are modeled as:
 ```json
 {
   "id": "uuid",
@@ -237,9 +248,14 @@ In `OWPROV`, `managementRole` records are stored as:
   "managementPolicy": "policy-uuid",
   "users": ["user-uuid-1"],
   "entity": "entity-uuid",
-  "venue": "venue-uuid-or-empty"
+  "venue": "venue-uuid-or-empty",
+  "inUse": [],
+  "tags": [],
+  "created": 1718000000,
+  "modified": 1718000000
 }
 ```
+*(Constraint: `users` contains exactly one user UUID; `entity`, `venue`, and `users` are immutable; `inUse`, `created`, and `modified` are server-managed).*
 
 ### 8.2 Scope Levels
 1. **Property-Wide Scope:**
@@ -251,17 +267,63 @@ In `OWPROV`, `managementRole` records are stored as:
    - `venue`: Valid Venue UUID.
    - Restricts policy permissions exclusively to the specified venue within the property.
 
-### 8.3 Multi-Venue Batch Assignment
-When scoping an operator across multiple venues within a property, the UI submits `venueIds: string[]` in a single `POST` request directly to `OWPROV`:
+### 8.3 Multi-Venue Batch Assignment (V2 API)
+When scoping an operator across multiple venues within a property (or granting entity-wide scope), the UI submits `venueIds: string[]` in a single `POST` request directly to `OWPROV` V2 via `axiosProvV2`:
+- **Target Endpoint:** `POST /api/v2/managementRole/0`
+  - Using `/0` as the path ID delegates UUID generation to the backend, eliminating client-side UUID generation.
+- **Request Body (`ManagementRoleCreateV2`):**
 ```json
 {
+  "name": "Sunrise Towers - Network Operator",
+  "description": "Building-level technician access",
   "entity": "entity-uuid-1234",
   "venueIds": ["venue-uuid-001", "venue-uuid-002", "venue-uuid-003"],
   "managementPolicy": "policy-uuid-5678",
   "users": ["user-uuid-9999"]
 }
 ```
-`OWPROV` backend receives `venueIds`, loops through the array, and creates/upserts individual MRA records for each venue in a single batch operation.
+- **Normalized Response Envelope (`ManagementRoleList`):**
+  - Resolving earlier polymorphic response variations, the V2 endpoint **always returns a consistent `{ "roles": [...] }` envelope** regardless of venue count:
+```json
+{
+  "roles": [
+    {
+      "id": "mra-uuid-1",
+      "name": "Sunrise Towers - Network Operator",
+      "description": "Building-level technician access",
+      "managementPolicy": "policy-uuid-5678",
+      "users": ["user-uuid-9999"],
+      "entity": "entity-uuid-1234",
+      "venue": "venue-uuid-001",
+      "created": 1718000000,
+      "modified": 1718000000
+    },
+    {
+      "id": "mra-uuid-2",
+      "name": "Sunrise Towers - Network Operator",
+      "description": "Building-level technician access",
+      "managementPolicy": "policy-uuid-5678",
+      "users": ["user-uuid-9999"],
+      "entity": "entity-uuid-1234",
+      "venue": "venue-uuid-002",
+      "created": 1718000000,
+      "modified": 1718000000
+    },
+    {
+      "id": "mra-uuid-3",
+      "name": "Sunrise Towers - Network Operator",
+      "description": "Building-level technician access",
+      "managementPolicy": "policy-uuid-5678",
+      "users": ["user-uuid-9999"],
+      "entity": "entity-uuid-1234",
+      "venue": "venue-uuid-003",
+      "created": 1718000000,
+      "modified": 1718000000
+    }
+  ]
+}
+```
+- **Batch Processing & Atomicity:** The `OWPROV` V2 backend processes `venueIds`, manages existing and new role assignments, and rolls back newly created or updated records if any step in the batch fails.
 
 ### 8.4 Access Assignments Card Layout & UI Specification
 The Scoped Access drawer provides a dedicated, card-based interface designed for hierarchy-scoped access management.
@@ -286,26 +348,35 @@ The Scoped Access drawer provides a dedicated, card-based interface designed for
   - **Locked Fields:** The Property (`entity`) and Venue (`venue`) fields are permanently locked/read-only because altering infrastructure boundaries represents a different scoping grant.
   - **Editable Field:** The Policy dropdown is editable, allowing the operator to select a new policy.
   - **Contextual Helper Hint:** The UI displays helper text: *"To change property or venue scope, revoke this assignment and create a new one."*
-  - Submitting saves via `PUT /api/v1/managementRole/{id}` with `{ "entity": entityId, "venue": venueId, "managementPolicy": newPolicyId, "users": [userId] }`.
-  - On success: Invalidates `['managementRoles', userId]`, shows a success toast, and updates the card badge.
+  - **V2 Mutation Payload:** Submitting sends only mutable properties via `PUT /api/v2/managementRole/{id}`:
+    ```json
+    {
+      "name": "Sunrise Towers - Support Access",
+      "description": "Updated tier 2 access",
+      "managementPolicy": "new-policy-uuid"
+    }
+    ```
+  - Scope fields (`entity`, `venue`, `users`) and server metadata (`id`, `inUse`, `created`, `modified`) are read-only and excluded. If submitted with altered scope coordinates, `OWPROV` rejects the request with `400 Bad Request`.
+  - On success: Invalidates `['managementRoles']`, `['managementRoles', userId]`, and `['managementRole', roleId]`, shows a success toast, and updates the card badge.
 
 ### 8.5 MRA Attribute Mutability Matrix
 To prevent frontend/backend interpretation differences, the mutability boundary for existing Management Role Assignments is formally specified:
 
-| MRA Field | Mutable In-Place (`PUT`)? | Requires Revoke & Re-create (`DELETE` + `POST`)? | Enforcement & Technical Rationale |
+| MRA Field | Mutable In-Place (`PUT /api/v2/managementRole/{id}`)? | Requires Revoke & Re-create (`DELETE` + `POST`)? | Enforcement & Technical Rationale |
 | :--- | :---: | :---: | :--- |
-| **`managementPolicy`** | **YES** | **No** | **Primary In-Place Mutable Field.** Represents privilege escalation, de-escalation, or tuning for the existing user on their established physical boundary. Backend updates foreign key in-place. |
+| **`managementPolicy`** | **YES** | **No** | **Primary In-Place Mutable Field.** Represents privilege escalation, de-escalation, or tuning for the existing user on their established physical boundary. Backend validates policy exists and updates in-place. |
 | **`name` / `description`** | **YES** | **No** | Non-authoritative administrative metadata; does not alter security or spatial boundaries. |
-| **`notes`** | **YES** | **No** | Administrative audit history (`notes: Note[]`); appended in-place. |
-| **`entity` (Property)** | **NO (IMMUTABLE)** | **YES** | **Physical Tenant Anchor.** An MRA's existence is anchored to an organizational Entity. Moving properties requires revoking old access and provisioning new access to preserve audit logs and multi-tenant partition boundaries. |
-| **`venue` (Venue Scope)** | **NO (IMMUTABLE)** | **YES** | **Spatial Perimeter Anchor.** An assignment is either Property-wide (`venue: ""`) or pinned to a specific physical Venue (`venue: venueUuid`). Changing venue coordinates alters the spatial perimeter and backend uniqueness keys `(entity, venue, user)`. Requires new assignment. |
-| **`users` (Assigned Operator)** | **NO (IMMUTABLE)** | **YES** | **Identity Anchor.** In the User Scoped Access view, the card belongs exclusively to that operator (`users: [userId]`). Scoped access cannot be transferred between operators in-place on the same MRA UUID. |
+| **`notes` / `tags`** | **YES** | **No** | Administrative audit history and categorization; updated in-place via V2 PUT. |
+| **`entity` (Property)** | **NO (IMMUTABLE)** | **YES** | **Physical Tenant Anchor.** An MRA's existence is anchored to an organizational Entity. Moving properties requires revoking old access and provisioning new access to preserve audit logs and multi-tenant partition boundaries. Backend rejects alteration with `400 Bad Request`. |
+| **`venue` (Venue Scope)** | **NO (IMMUTABLE)** | **YES** | **Spatial Perimeter Anchor.** An assignment is either Property-wide (`venue: ""`) or pinned to a specific physical Venue (`venue: venueUuid`). Changing venue coordinates alters the spatial perimeter and backend uniqueness keys `(entity, venue, user)`. Backend rejects alteration with `400 Bad Request`. |
+| **`users` (Assigned Operator)** | **NO (IMMUTABLE)** | **YES** | **Identity Anchor.** In the User Scoped Access view, the card belongs exclusively to that operator (`users: [userId]`). Scoped access cannot be transferred between operators in-place on the same MRA UUID. Backend rejects alteration with `400 Bad Request`. |
 
-- **Single-Item Revocation:**
+- **Single-Item Revocation (V2 API):**
   - Revocation is handled strictly on an individual card basis via the Trash Bin icon.
   - Clicking Trash displays a confirmation prompt: `"Revoke access for [User Name] on [Property Name - Venue Scope]?"`.
-  - On confirmation, executes `DELETE /api/v1/managementRole/{roleId}` directly against `OWPROV`.
-  - On success: Invalidates `['managementRoles', userId]` and removes the card.
+  - On confirmation, executes `DELETE /api/v2/managementRole/{roleId}` directly against `OWPROV` via `axiosProvV2`.
+  - The backend removes the role, revokes associated infrastructure permissions, and invalidates active session cache entries.
+  - On success: Invalidates `['managementRoles']`, `['managementRoles', userId]`, and `['managementRole', roleId]` and removes the card from the UI.
 
 - **Inline Expandable Assignment Form (`+ Assign access`):**
   - Displayed directly beneath the assignment cards as a full-width button with a dashed border.
@@ -314,12 +385,16 @@ To prevent frontend/backend interpretation differences, the mutability boundary 
     - **`Venues` (Dropdown, Optional):** Populated via `useGetVenues()` and filtered to show venues under the selected Entity. Leaving unselected creates a Property-wide scope (`"All venues"`, `venue: ""`). Selecting specific venues enables single or multi-venue batch assignment (`venueIds: []`).
     - **`Policy *` (Dropdown, Required):** Dynamically populated from `OWPROV` `GET /api/v1/managementPolicy`. Lists all available policies returned by the backend. Includes an info icon `(i)` with a tooltip describing the policy.
     - **Form Controls:**
-      - **`Save` (Button, Solid Blue):** Validates required selections and submits `POST /api/v1/managementRole/{uuid}` directly to `OWPROV`.
+      - **`Save` (Button, Solid Blue):** Validates required selections and submits `POST /api/v2/managementRole/0` directly to `OWPROV` V2 via `axiosProvV2`.
       - **`Cancel` (Button, Plain Text):** Resets form state and collapses the inline assignment view.
 
 ---
 
 ## 9. Policies Feature (Management Policies)
+
+> [!NOTE]
+> **Implementation Phase Boundary (Deferred Standalone Policies Tab):**
+> For Phase 1 delivery of the "Users & Access" module, only the **Users** directory tab and per-user Scoped Access drawer are implemented in the UI. The standalone **Policies** management tab and composite MDU policy overview drawer described in this section are deferred to a subsequent release. In Phase 1, Management Policies are actively ingested in read-only mode via `GET /api/v1/managementPolicy` to dynamically populate policy selectors in the Scoped Access drawer.
 
 Management Policies are authoritative permission templates defined in `OWPROV` that establish fine-grained operational access across OpenWifi system resources.
 
@@ -412,10 +487,18 @@ Clicking on any policy row or selecting "View Overview" opens the **Policy Overv
   - API Call: `PUT /api/v1/managementPolicy/{id}` directly against `OWPROV`.
 - On success: Invalidate `['managementPolicies']`.
 
-### 9.7 Delete Policy Workflow (Root-Only)
-- Policies can only be deleted if their active assignment count is `0`.
-- If active MRAs exist, the delete button is disabled with a tooltip: `"Cannot delete policy: Currently assigned to active infrastructure scopes."`.
-- API Call: `DELETE /api/v1/managementPolicy/{id}` directly against `OWPROV`.
+### 9.7 Delete Policy Workflow & Authoritative Backend Orphan Prevention
+- **Client-Side Presentation Guard:**
+  - Policies can only be deleted if their active assignment count is `0`.
+  - If active MRAs exist, the delete button is disabled with a tooltip: `"Cannot delete policy: Currently assigned to active infrastructure scopes."`.
+- **Authoritative Backend Enforcement:**
+  - Even if client-side validation is bypassed, `OWPROV` independently and authoritatively guarantees that no assigned policy can be deleted:
+    - Upon receiving `DELETE /api/v1/managementPolicy/{id}`, the backend verifies whether the policy is currently referenced by any active Management Role.
+    - If any active Management Role references the policy, the operation is immediately rejected with `400 Bad Request` and error description `"Management policy is currently assigned to one or more management roles"` (`StillInUse`).
+  - **Elimination of Orphan Roles:** Because the backend strictly prohibits deletion of in-use policies, Management Roles can never be orphaned due to an upstream policy deletion.
+- **Execution:**
+  - For unassigned policies, API Call: `DELETE /api/v1/managementPolicy/{id}` directly against `OWPROV`.
+  - On success: Invalidate `['managementPolicies']`.
 
 ---
 
@@ -439,6 +522,7 @@ The Mango Operator UI operates on a **Pragmatic Hybrid Integration Architecture*
 |  ['systemEndpoints']                 -> Base service URIs from OWSEC              |
 |  ['users']                           -> Direct user directory from OWSEC          |
 |  ['managementRoles', userId]         -> Direct user MRAs from OWPROV              |
+|  ['managementRole', roleId]          -> Direct single MRA from OWPROV V2          |
 |  ['managementPolicies']              -> Direct global policies from OWPROV        |
 |  ['entities']                        -> Direct property metadata from OWPROV      |
 |  ['venues']                          -> Direct venue hierarchy from OWPROV        |
@@ -481,7 +565,7 @@ sequenceDiagram
         Note over MDU: Filter MRAs where role.managementPolicy === policyId<br/>Extract mraUserIds = flatMap(r => r.users)
     and Step 2: Fetch Operator-Visible Users
         MDU->>SEC: GET /api/v1/users (Caller Bearer Token forwarded)
-        SEC-->>MDU: 200 OK (Users[] - filtered by WasCreatedBy ACL)
+        SEC-->>MDU: 200 OK (Users[] - filtered by tenant visibility)
     and Step 3: Fetch Infrastructure Metadata
         MDU->>PROV: GET /api/v1/entity & GET /api/v1/venue
         PROV-->>MDU: 200 OK (Entities[], Venues[])
@@ -496,15 +580,15 @@ sequenceDiagram
 #### Step-by-Step Server-Side Pipeline:
 1. **Step 1 — Scoped Role Filtering (`OWPROV`):**
    - Fetches MRAs visible and authorized for the caller from `OWPROV` (forwarding caller's Bearer token) and filters assignments matching `policyId`:
-     $$\text{filteredMRAs} = \{ r \in \text{Caller-Authorized ManagementRoles} \mid r.\text{managementPolicy} = \text{policyId} \}$$
+     $$	ext{filteredMRAs} = \{ r \in 	ext{Caller-Authorized ManagementRoles} \mid r.	ext{managementPolicy} = 	ext{policyId} \}$$
    - Collects distinct user UUIDs assigned to this policy:
-     $$\text{mraUserIds} = \text{Set}\left( \bigcup_{r \in \text{filteredMRAs}} r.\text{users} \right)$$
+     $$	ext{mraUserIds} = 	ext{Set}\left( igcup_{r \in 	ext{filteredMRAs}} r.	ext{users} ight)$$
 2. **Step 2 — Operator-Visible Users Query (`OWSEC`):**
    - Calls `OWSEC` `GET /api/v1/users` forwarding the calling operator's JWT Bearer token.
-   - `OWSEC` authoritatively applies its internal `WasCreatedBy` ACL filter, returning strictly the subset of users that the calling operator is permitted to see.
+   - `OWSEC` authoritatively applies its tenant visibility filter, returning strictly the subset of users that the calling operator is permitted to see.
 3. **Step 3 — Mathematical Set Intersection (True Policy Users):**
    - Computes the strict set intersection:
-     $$\text{Assigned Policy Users} = \{ u \in \text{OWSEC Visible Users} \mid u.\text{id} \in \text{mraUserIds} \}$$
+     $$	ext{Assigned Policy Users} = \{ u \in 	ext{OWSEC Visible Users} \mid u.	ext{id} \in 	ext{mraUserIds} \}$$
    - **Guarantees:**
      - Only authentic assignees holding active MRAs for this policy are included.
      - Synthetic platform-role mappings are completely eliminated.
@@ -513,7 +597,7 @@ sequenceDiagram
    - Aggregates unique Property UUIDs (`entity`) and Venue UUIDs (`venue`) from `filteredMRAs`.
    - Resolves display names via `OWPROV` entity and venue tables.
    - Computes headline summary metrics:
-     $$\text{totalProperties} = |\text{distinctEntityIds}|, \quad \text{totalVenues} = |\text{distinctVenueIds}|, \quad \text{totalUsers} = |\text{Assigned Policy Users}|$$
+     $$	ext{totalProperties} = |	ext{distinctEntityIds}|, \quad 	ext{totalVenues} = |	ext{distinctVenueIds}|, \quad 	ext{totalUsers} = |	ext{Assigned Policy Users}|$$
 5. **Step 5 — Response Delivery & Client Caching:**
    - Returns the consolidated [`PolicyOverviewSummary`](#13-data-mapping--type-definitions) response.
    - The UI caches this result under `['policyOverview', policyId]` with a 5-minute stale time.
@@ -530,9 +614,9 @@ To determine whether a policy is active (to gate root deletion and display the `
 | **Update User** | `PUT OWSEC /api/v1/user/{id}` | `['users']`, `['users', id]` |
 | **Suspend / Reactivate User** | `PUT OWSEC /api/v1/user/{id}` | `['users']`, `['users', id]` |
 | **Delete User** | `DELETE OWSEC /api/v1/user/{id}` | `['users']` |
-| **Assign Scoped Access** | `POST OWPROV /api/v1/managementRole/{uuid}` | `['managementRoles']`, `['managementRoles', userId]`, `['policyOverview']` |
-| **Update Scoped Access** | `PUT OWPROV /api/v1/managementRole/{id}` | `['managementRoles']`, `['managementRoles', userId]`, `['policyOverview']` |
-| **Revoke Scoped Access** | `DELETE OWPROV /api/v1/managementRole/{id}` | `['managementRoles']`, `['managementRoles', userId]`, `['policyOverview']` |
+| **Assign Scoped Access** | `POST OWPROV /api/v2/managementRole/0` | `['managementRoles']`, `['managementRoles', userId]`, `['managementRole', roleId]`, `['policyOverview']` |
+| **Update Scoped Access** | `PUT OWPROV /api/v2/managementRole/{id}` | `['managementRoles']`, `['managementRoles', userId]`, `['managementRole', roleId]`, `['policyOverview']` |
+| **Revoke Scoped Access** | `DELETE OWPROV /api/v2/managementRole/{id}` | `['managementRoles']`, `['managementRoles', userId]`, `['managementRole', roleId]`, `['policyOverview']` |
 | **Create Policy** | `POST OWPROV /api/v1/managementPolicy/{uuid}` | `['managementPolicies']` |
 | **Update Policy** | `PUT OWPROV /api/v1/managementPolicy/{id}` | `['managementPolicies']`, `['policyOverview', policyId]` |
 | **Delete Policy** | `DELETE OWPROV /api/v1/managementPolicy/{id}` | `['managementPolicies']` |
@@ -550,11 +634,21 @@ To determine whether a policy is active (to gate root deletion and display the `
 - Direct client access for User identity lifecycle, authentication, platform roles, avatar images, and administrative notes.
 - Base path: `/api/v1`
 
-### 11.3 OWPROV Service Contract (Provisioning)
-- Direct client access for Management Roles (MRAs), Management Policies, Entities (Properties), and Venues.
+### 11.3 OWPROV V1 Service Contract (Provisioning V1)
+- Direct client access for listing Management Roles (`GET /api/v1/managementRole`), Management Policies (`GET /api/v1/managementPolicy`), Entities (Properties: `GET /api/v1/entity`), and Venues (`GET /api/v1/venue`).
 - Base path: `/api/v1`
 
-### 11.4 Mango MDU Service Contract (`mango-mdu-service`)
+### 11.4 OWPROV V2 Service Contract (Provisioning V2)
+- Direct client access for authoritative Management Role CRUD operations:
+  - Batch / Single Scoped Access Creation: `POST /api/v2/managementRole/0`
+  - Single Scoped Access Retrieval: `GET /api/v2/managementRole/{id}?expandInUse=true`
+  - Scoped Access Policy Mutation: `PUT /api/v2/managementRole/{id}`
+  - Single-Item Scoped Access Revocation: `DELETE /api/v2/managementRole/{id}`
+- Standardized `{ "roles": [...] }` (`ManagementRoleList`) response envelope on creation.
+- Authoritative backend validation: scope immutability enforcement and controlled delegation checks.
+- Base path: `/api/v2`
+
+### 11.5 Mango MDU Service Contract (`mango-mdu-service`)
 - Base path: `/api/v1`
 
 > [!NOTE]
@@ -684,56 +778,128 @@ To determine whether a policy is active (to gate root deletion and display the `
 - **Delete Avatar:** `DELETE /avatar/{id}`
   - **Response `200 OK`:** `{}`
 
-### 12.3 OWPROV Management Role APIs (Direct OWPROV)
+### 12.3 OWPROV Management Role APIs (Direct OWPROV V1 & V2)
 
-#### 12.3.1 Get Management Roles
+#### 12.3.1 Get Management Roles (V1 Listing API)
 `GET /api/v1/managementRole` or `GET /api/v1/managementRole?userId={userId}`
+- **Headers:** `Authorization: Bearer <token>`
 - **Response `200 OK`:**
   ```json
   {
     "roles": [
       {
         "id": "mra-uuid-1",
-        "name": "Sunset Heights - CSR",
-        "description": "Property-wide support access",
+        "name": "Alex Smith - Sunrise Apartments",
+        "description": "Property-wide operator access",
         "managementPolicy": "policy-uuid-1",
         "users": ["user-uuid-1"],
         "entity": "entity-uuid-1",
-        "venue": ""
+        "venue": "",
+        "created": 1718000000,
+        "modified": 1718000000
       }
     ]
   }
   ```
 
-#### 12.3.2 Create Scoped Access (Batch Multi-Venue Support)
-`POST /api/v1/managementRole/{uuid}`
-- **Request Body:**
+#### 12.3.2 Create Scoped Access (Direct OWPROV V2 - Batch & Single-Venue Support)
+`POST /api/v2/managementRole/0`
+- **Headers:** `Authorization: Bearer <token>`
+- **Path Parameter:** `0` (indicates new record creation; backend assigns server-side UUIDs).
+- **Request Body (`ManagementRoleCreateV2`):**
   ```json
   {
+    "name": "Alex Smith - Sunrise Apartments",
+    "description": "Technician assignment for Building A & B",
     "entity": "entity-uuid-1",
     "venueIds": ["venue-uuid-1", "venue-uuid-2"],
     "managementPolicy": "policy-uuid-1",
     "users": ["user-uuid-1"]
   }
   ```
-- **Response `200 OK`:** Returns created `ManagementRole` record(s).
-
-#### 12.3.3 Update Scoped Access (Policy-Only Editing & Scope Immutability)
-`PUT /api/v1/managementRole/{id}`
-- **Mutability Constraint:** Scope coordinates (`entity`, `venue`) and assigned user identity (`users`) are strictly **immutable**. Only `managementPolicy`, `name`, `description`, and `notes` can be updated.
-- **Request Body:**
+  *(Note: For property-wide assignment, `venueIds` is omitted or passed as empty array `[]`).*
+- **Response `200 OK` (`ManagementRoleList`):**
+  The V2 endpoint **always returns a normalized envelope** containing the list of created roles:
   ```json
   {
-    "entity": "entity-uuid-1",
-    "venue": "venue-uuid-1",
-    "managementPolicy": "new-policy-uuid",
-    "users": ["user-uuid-1"],
-    "name": "Updated Role Name",
-    "description": "Updated Role Description"
+    "roles": [
+      {
+        "id": "mra-uuid-1",
+        "name": "Alex Smith - Sunrise Apartments",
+        "description": "Technician assignment for Building A & B",
+        "managementPolicy": "policy-uuid-1",
+        "users": ["user-uuid-1"],
+        "entity": "entity-uuid-1",
+        "venue": "venue-uuid-1",
+        "created": 1718000000,
+        "modified": 1718000000
+      },
+      {
+        "id": "mra-uuid-2",
+        "name": "Alex Smith - Sunrise Apartments",
+        "description": "Technician assignment for Building A & B",
+        "managementPolicy": "policy-uuid-1",
+        "users": ["user-uuid-1"],
+        "entity": "entity-uuid-1",
+        "venue": "venue-uuid-2",
+        "created": 1718000000,
+        "modified": 1718000000
+      }
+    ]
   }
   ```
-- **Response `200 OK`:** Returns updated `ManagementRole`.
-- **Response `400 Bad Request` (Scope Immutability Enforcement):** If `payload.entity !== existing.entity` or `payload.venue !== existing.venue` or `payload.users !== existing.users`, `OWPROV` rejects the request (implemented in `ra-wlan-cloud-owprov/src/RESTAPI/RESTAPI_managementRole_handler.cpp#L445-L466`):
+- **Response `400 Bad Request` (Validation / Controlled Delegation Failure):**
+  ```json
+  {
+    "ErrorCode": 400,
+    "ErrorDescription": "Invalid role configuration or privilege delegation exceeds caller authority"
+  }
+  ```
+
+#### 12.3.3 Get Single Management Role (Direct OWPROV V2)
+`GET /api/v2/managementRole/{id}?expandInUse=true`
+- **Headers:** `Authorization: Bearer <token>`
+- **Query Parameter:** `expandInUse=true` (optional, returns expanded usage entities referencing this role).
+- **Response `200 OK`:**
+  ```json
+  {
+    "id": "mra-uuid-1",
+    "name": "Alex Smith - Sunrise Apartments",
+    "description": "Property-wide operator access",
+    "managementPolicy": "policy-uuid-1",
+    "users": ["user-uuid-1"],
+    "entity": "entity-uuid-1",
+    "venue": "",
+    "inUse": ["entity-uuid-1"],
+    "entries": {
+      "entity": [
+        {
+          "tag": "entity",
+          "symbol": "Sunrise Apartments",
+          "id": "entity-uuid-1"
+        }
+      ]
+    },
+    "created": 1718000000,
+    "modified": 1718000000
+  }
+  ```
+
+#### 12.3.4 Update Scoped Access (Direct OWPROV V2 - Policy & Metadata Mutation)
+`PUT /api/v2/managementRole/{id}`
+- **Headers:** `Authorization: Bearer <token>`
+- **Mutability Constraint:** Scope coordinates (`entity`, `venue`) and assigned operator identity (`users`) are strictly **immutable**. The V2 PUT request accepts only mutable fields (`name`, `description`, `managementPolicy`, `notes`, `tags`).
+- **Request Body (`ManagementRoleUpdateV2`):**
+  ```json
+  {
+    "name": "Alex Smith - Sunrise Apartments (Updated)",
+    "description": "Elevated to NOC tier",
+    "managementPolicy": "new-policy-uuid-2"
+  }
+  ```
+- **Response `200 OK`:** Returns updated `ManagementRole` record.
+- **Response `400 Bad Request` (Scope Immutability Enforcement):**
+  If `payload.entity`, `payload.venue`, or `payload.users` are altered in the request, `OWPROV` rejects the mutation:
   ```json
   {
     "ErrorCode": 400,
@@ -741,8 +907,10 @@ To determine whether a policy is active (to gate root deletion and display the `
   }
   ```
 
-#### 12.3.4 Revoke Scoped Access
-`DELETE /api/v1/managementRole/{id}`
+#### 12.3.5 Revoke Scoped Access (Direct OWPROV V2)
+`DELETE /api/v2/managementRole/{id}`
+- **Headers:** `Authorization: Bearer <token>`
+- **Behavior:** Permanently deletes the role assignment, clears associated infrastructure permissions, and invalidates active session authorization caches.
 - **Response `200 OK`:** `{}`
 
 ### 12.4 OWPROV Management Policy APIs (Direct OWPROV)
@@ -794,7 +962,15 @@ To determine whether a policy is active (to gate root deletion and display the `
 
 #### 12.4.4 Delete Management Policy (Root Only)
 `DELETE /api/v1/managementPolicy/{id}`
-- **Response `200 OK`:** `{}`
+- **Response `200 OK`:** `{}` (when policy is unassigned).
+- **Response `400 Bad Request` (In-Use Policy Deletion Rejection & Orphan Prevention):**
+  If the policy is currently assigned to one or more Management Roles, `OWPROV` authoritatively rejects deletion:
+  ```json
+  {
+    "ErrorCode": 400,
+    "ErrorDescription": "Management policy is currently assigned to one or more management roles"
+  }
+  ```
 
 ### 12.5 Scope Metadata APIs (Direct OWPROV)
 - `GET /api/v1/entity`: Returns `{ "entities": [ { "id": "uuid", "name": "Property Name" } ] }`
@@ -884,19 +1060,53 @@ export type User = {
   lastLogin?: number;
 };
 
-// --- Scoped Access (OWPROV) ---
+// --- Scoped Access (OWPROV V1 & V2) ---
 export type ManagementRole = {
   id: string;
   name: string;
   description?: string;
   managementPolicy: string; // UUID of ManagementPolicy
-  users: string[];          // UUIDs of assigned Users
-  entity: string;           // UUID of Property (Entity)
-  venue: string;            // UUID of Venue (empty string = Property-wide)
-  venueIds?: string[];      // Used for batch multi-venue creation
+  users: string[];          // UUIDs of assigned Users (single user in operator scoped access)
+  entity: string;           // UUID of Property (Entity) - Immutable
+  venue: string;            // UUID of Venue (empty string = Property-wide) - Immutable
+  inUse?: string[];         // Entities or venues currently referencing this role
   notes?: Note[];
+  tags?: string[];
   created?: number;
   modified?: number;
+};
+
+export type ManagementRoleList = {
+  roles: ManagementRole[];
+};
+
+export type CreateManagementRole = {
+  name: string;
+  description?: string;
+  entity: string;
+  venueIds?: string[];      // Array of venue UUIDs for batch creation, or empty/omitted for property-wide
+  managementPolicy: string;
+  users: string[];          // Target operator UUID [userId]
+  notes?: Note[];
+  tags?: string[];
+};
+
+export type UpdateManagementRole = {
+  name?: string;
+  description?: string;
+  managementPolicy?: string;
+  notes?: Note[];
+  tags?: string[];
+};
+
+export type ExpandedUseEntry = {
+  tag: string;
+  symbol: string;
+  id: string;
+};
+
+export type ExpandedUseEntryMapList = {
+  entries: Record<string, ExpandedUseEntry[]>;
 };
 
 // --- Management Policies (OWPROV) ---
@@ -977,15 +1187,18 @@ export type EndpointApiResponse = {
 - **`currentPassword`:** Mandatory if manual password mode is selected. Minimum 8 characters, containing uppercase, lowercase, digit, and special character. Optional if email invitation mode is toggled.
 
 ### 14.2 Scoped Access (MRA) Form Validation
-- **Creation Mode (`POST`):**
+- **Creation Mode (`POST /api/v2/managementRole/0`):**
   - **`entity` (Property):** Required. Must be a valid UUID corresponding to an existing Property.
-  - **`venues`:** Optional. If empty, creates a Property-wide scope (`venue: ""`). If selected, must be valid child venue UUIDs of the selected Entity. Multi-venue selection passes `venueIds: string[]`.
+  - **`venues`:** Optional. If empty, creates a Property-wide scope (`venue: ""` or omitted `venueIds`). If selected, must be valid child venue UUIDs of the selected Entity. Single or multi-venue selection passes `venueIds: string[]`.
   - **`managementPolicy`:** Required. Must be a valid UUID corresponding to a policy returned by `GET /api/v1/managementPolicy`.
-  - **`users`:** Array containing at least one valid user UUID (`[userId]`).
-- **Update Mode (`PUT`):**
+  - **`users`:** Required. Array containing strictly the single target operator UUID (`[userId]`).
+  - **`name`:** Optional or auto-generated by the UI based on `[User Name] - [Property Name] ([Venue Scope])`.
+  - **Controlled Delegation Check:** The selected policy must not grant permissions exceeding the platform role capabilities of the assigning operator (enforced downstream).
+- **Update Mode (`PUT /api/v2/managementRole/{id}`):**
   - **`managementPolicy`:** Required. Must be a valid, active policy UUID.
-  - **`entity` & `venue`:** Must strictly match the existing record. The UI enforces read-only state; the backend validates equality and rejects alterations with `400 Bad Request`.
-  - **`users`:** Must strictly match the existing record.
+  - **`entity` & `venue`:** Strictly immutable. The UI locks these fields and omits them from the mutation payload. Backend rejects any alteration with `400 Bad Request`.
+  - **`users`:** Strictly immutable. Omitted from the mutation payload.
+  - **`name` / `description` / `notes`:** Optional editable metadata.
 
 ### 14.3 Management Policy Form Validation (Root-Only)
 - **`name`:** Required, 1–64 characters. Must be unique across all policies in `OWPROV`.
@@ -1006,6 +1219,8 @@ export type EndpointApiResponse = {
 - If an operator bypasses UI controls, downstream microservices independently validate the caller's JWT:
   - `OWSEC` rejects unauthorized user creation or role elevation with `403 Forbidden`.
   - `OWPROV` rejects policy creation or updates by non-root callers with `403 Forbidden`.
+  - `OWPROV` V2 handlers enforce controlled delegation rules (preventing operators from creating MRAs with policies exceeding their own authority) and reject any attempted modification of immutable scope coordinates (`entity`, `venue`, `users`) with `400 Bad Request`.
+  - `OWPROV` policy deletion endpoint authoritatively blocks deletion of in-use policies with `400 Bad Request` (`StillInUse`), preventing orphan role records.
   - `mango-mdu-service` preserves and forwards the caller's Bearer token to `OWSEC` and `OWPROV`, inheriting their respective ACL restrictions.
 
 ---
@@ -1024,7 +1239,10 @@ export type EndpointApiResponse = {
 ### 16.2 Error Mapping Matrix
 | HTTP Status | Downstream Scenario | UI Error Presentation |
 | :--- | :--- | :--- |
-| `400 Bad Request` | Missing required fields, invalid complexity, or attempted scope alteration | Inline field errors or toast error |
+| `400 Bad Request` | Missing required fields, invalid password complexity | Inline field errors or toast error |
+| `400 Bad Request` | Policy still assigned to active MRAs (`StillInUse`) | Error toast / modal: `"Cannot delete policy: Currently assigned to one or more active management roles."` |
+| `400 Bad Request` | Attempted alteration of immutable scope coordinates (`entity`, `venue`, `users`) | Error toast: `"Scope coordinates and user assignment are immutable. Revoke and create a new assignment."` |
+| `400 Bad Request` | Controlled delegation violation (privilege escalation) | Error toast: `"Access Denied: Cannot assign a policy granting permissions higher than your own platform role."` |
 | `401 Unauthorized` | Expired or invalid JWT Bearer token | Session termination toast; redirect to login |
 | `403 Forbidden` | Non-root operator attempting policy mutation | Error toast: `"Access Denied: Root privileges required."` |
 | `404 Not Found` | Target user, policy, or entity not found | Error toast: `"Resource not found."` |
@@ -1036,7 +1254,7 @@ export type EndpointApiResponse = {
 ## 17. UI States
 
 ### 17.1 Loading States
-- **Users Table:** Renders animated Chakra/Tailwind skeleton rows while `useGetUsers` is resolving.
+- **Users Table:** Renders animated skeleton rows while `useGetUsers` is resolving.
 - **Scoped Access Drawer:** Displays card skeleton loaders while fetching active MRAs, entities, and venues.
 - **Policy Overview Drawer:** Skeleton loaders are displayed across all three tabs while `useGetPolicyOverview(policyId)` resolves from `mango-mdu-service`.
 
@@ -1052,7 +1270,7 @@ export type EndpointApiResponse = {
 
 ## 18. Security Posture & Client Hardening
 
-This specification defines the frontend security boundaries and hardening requirements governing the Mango Operator UI. Backend security controls (such as microservice middleware authentication, database transaction isolation, server-side CORS headers, and database cascade triggers) are managed authoritatively within the respective backend services (`OWSEC`, `OWPROV`, `mango-mdu-service`).
+This specification defines the frontend security boundaries and hardening requirements governing the Mango Operator UI. Backend security controls (such as microservice middleware authentication, database transaction isolation, and server-side CORS headers) are managed authoritatively within the respective backend services (`OWSEC`, `OWPROV`, `mango-mdu-service`).
 
 ### 18.1 Non-Authoritative UI & Presentation Guards
 - **Presentation Layer Only:** UI controls (such as hiding Root-only Policy Edit/Delete buttons or filtering out the current operator's record) are designed strictly for user experience, operational clarity, and error prevention. They do **not** constitute an authorization boundary.
@@ -1075,8 +1293,8 @@ This specification defines the frontend security boundaries and hardening requir
 ### 18.5 Destructive Operation Friction
 - **Explicit Confirmation Modals:** Destructive or high-impact actions shall require explicit user confirmation to eliminate accidental data loss:
   - **Delete User:** Triggers a modal dialog requiring the operator to review the target identity and explicitly confirm the action (e.g., verifying the target user's email address).
-  - **Delete Policy:** Displays a modal explaining that policy deletion is irreversible, verifying that active infrastructure assignments are zero (`isPolicyInUse === false`).
-  - **Revoke Scoped Access:** Displays an explicit confirmation popover or dialog on the specific MRA card before issuing `DELETE /api/v1/managementRole/{id}` to `OWPROV`.
+  - **Delete Policy:** Displays a modal explaining that policy deletion is irreversible, verifying that active infrastructure assignments are zero (`isPolicyInUse === false`). In addition, downstream `OWPROV` independently guarantees protection by authoritatively rejecting any deletion of in-use policies with `400 Bad Request` (`StillInUse`).
+  - **Revoke Scoped Access:** Displays an explicit confirmation popover or dialog on the specific MRA card before issuing `DELETE /api/v2/managementRole/{id}` to `OWPROV`.
 
 ---
 
@@ -1093,7 +1311,7 @@ This specification defines the frontend security boundaries and hardening requir
 - **FR-USR-08:** The UI shall allow updating user display name and description via `PUT /api/v1/user/{id}` directly on `OWSEC`.
 - **FR-USR-09:** The UI shall allow suspending and reactivating user accounts via `PUT /api/v1/user/{id}` with `{ "suspended": boolean }`.
 - **FR-USR-10:** The UI shall allow direct deletion of users via `DELETE /api/v1/user/{id}` without requiring cascading MRA cleanup.
-- **FR-USR-11:** The UI shall respect `OWSEC` tenancy rules where `admin` operators only see users they created, and `root` operators see all users.
+- **FR-USR-11:** The UI shall respect `OWSEC` tenancy rules where `admin` operators only see users within their tenant hierarchy, and `root` operators see all users.
 - **FR-USR-12:** The UI user context menu shall provide administrative security actions: Reset MFA (`?resetMFA=true`), Send Password Reset Email (`?forgotPassword=true`), and Resend Verification Email (`?email_verification=true`).
 - **FR-USR-13:** The UI shall explicitly filter out the currently authenticated operator's user account from the Users management table (`user.id !== currentSession.userId`).
 - **FR-USR-14:** The UI shall support avatar display (with user initials fallback), avatar image uploading via `POST /avatar/{userId}` (`multipart/form-data`), and avatar deletion via `DELETE /avatar/{userId}`.
@@ -1105,11 +1323,12 @@ This specification defines the frontend security boundaries and hardening requir
 - **FR-SCA-03:** The UI shall dynamically resolve the policy pill badge name by matching `role.managementPolicy` against policies fetched from `useGetManagementPolicies()`.
 - **FR-SCA-04:** The UI shall support Property-wide assignments where `venue` is empty string (`""`).
 - **FR-SCA-05:** The UI shall support Venue-specific assignments where `venue` contains a valid venue UUID.
-- **FR-SCA-06:** The UI shall support batch assignment across multiple child venues by submitting `venueIds: []` to `POST /api/v1/managementRole/{uuid}` directly on `OWPROV`.
+- **FR-SCA-06:** The UI shall support single or multi-venue batch assignment by submitting `entity`, optional `venueIds: []`, `managementPolicy`, and `users: [userId]` to `POST /api/v2/managementRole/0` on `OWPROV`, and handling the normalized `{ "roles": [...] }` response envelope.
 - **FR-SCA-07:** The UI shall provide an inline expandable assignment form triggered by the `+ Assign access` dashed button.
 - **FR-SCA-08:** The UI shall render each backend MRA record 1:1 as an individual card directly in the list, without client-side grouping into synthetic cards.
-- **FR-SCA-09:** The UI shall permit editing exclusively the assigned policy on an MRA card, keeping property and venue scopes permanently locked, and persisting changes via `PUT /api/v1/managementRole/{id}`.
-- **FR-SCA-10:** The UI shall handle scoped access revocation strictly on a single-item basis via the trash bin icon on individual cards calling `DELETE /api/v1/managementRole/{id}`.
+- **FR-SCA-09:** The UI shall permit editing exclusively the assigned policy and metadata on an MRA card, keeping property, venue, and user scopes permanently locked and omitted from payload, and persisting changes via `PUT /api/v2/managementRole/{id}`.
+- **FR-SCA-10:** The UI shall handle scoped access revocation strictly on a single-item basis via the trash bin icon on individual cards calling `DELETE /api/v2/managementRole/{id}` on `OWPROV`.
+- **FR-SCA-11 (Phase 1 Scope Boundary):** Phase 1 implementation shall deliver the single "Users" management tab, containing the operator directory table and the per-user Scoped Access assignment drawer.
 
 ### 19.3 Policies (FR-POL)
 - **FR-POL-01:** The UI shall display all management policies returned by `OWPROV` `GET /api/v1/managementPolicy`.
@@ -1118,10 +1337,11 @@ This specification defines the frontend security boundaries and hardening requir
 - **FR-POL-04:** The UI shall hide or disable policy creation, modification, and deletion controls for all non-root operators (`admin`, `csr`, `noc`, `installer`).
 - **FR-POL-05:** The UI shall render an interactive Permission Matrix Visualizer displaying resource categories against standard CRUD access verbs (`CREATE`, `READ`, `MODIFY`, `DELETE`, `FULL`).
 - **FR-POL-06:** The UI shall enforce that all created or edited policies have `entity: ""` and `venue: ""` to ensure global template architecture.
-- **FR-POL-07:** The UI shall gate policy deletion based on whether the policy is currently in use (`filteredMRAs.length > 0`), disabling the delete action with a tooltip when active assignments exist.
+- **FR-POL-07:** The UI shall gate policy deletion in the UI based on whether the policy is currently in use (`filteredMRAs.length > 0`), disabling the delete action with a tooltip when active assignments exist. In addition, downstream `OWPROV` shall authoritatively reject deletion of any policy referenced by active MRAs with `400 Bad Request` (`StillInUse`), completely eliminating orphaned Management Role records.
 - **FR-POL-08:** The UI shall display a Policy Overview drawer powered by `GET /api/v1/managementPolicy/{id}/overview` on `mango-mdu-service` (provisional contract).
 - **FR-POL-09:** The Policy Overview drawer shall display headline KPI summary cards for Total Properties, Total Venues, and Total Users.
 - **FR-POL-10:** The Policy Overview "Assigned Users" tab shall display the deduplicated set intersection between MRA assignees and operator-visible users from `OWSEC`, without synthetic platform-role mapping or artificial source pills.
+- **FR-POL-11 (Deferred Standalone Tab):** The standalone Policies management tab and Policy Overview drawer are deferred to a subsequent release; in Phase 1, policies are consumed dynamically in read-only mode via `GET /api/v1/managementPolicy` to populate Scoped Access selectors.
 
 ### 19.4 Security Hardening (FR-SEC)
 - **FR-SEC-01:** The UI shall render all user-controlled text strings (notes, names, descriptions) strictly as safe text nodes without HTML interpretation (zero `dangerouslySetInnerHTML`).
@@ -1136,7 +1356,7 @@ This specification defines the frontend security boundaries and hardening requir
 
 ### 20.1 User Identity Tests
 - **TC-USR-001 (List Users):** Authenticate as `root`, navigate to `/users`, verify all users are rendered with avatar, name, email, platform role badge, and active scope count.
-- **TC-USR-002 (Admin Visibility Filter):** Authenticate as `admin-1`, verify only users created by `admin-1` are visible in the table.
+- **TC-USR-002 (Admin Visibility Filter):** Authenticate as `admin-1`, verify only users within `admin-1`'s hierarchy are visible in the table.
 - **TC-USR-003 (Self-Account Exclusion):** Log in as `admin-1`, verify `admin-1`'s own account does not appear in the `/users` table.
 - **TC-USR-004 (Create User Manual Password):** Fill create user form with name, email, select role `noc` (no default), enter manual password, check `changePassword`, submit. Verify `POST /api/v1/user/0` directly to `OWSEC` and table update.
 - **TC-USR-005 (Create User Email Invite):** Fill create user form, toggle `Send Email Invitation`, select role `csr`, submit. Verify call to `POST /api/v1/user/0?email_verification=true` on `OWSEC`.
@@ -1147,16 +1367,16 @@ This specification defines the frontend security boundaries and hardening requir
 
 ### 20.2 Scoped Access Tests
 - **TC-SCA-001 (1:1 MRA Card Rendering):** Open Scoped Access for a user with 2 distinct MRA records. Verify 2 separate cards render with building icon, property name, venue subtitle, and dynamic policy badge.
-- **TC-SCA-002 (Property-Wide Scoping):** Expand `+ Assign access`, select Entity `"Sunrise Towers"`, leave Venues empty, select Policy `"Network Operator"`, save. Verify `POST /api/v1/managementRole/{uuid}` directly to `OWPROV` with `entity` set and `venue: ""`.
-- **TC-SCA-003 (Multi-Venue Batch Scoping):** Expand `+ Assign access`, select Entity, select 3 Venues, select Policy, save. Verify `POST /api/v1/managementRole/{uuid}` directly to `OWPROV` with `venueIds: [id1, id2, id3]`.
-- **TC-SCA-004 (Policy-Only Card Edit & Scope Immutability):** Click edit icon on an assignment card. Verify Entity and Venue are locked. Select new policy from dropdown, click save. Verify `PUT /api/v1/managementRole/{id}` with updated policy UUID and unchanged scope UUIDs. Verify backend rejects changed entity/venue with `400 Bad Request`.
-- **TC-SCA-005 (Single-Item Revocation):** Click trash icon on an individual assignment card, confirm prompt. Verify `DELETE /api/v1/managementRole/{id}` directly on `OWPROV` and card removal.
+- **TC-SCA-002 (Property-Wide Scoping):** Expand `+ Assign access`, select Entity `"Sunrise Towers"`, leave Venues empty, select Policy `"Network Operator"`, save. Verify `POST /api/v2/managementRole/0` directly to `OWPROV` with `entity` set, `users: [userId]`, and omitted `venueIds`. Verify normalized `{ "roles": [ ... ] }` response and single card rendered.
+- **TC-SCA-003 (Multi-Venue Batch Scoping):** Expand `+ Assign access`, select Entity, select 3 Venues, select Policy, save. Verify `POST /api/v2/managementRole/0` directly to `OWPROV` with `venueIds: [id1, id2, id3]` and `users: [userId]`. Verify normalized response `{ "roles": [ role1, role2, role3 ] }` and 3 distinct cards rendered.
+- **TC-SCA-004 (Policy-Only Card Edit & Scope Immutability):** Click edit icon on an assignment card. Verify Entity and Venue are locked. Select new policy from dropdown, click save. Verify `PUT /api/v2/managementRole/{id}` with updated policy UUID and unchanged scope UUIDs. Verify backend rejects changed entity/venue/users with `400 Bad Request`.
+- **TC-SCA-005 (Single-Item Revocation):** Click trash icon on an individual assignment card, confirm prompt. Verify `DELETE /api/v2/managementRole/{id}` directly on `OWPROV` and card removal.
 
 ### 20.3 Policy Administration Tests
 - **TC-POL-001 (Root Policy Mutation Authority):** Log in as `root`, navigate to `/policies`. Verify "Create Policy" button is visible, and edit/delete actions are enabled on policy rows.
 - **TC-POL-002 (Root Edit Auto-Seeded Policy):** Log in as `root`, click "Edit Policy" on the auto-seeded "Administrator" policy. Adjust resource permissions in the matrix and save. Verify `PUT /api/v1/managementPolicy/{id}` on `OWPROV` succeeds and changes persist.
 - **TC-POL-003 (Non-Root Read-Only Enforcement):** Log in as `admin`, navigate to `/policies`. Verify "Create Policy" button is hidden, edit/delete actions are hidden/disabled, and policy rows can only be viewed in read-only mode.
-- **TC-POL-004 (In-Use Deletion Gate):** Log in as `root`. Attempt to delete a policy that has $\ge 1$ active MRA. Verify delete button is disabled with tooltip indicating active infrastructure assignments.
+- **TC-POL-004 (In-Use Deletion Gate & Backend Protection):** Log in as `root`. Attempt to delete a policy that has $\ge 1$ active MRA. Verify delete button is disabled in UI with tooltip indicating active infrastructure assignments. If `DELETE /api/v1/managementPolicy/{id}` is dispatched directly to `OWPROV`, verify backend responds with `400 Bad Request` (`StillInUse`).
 - **TC-POL-005 (Policy Overview via MDU Aggregator & Set Intersection):** Click "View Overview" on a policy. Verify:
   - UI calls `GET /api/v1/managementPolicy/{id}/overview` on `mango-mdu-service`.
   - Header displays headline KPI cards: Total Properties, Total Venues, Total Users.
@@ -1175,9 +1395,10 @@ This specification defines the frontend security boundaries and hardening requir
 
 ## 21. Acceptance Criteria
 
+- [ ] **Phase 1 Single-Tab Delivery:** Phase 1 implementation delivers strictly the single "Users" management tab, containing the operator directory and per-user Scoped Access drawer. Standalone Policies tab is deferred.
 - [ ] **Endpoint Discovery directly via OWSEC:** UI dynamically discovers OpenWifi service endpoints at session start via `GET /api/v1/systemEndpoints` directly against `OWSEC`, matching `owprov-ui`.
-- [ ] **Direct Native OpenWifi CRUD:** User CRUD and identity operations hit `OWSEC` directly; Management Policy and Management Role (MRA) operations hit `OWPROV` directly.
-- [ ] **Targeted MDU Aggregation:** Policy Overview drawer retrieves its consolidated data from `mango-mdu-service` via `GET /api/v1/managementPolicy/{id}/overview`.
+- [ ] **Direct Native OpenWifi CRUD:** User CRUD and identity operations hit `OWSEC` directly; Management Role (MRA) operations hit `OWPROV` directly via V1 listing and V2 CRUD (`POST /api/v2/managementRole/0`, `GET/PUT/DELETE /api/v2/managementRole/{id}`).
+- [ ] **Targeted MDU Aggregation (Provisional):** Policy Overview drawer retrieves its consolidated data from `mango-mdu-service` via `GET /api/v1/managementPolicy/{id}/overview`.
 - [ ] **Policy Overview Set Intersection Model:** Assigned users in Policy Overview are resolved strictly as the intersection between MRA assignees and operator-visible users from `OWSEC`. Synthetic role mappings and artificial source pills are completely excluded.
 - [ ] **Policy Overview KPI Metrics:** Policy Overview drawer header prominently displays headline KPI metric summary cards for Total Properties, Total Venues, and Total Users.
 - [ ] **Self-Account Exclusion:** Operators never see their own account in the administrative management table (`user.id !== currentSession.userId`).
@@ -1187,17 +1408,18 @@ This specification defines the frontend security boundaries and hardening requir
 - [ ] **User Details & Administrative Notes:** User Details drawer presents full metadata overview, avatar management, and reverse-chronological administrative notes with append functionality directly via `OWSEC`.
 - [ ] **Administrative Security Actions:** User context menu (`...`) provides Reset MFA (`?resetMFA=true`), Send Password Reset Email (`?forgotPassword=true`), and Resend Verification Email (`?email_verification=true`).
 - [ ] **1:1 Backend MRA Representation:** Scoped access assignments are rendered 1:1 from backend records in a card-based list titled `"Access Assignments"`.
-- [ ] **Policy-Only Card Editing:** Editing an MRA card allows updating exclusively the assigned Policy; Property and Venue fields remain locked.
-- [ ] **MRA Scope Immutability:** Backend `PUT /api/v1/managementRole/{id}` rejects attempts to mutate `entity`, `venue`, or `users` with `400 Bad Request`.
-- [ ] **Single Revocation Model:** Revocation is strictly single-item via the card's Trash Bin icon calling `DELETE /api/v1/managementRole/{id}` directly on `OWPROV`.
-- [ ] **Dynamic Policy Ingestion:** Policy dropdowns dynamically ingest all policies returned from `OWPROV` `GET /api/v1/managementPolicy`.
-- [ ] **Multi-Venue Batch Scoping:** Assigning multiple venues sends `venueIds: []` directly to `OWPROV` in a single batch request.
+- [ ] **Policy-Only Card Editing:** Editing an MRA card allows updating exclusively the assigned Policy; Property and Venue fields remain locked and are omitted from `PUT /api/v2/managementRole/{id}`.
+- [ ] **MRA Scope Immutability:** Backend `PUT /api/v2/managementRole/{id}` rejects attempts to mutate `entity`, `venue`, or `users` with `400 Bad Request`.
+- [ ] **Single Revocation Model:** Revocation is strictly single-item via the card's Trash Bin icon calling `DELETE /api/v2/managementRole/{id}` directly on `OWPROV`.
+- [ ] **Dynamic Policy Ingestion:** Policy dropdowns in Scoped Access dynamically ingest all policies returned from `OWPROV` `GET /api/v1/managementPolicy`.
+- [ ] **Multi-Venue Batch Scoping & Normalized V2 Envelope:** Assigning multiple venues sends `venueIds: []` directly to `OWPROV` via `POST /api/v2/managementRole/0`, consuming the normalized `{ "roles": [...] }` response envelope.
+- [ ] **Authoritative Policy Deletion Protection & Zero Orphans:** Backend `OWPROV` rejects deletion of in-use policies with `400 Bad Request` (`StillInUse`), preventing orphaned MRAs.
 - [ ] **Auto-Seeded Default Policies & Root Mutation:** Default policies auto-seeded on service up are fully mutable by `root` operators (`userRole === 'root'`) directly via `OWPROV`. No fixed or hardcoded permissions are enforced.
 - [ ] **Non-Root Read-Only Boundary:** Policy creation, modification, and deletion are strictly hidden/disabled for non-root users.
 - [ ] **Direct User Deletion:** Deleting a user calls `DELETE /api/v1/user/{id}` in `OWSEC` without cascading MRA cleanup.
 - [ ] **Strict Text Rendering & XSS Protection:** Notes, descriptions, and user names are rendered strictly as safe text nodes with zero `dangerouslySetInnerHTML`.
 - [ ] **Bearer Token Redaction:** Production logging and error alerts strictly redact the `Authorization` header.
-- [ ] **Avatar Upload Pre-Validation:** UI enforces `image/png, image/jpeg`, blocks `.svg`, and pre-validates file sizes $\le 2\text{MB}$.
+- [ ] **Avatar Upload Pre-Validation:** UI enforces `image/png, image/jpeg`, blocks `.svg`, and pre-validates file sizes $\le 2	ext{MB}$.
 - [ ] **Destructive Action Friction:** Explicit modal confirmations are required for User Deletion, Policy Deletion, and Access Revocation.
 - [ ] **Non-Authoritative UI & RBAC Resilience:** UI presentation guards gracefully catch and handle upstream `401` and `403` status codes across all features.
 
@@ -1216,7 +1438,7 @@ This specification defines the frontend security boundaries and hardening requir
 ## 23. Architectural Decisions Log
 
 ### Decision 1: Pragmatic Hybrid Architecture (Direct OpenWifi CRUD + Targeted MDU Service Aggregation)
-- **Decision:** The Mango Operator UI communicates directly with `OWSEC` and `OWPROV` for native CRUD operations and session endpoint discovery (`GET /api/v1/systemEndpoints`), mirroring `ra-wlan-cloud-owprov-ui`. Multi-service composite analytics and heavy joins (specifically Policy Overview) are delegated to `mango-mdu-service` (`GET /api/v1/managementPolicy/{id}/overview`).
+- **Decision:** The Mango Operator UI communicates directly with `OWSEC` (identity CRUD via `/api/v1`) and `OWPROV` (V1 listing via `GET /api/v1/managementRole`, V2 CRUD via `/api/v2/managementRole/0` and `/api/v2/managementRole/{id}`) for native operations and session endpoint discovery (`GET /api/v1/systemEndpoints`), mirroring `ra-wlan-cloud-owprov-ui`. Multi-service composite analytics and heavy joins (specifically Policy Overview) are delegated to `mango-mdu-service` (`GET /api/v1/managementPolicy/{id}/overview`).
 - **Rationale:** Avoids creating redundant pass-through proxy code for standard OpenWifi operations that already work seamlessly in the browser with bearer JWT authentication, while leveraging `mango-mdu-service` as a specialized BFF aggregator where server-side join performance is genuinely needed.
 
 ### Decision 2: Decoupled User Creation and Role Assignment
@@ -1240,13 +1462,13 @@ This specification defines the frontend security boundaries and hardening requir
 - **Decision:** Default baseline policies (e.g., Administrator, CSR, NOC, Installer) are automatically seeded by `OWPROV` during service startup (`service up`) as initial templates. There are no hardcoded or fixed permissions. Root operators (`userRole === 'root'`) have full authority to edit, modify, or customize any policy, including auto-seeded defaults, via `PUT /api/v1/managementPolicy/{id}` directly on `OWPROV`. Non-root users are restricted to read-only inspection and role assignment.
 - **Rationale:** Avoids artificial frontend locks, accommodates enterprise-specific permission tuning, and respects `OWPROV`'s native RBAC model where root possesses authoritative configuration privileges.
 
-### Decision 7: Multi-Venue Batch Assignment (`venueIds`)
-- **Decision:** Multi-venue assignment within a property passes `venueIds: string[]` to `POST /api/v1/managementRole/{uuid}`, delegating iteration and role generation to `OWPROV`.
-- **Rationale:** Reduces network overhead from $N$ separate HTTP calls to a single batch request, matching `owprov`'s internal batch expansion logic.
-- **Reference:** `ra-wlan-cloud-owprov-ui/src/hooks/Network/ManagementRoles.ts`.
+### Decision 7: Multi-Venue Batch Assignment (`venueIds`) & Normalized V2 Response Envelope
+- **Decision:** Multi-venue assignment within a property passes `venueIds: string[]` to `POST /api/v2/managementRole/0`, delegating iteration and role generation to `OWPROV`. The endpoint always returns a normalized `{ "roles": [...] }` (`ManagementRoleList`) envelope, eliminating previous V1 polymorphic response inconsistencies.
+- **Rationale:** Reduces network overhead from $N$ separate HTTP calls to a single batch request, matching `owprov`'s internal batch expansion logic while providing consistent response parsing on the client.
+- **Reference:** `ra-wlan-cloud-owprov/openapi/owprov-v2.yaml`, `ra-wlan-cloud-owprov-ui/src/hooks/Network/ManagementRoles.ts`.
 
 ### Decision 8: Policy Overview Aggregation via MDU Service & Set Intersection Model
-- **Decision:** Policy Overview data is retrieved via `GET /api/v1/managementPolicy/{id}/overview` on `mango-mdu-service`. The backend executes upstream queries to `OWPROV` (fetching MRAs visible/authorized for the caller and filtering by `managementPolicy == policyId`) and `OWSEC` (fetching visible users under `WasCreatedBy` ACL rules), resolves scope names, and computes the strict **Set Intersection** between MRA assignees and visible users.
+- **Decision:** Policy Overview data is retrieved via `GET /api/v1/managementPolicy/{id}/overview` on `mango-mdu-service`. The backend executes upstream queries to `OWPROV` (fetching MRAs visible/authorized for the caller and filtering by `managementPolicy == policyId`) and `OWSEC` (fetching visible users under tenant visibility rules), resolves scope names, and computes the strict **Set Intersection** between MRA assignees and visible users.
 - **Rationale:** Server-side aggregation eliminates multiple cross-origin browser queries and heavy client-side joins. The Set Intersection model guarantees that only authentic operational assignees of that policy are displayed, while naturally preserving `OWSEC` tenant boundaries. Synthetic platform-role mappings and artificial source badge tags are completely eliminated.
 
 ### Decision 9: Card-Based Access Assignments Layout & Inline Expansion Form
@@ -1263,7 +1485,7 @@ This specification defines the frontend security boundaries and hardening requir
 - **Reference:** `ra-wlan-cloud-owprov-ui/src/hooks/Network/Users.ts`.
 
 ### Decision 12: Single-Item MRA Revocation Model
-- **Decision:** Scoped access revocation is strictly handled on a single-item basis via the trash icon on individual assignment cards (`DELETE /api/v1/managementRole/{id}`). Bulk revocation is intentionally excluded for Phase 1.
+- **Decision:** Scoped access revocation is strictly handled on a single-item basis via the trash icon on individual assignment cards (`DELETE /api/v2/managementRole/{id}`). Bulk revocation is intentionally excluded for Phase 1.
 - **Rationale:** Simplifies error boundaries and prevents accidental broad de-provisioning of operational access.
 
 ### Decision 13: Self-Account Exclusion from User Management Table
@@ -1271,8 +1493,8 @@ This specification defines the frontend security boundaries and hardening requir
 - **Rationale:** Prevents operators from inadvertently disabling, deleting, or altering their own platform role, permissions, or credentials from within the directory. Personal profile configuration (password, MFA, avatar) is accessed through the top navigation bar Profile menu (`/profile`).
 
 ### Decision 14: Policy-Only Scoped Access Card Editing & Scope Coordinate Immutability
-- **Decision:** MRA in-place editing via `PUT /api/v1/managementRole/{id}` permits modifying exclusively the assigned `managementPolicy`, `name`, `description`, and `notes`. Scope coordinates (`entity`, `venue`) and operator identity (`users`) are strictly immutable. Attempting to change property or venue requires revoking (`DELETE`) the old MRA and creating (`POST`) a new one.
-- **Rationale:** Directly enforced by `OWPROV` backend (`ra-wlan-cloud-owprov/src/RESTAPI/RESTAPI_managementRole_handler.cpp#L445-L466`), returning `400 Bad Request` if coordinates are changed. Moving an operator across properties is an authorization lifecycle event (revoking access at Property A and granting access at Property B), not an in-place edit. Preserves multi-tenant isolation, audit trail integrity, and backend indexing.
+- **Decision:** MRA in-place editing via `PUT /api/v2/managementRole/{id}` permits modifying exclusively the assigned `managementPolicy`, `name`, `description`, and `notes`. Scope coordinates (`entity`, `venue`) and operator identity (`users`) are strictly immutable and omitted from update requests. Attempting to change property or venue requires revoking (`DELETE`) the old MRA and creating (`POST`) a new one.
+- **Rationale:** Directly enforced by `OWPROV` backend API, returning `400 Bad Request` if coordinates are changed. Moving an operator across properties is an authorization lifecycle event (revoking access at Property A and granting access at Property B), not an in-place edit. Preserves multi-tenant isolation, audit trail integrity, and backend indexing.
 
 ### Decision 15: 1:1 Backend MRA Card Representation
 - **Decision:** Each `managementRole` record fetched from `OWPROV` is rendered as an individual card directly in the Access Assignments list, without client-side merging or grouping into synthetic cards.
@@ -1287,6 +1509,13 @@ This specification defines the frontend security boundaries and hardening requir
 - **Rationale:** Preserves internal operational history (e.g., onboarding notes, technician certifications, property assignment reasons) directly within the OpenWifi identity store without requiring auxiliary databases.
 
 ### Decision 18: Client-Side Security Posture & Hardening Boundaries
-- **Decision:** The UI enforces strict client-side defense-in-depth: raw text rendering (zero `dangerouslySetInnerHTML`), token redaction from production logs and error toasts, pre-upload file constraints (JPEG/PNG only, $\le 2\text{MB}$, SVG rejection), explicit confirmation friction on destructive operations, and non-authoritative presentation guards that gracefully handle upstream 401/403 responses.
+- **Decision:** The UI enforces strict client-side defense-in-depth: raw text rendering (zero `dangerouslySetInnerHTML`), token redaction from production logs and error toasts, pre-upload file constraints (JPEG/PNG only, $\le 2	ext{MB}$, SVG rejection), explicit confirmation friction on destructive operations, and non-authoritative presentation guards that gracefully handle upstream 401/403 responses.
 - **Rationale:** Prevents stored XSS from user-controlled notes/descriptions, avoids token leakage in logs/toasts, prevents accidental high-impact de-provisioning, and maintains clear separation of concerns by delegating authoritative authorization to `OWSEC`, `OWPROV`, and `mango-mdu-service`.
 
+### Decision 19: Authoritative Backend Policy Deletion Protection & Elimination of Orphan Roles
+- **Decision:** `OWPROV` backend API authoritatively blocks the deletion of any Management Policy currently assigned to one or more Management Role records, immediately returning `400 Bad Request` with `StillInUse` ("Management policy is currently assigned to one or more management roles").
+- **Rationale:** Resolves GitHub PR #4 review comments. Previously, policy deletion protection was documented as protected but lacked server-side validation in `OWPROV`. With backend enforcement, Management Roles are guaranteed never to become orphaned due to policy deletion. The UI provides a presentation guard (disabling delete buttons for in-use policies), backed by authoritative microservice enforcement.
+
+### Decision 20: Phase 1 Single-Tab Delivery (Users Directory & Scoped Access Drawer)
+- **Decision:** For Phase 1 delivery of the "Users & Access" module, the UI implementation is strictly bounded to the single "Users" management tab, containing the operator directory table, user creation/edit drawers, and the per-user Scoped Access assignment drawer. The standalone "Policies" management tab and composite MDU policy overview drawer are deferred to a subsequent release.
+- **Rationale:** Prioritizes the primary day-to-day administrative workflow (onboarding technicians, managing platform roles, and assigning property/venue scopes) while downstream MDU composite aggregation services are being completed. In Phase 1, policies are actively and dynamically consumed in read-only mode via `GET /api/v1/managementPolicy` within the Scoped Access drawer.
