@@ -111,7 +111,7 @@ Above the main directory table, the Users tab displays four real-time summary ca
 
 ### 2.1 Metric Calculation Specifications
 
-All metrics are derived directly from the cached `['users']` TanStack Query state returned by `OWSEC` `GET /api/v1/users?withExtendedInfo=true`:
+All metrics are derived directly from the cached `['users']` TanStack Query state returned by `OWSEC` `GET /api/v1/users`:
 
 | KPI Card | Metric Calculation | Underlying Fields / Logic | Empty / Loading State |
 | :--- | :--- | :--- | :--- |
@@ -130,12 +130,42 @@ All metrics are derived directly from the cached `['users']` TanStack Query stat
 
 The left side of the split-view layout renders the master operator directory table.
 
-### 3.1 Self-Account Exclusion Rule
+### 3.1 Batch Ingestion Flow (`getAllUsers`) & Complete Dataset Guarantee
+Upstream `OWSEC` `GET /api/v1/users` returns paginated subsets bounded by `limit` (default batch size: 500). To ensure that the client has access to the **entire** user population (e.g. 650 or 2,000+ manageable operators) and that KPI metrics, real-time search, system role filtering, and pagination do not silently truncate results at 500:
+- The data query hook (`useGetUsers`) executes an automated batch ingestion loop matching the reference implementation in `ra-wlan-cloud-owprov-ui` (`src/hooks/Network/Users.ts`):
+  ```typescript
+  const getBatchUsers = async (offset: number, limit: number) => {
+    const response = await axiosSec.get(`users?offset=${offset}&limit=${limit}`);
+    return response.data.users as User[];
+  };
+
+  const getAllUsers = async () => {
+    let users: User[] = [];
+    let offset = 0;
+    const limit = 500;
+    let lastResponseLength = 0;
+
+    do {
+      const response = await getBatchUsers(offset, limit);
+      users = [...users, ...response];
+      offset += limit;
+      lastResponseLength = response.length;
+    } while (lastResponseLength === limit);
+
+    return users;
+  };
+  ```
+- **Architectural Guarantees:**
+  1. **Accurate KPI Calculations:** KPI summary cards (`Total Users`, `Active`, `Suspended`, `MFA Enabled`) compute over 100% of manageable users.
+  2. **Complete In-Memory Filtering:** Real-time search and role filtering evaluate against all records without premature truncation.
+  3. **Deterministic Pagination:** Client-side table pagination slices the complete cached dataset deterministically.
+
+### 3.2 Self-Account Exclusion Rule
 To prevent operators from inadvertently locking themselves out, modifying their own platform role, or suspending their own account:
 - The UI filters out the currently authenticated user's ID (`user.id !== currentSession.userId`).
 - Personal account configurations (password changes, profile updates, personal MFA setup) are handled exclusively via the global profile menu in the application header.
 
-### 3.2 Search & Filter Controls
+### 3.3 Search & Filter Controls
 
 Directly above the directory table, three interactive controls govern the table view:
 
@@ -160,7 +190,7 @@ Directly above the directory table, three interactive controls govern the table 
      - `Active` (`suspended === false`)
      - `Suspended` (`suspended === true`)
 
-### 3.3 Directory Table Columns
+### 3.4 Directory Table Columns
 
 | Column | UI Content & Mapping | Data Source & Transformation |
 | :--- | :--- | :--- |
@@ -171,7 +201,7 @@ Directly above the directory table, three interactive controls govern the table 
 | **Last Login** | Relative timestamp (e.g., `"12 min ago"`, `"1h ago"`, `"18 Aug 2026"`). | Formatted from Unix epoch `user.lastLogin`. If `user.lastLogin === 0`, render `"Never"`. |
 | **Row Selection** | Chevron icon (`>`) highlighting the currently active user loaded into the right details panel. | Highlights when `selectedUserId === user.id`. Clicking anywhere on the row selects the user. |
 
-### 3.4 Pagination Contract
+### 3.5 Pagination Contract
 - Default page size: **5 rows** (configurable to 10 or 25).
 - Pagination controls: Previous (`<`), page numbers (`1`, `2`, `3`), Next (`>`), and count indicator (`Showing 1-5 of 18`).
 - Pagination state is reset to page 1 whenever the search query, role filter, or status filter changes.
@@ -416,10 +446,13 @@ Clicking the top-level `+ Create user` button opens the focused user creation mo
 
 #### 8.1.1 List Users
 ```http
-GET /api/v1/users?offset=0&limit=500&withExtendedInfo=true HTTP/1.1
+GET /api/v1/users?offset=0&limit=500 HTTP/1.1
 Host: <owsec-host>:9002
 Authorization: Bearer <jwt-token>
 ```
+> [!NOTE]
+> `OWSEC` `GET /api/v1/users` authoritatively parses `offset`, `limit`, `idOnly`, `nameSearch`, and `emailSearch`. While legacy frontend implementations (such as `owprov-ui`) pass `withExtendedInfo=true` (borrowed from `OWPROV`), `OWSEC` does not evaluate this parameter because `UserInfo` records always include full metadata by default. When retrieving directories larger than 500 users, the frontend invokes this endpoint in a sequential batch loop (`offset += limit` while `batch.length === limit`, as detailed in §3.1) to aggregate the complete user directory before caching.
+
 **Response (`200 OK`):**
 ```json
 {
@@ -531,6 +564,11 @@ Authorization: Bearer <jwt-token>
 ```
 
 #### 8.2.2 Create Scoped Access (V2 Batch & Single Scope)
+> [!NOTE]
+> **V2 vs. Legacy V1 Contract Disambiguation:**
+> - **V1 Endpoint (`POST /api/v1/managementRole/{id}`):** Handled by `RESTAPI_managementRole_handler.cpp`. Accepts a single `venue` string, creates a single role, and returns an unwrapped single role object `{ ... }`.
+> - **V2 Endpoint (`POST /api/v2/managementRole/{id}`):** Handled by `RESTAPI_managementRole_v2_handler.cpp` (OpenAPI: `owprov-v2.yaml`, git commit `0136c9e`). Specifically introduced to support batch multi-venue role creation via `venueIds: []` (or entity-wide when omitted/empty), performs atomic batch rollback on failure, and always returns the normalized `{ "roles": [...] }` envelope. The frontend reference implementation (`ra-wlan-cloud-owprov-ui` in `src/hooks/Network/ManagementRoles.ts`) authoritatively communicates with `axiosProvV2.post('managementRole/0')`.
+
 ```http
 POST /api/v2/managementRole/0 HTTP/1.1
 Host: <owprov-host>:9005
@@ -889,9 +927,31 @@ The left side of the split-view layout renders the master Policies Catalog table
 | **`Entity`** | `Property` / `Entity` | `policy.entity` | Resolved entity name via `useGetEntities()`. Displays `"Entity-wide"` or `"—"` if empty (global template). |
 | **`Venue`** | `Venue` | `policy.venue` | Resolved venue name via `useGetVenues()`. Displays `"Entity-wide"` if empty. |
 | **`Description`** | `Description` | `policy.description` | Truncated single-line summary with tooltip for full text. |
-| **`Used By`** | `Used By` | `policy.inUse?.length` or matching MRAs count | Formatted string: e.g. `"6 users"` or `"Unassigned"`. |
+| **`Used By`** | `Used By` | Distinct users computed from active MRAs (see §14.2.1) | Formatted string: `"X users"` (e.g. `"4 users"`, or `"Unassigned"` if 0). Tooltip on hover displays total assignment scope: `"X users across Y scoped assignments"`. |
 | **`Modified`** | `Modified` | `policy.modified` | Formatted relative or calendar date (e.g. `"1 Sep 2026"`). If `0`, render `"Never"`. |
 | **Selection** | Chevron (`>`) | `selectedPolicyId === policy.id` | Highlights active row loaded into right detail panel. |
+
+#### 14.2.1 Distinct Users vs. Scoped Assignments Calculation
+Because an individual user can hold scoped access across multiple properties or venues under the same policy, displaying raw assignment counts as "users" produces inaccurate figures (e.g., 1 operator with 3 venue assignments would erroneously report as "3 users"). The catalog table strictly computes distinct user IDs:
+
+```typescript
+// 1. Filter MRAs assigned to the target policy
+const matchingMRAs = mras.filter(r => r.managementPolicy === policy.id);
+
+// 2. Compute distinct user count
+const distinctUsersCount = new Set(
+  matchingMRAs.flatMap(r => r.users)
+).size;
+
+// 3. Compute total scoped assignments count
+const totalScopedAssignments = matchingMRAs.length;
+
+// 4. Render display string & secondary tooltip
+const displayLabel = distinctUsersCount > 0 ? `${distinctUsersCount} users` : "Unassigned";
+const tooltipText = distinctUsersCount > 0
+  ? `${distinctUsersCount} users across ${totalScopedAssignments} scoped assignments`
+  : "Not currently assigned to any users";
+```
 
 ### 14.3 Pagination & Row Actions
 - Controlled pagination matching `DataTable` (default 5 or 10 rows per page, page numbers `< 1 2 >`, item count indicator).
