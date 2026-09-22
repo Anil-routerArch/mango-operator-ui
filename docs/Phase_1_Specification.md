@@ -128,14 +128,20 @@ To guarantee complete counting consistency between the headline KPI metrics and 
 const manageableUsers = users.filter(u => u.id !== currentSession.userId);
 ```
 
-All KPI metrics are strictly computed from `manageableUsers` (i.e. `total manageable users = allUsers.length - 1`):
+All KPI metrics are strictly computed from `manageableUsers`:
 
 | KPI Card | Metric Calculation | Underlying Fields / Logic | Empty / Loading State |
 | :--- | :--- | :--- | :--- |
-| **Total Users** | `manageableUsers.length` | Total manageable operators excluding current operator (`allUsers.length - 1`). | Skeleton shimmer / `0` |
+| **Total Users** | `manageableUsers.length` | Total manageable operators excluding current operator (`manageableUsers.length`). | Skeleton shimmer / `0` |
 | **Active** | `manageableUsers.filter(u => !u.suspended).length` | Count of manageable operators with operational access enabled (`u.suspended === false`). | Skeleton shimmer / `0` |
 | **Suspended** | `manageableUsers.filter(u => u.suspended === true).length` | Count of locked or deactivated manageable operators (`u.suspended === true`). | Skeleton shimmer / `0` |
 | **MFA Enabled** | `manageableUsers.filter(u => u.userTypeProprietaryInfo?.mfa?.enabled).length + " of " + manageableUsers.length` | Proportion of manageable operators with active multi-factor authentication. | Skeleton shimmer / `0 of 0` |
+
+> [!NOTE]
+> **Caller Filtering Behavior Across Roles:**
+> - **For `root` callers:** `OWSEC` returns all platform accounts across the system, including the `root` caller's own record. Applying `filter(u => u.id !== currentSession.userId)` removes the `root` account, resulting in `manageableUsers.length === allUsers.length - 1`.
+> - **For `admin` callers:** `OWSEC` authoritatively restricts `GET /api/v1/users` to records where `createdBy === currentAdminId`. Because an admin cannot create themselves (an admin is created by `root`), the caller's own account is not present in the returned array. Applying `filter(u => u.id !== currentSession.userId)` safely retains all returned users (`manageableUsers.length === allUsers.length`).
+> - The UI and test assertions must always evaluate the population via `users.filter(u => u.id !== currentSession.userId).length` rather than assuming a static `allUsers.length - 1` subtraction.
 
 ### 2.2 Behavior & Refresh
 - When the operator clicks the top-level **Refresh button** (`↻`), the client triggers `queryClient.invalidateQueries(['users'])` and `queryClient.invalidateQueries(['managementRoles'])`.
@@ -180,7 +186,7 @@ Upstream `OWSEC` `GET /api/v1/users` returns paginated subsets bounded by `limit
 ### 3.2 Self-Account Exclusion Rule & Population Parity
 To prevent operators from inadvertently locking themselves out, modifying their own platform role, or suspending their own account:
 - The UI filters out the currently authenticated user's ID (`user.id !== currentSession.userId`).
-- **Complete Population Parity:** This exact same filter is applied to the KPI summary cards (§2.1). If `OWSEC` returns 18 total accessible users, both the KPI card ("Total Users") and the Directory Table count indicator evaluate against the 17 manageable users (`total - 1`), preventing counting discrepancies across the view.
+- **Complete Population Parity:** This exact same filter is applied to the KPI summary cards (§2.1). Both the KPI card ("Total Users") and the Directory Table count indicator evaluate against `manageableUsers = allUsers.filter(u => u.id !== currentSession.userId)`, guaranteeing exact parity between table rows and headline metrics across both `root` (where the caller's record is filtered out) and `admin` sessions (where the caller is already omitted by backend filtering).
 - Personal account configurations (password changes, profile updates, personal MFA setup) are handled exclusively via the global profile menu in the application header.
 
 ### 3.3 Search & Filter Controls
@@ -878,7 +884,7 @@ export const CreateScopedAccessValidationSchema = Yup.object().shape({
 ## 11. Acceptance Criteria & QA Test Scenarios
 
 ### 11.1 KPI Metrics & Directory Table Tests
-- **TC-USR-001 (KPI Metrics Accuracy & Population Parity):** Verify `Total Users`, `Active`, `Suspended`, and `MFA Enabled` accurately compute from the manageable population (`allUsers.length - 1`), excluding the authenticated operator and exactly matching the Directory Table total count.
+- **TC-USR-001 (KPI Metrics Accuracy & Population Parity):** Verify `Total Users`, `Active`, `Suspended`, and `MFA Enabled` accurately compute from `manageableUsers = allUsers.filter(u => u.id !== currentSession.userId)`. Verify that for a `root` session (which includes the caller's record), the manageable count is `allUsers.length - 1`, while for an `admin` session (where the caller is not in `createdBy == currentAdminId`), the manageable count equals `allUsers.length`. In all cases, the headline Total Users metric must exactly match the Directory Table row count.
 - **TC-USR-002 (Self-Account Exclusion):** Verify the currently authenticated user is excluded from both the Directory Table and the headline KPI summary calculations.
 - **TC-USR-003 (Admin Visibility Enforcement):** Authenticate as an `admin`. Verify `OWSEC` returns strictly users where `createdBy == currentAdminId`.
 - **TC-USR-004 (Table Search Filtering):** Enter query in search bar. Verify real-time 300ms debounced filtering across name, email, and description.
