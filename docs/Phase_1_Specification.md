@@ -296,7 +296,7 @@ static inline bool CanChangeUserRole(const SecurityObjects::UserInfo &User,
     - **Cannot modify a `root` user** (`IsNonRootTarget(Target)`).
     - **Cannot modify their own role** (`!IsSelf(User, Target)`).
     - **Cannot modify users created by other operators** (`WasCreatedBy(User, Target)` is required; foreign users are neither visible in `GET /api/v1/users` nor editable).
-- **MRA Privilege Constraints:** A user's role cannot be modified if the user currently holds active Management Role Assignments (MRAs) that conflict with the target role privileges.
+- **Separation of System Role and Scoped Access:** A user's platform `userRole` (`OWSEC`) and their Scoped Access MRAs (`OWPROV`) are completely independent. Modifying an operator's `userRole` does not inspect, conflict with, or revoke their active MRAs. Managing physical property/venue access is performed independently in the **Scoped Access** sub-tab.
 
 ### 5.3 Action Buttons
 - **`Cancel`:** Discards unsaved modifications and resets form to pristine initial values.
