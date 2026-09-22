@@ -89,12 +89,22 @@ A fundamental architectural principle of OpenWifi is the strict decoupling of **
    - A user can have zero, one, or multiple MRAs across different properties and venues.
    - Management roles have arbitrary, descriptive names and live entirely in `OWPROV`.
 
-### 1.2 OWSEC Admin Visibility Rule
+### 1.2 Token-Driven Backend Authorization & UI Tab Decoupling
 
-When fetching the user directory (`GET /api/v1/users`), `OWSEC` enforces the following authoritative filtering logic:
-- **`root` operator:** `OWSEC` returns **all** platform users across the entire system.
-- **`admin` operator:** `OWSEC` authoritatively restricts results to users created by that specific admin (`createdBy == currentAdminId`).
-- **Frontend Contract:** The UI client attaches the standard Bearer token and does not compute or filter tenancy hierarchies client-side. The UI consumes the returned array directly.
+A core architectural principle of the Operator UI is that **UI modules and navigation tabs are not bound or locked by client-side `userRole` checks**:
+- **Unrestricted Tab Navigation:** Any authenticated operator can navigate to any tab (e.g. **Users**, **Policies**) and trigger data queries. The frontend does not hardcode client-side route guards or hide primary navigation tabs based on the session's `userRole`.
+- **Backend-Authoritative Access Control:** `OWSEC` and `OWPROV` authoritatively inspect the caller's JWT Bearer token and determine access on every request:
+  - **`GET /api/v1/users` (`OWSEC`):**
+    - **`root`:** Returns **all** platform users across the entire system.
+    - **`admin`:** Returns users created by that specific admin (`createdBy == currentAdminId`).
+    - **Non-admin roles (`noc`, `installer`, `csr`, etc.):** `OWSEC` authoritatively rejects the request with `401 Unauthorized` (`ACCESS_DENIED`) as source-verified in `RESTAPI_users_handler.cpp`.
+  - **`GET /api/v1/managementPolicy` (`OWPROV`):**
+    - Policy definitions are inspectable by authenticated operators.
+- **UI Presentation Philosophy (Data-Driven Display):**
+  - The UI does not need to worry about client-side pre-evaluating role permissions before dispatching queries:
+    - **If the API returns data:** The UI displays the data, metric cards, and relevant controls.
+    - **If the API returns `401`/`403` (Access Denied) or empty results:** The UI gracefully renders an unauthorized empty state (e.g. *"You do not have administrative permissions to view the user directory."*) without blocking navigation or crashing the route.
+- **Frontend Contract:** The UI client attaches the standard Bearer token and does not compute or filter tenancy hierarchies client-side. The UI simply consumes the returned payload.
 
 ---
 
@@ -881,6 +891,7 @@ export const CreateScopedAccessValidationSchema = Yup.object().shape({
 - **TC-USR-009 (Administrative Actions):** Trigger Reset MFA, Send Password Reset, and Suspend User from context menu. Verify correct API parameters on `PUT /api/v1/user/{id}`.
 - **TC-USR-010 (Profile Editing & Email Immutability):** Verify `Email` input field is disabled and read-only across all roles (including `root`). Update name and description in Profile sub-tab, click Save. Verify `PUT /api/v1/user/{id}` dispatches only editable fields (`name`, `description`, `userRole`, `notes`, etc.) without `email`, executes successfully, and updates cached data.
 - **TC-USR-011 (Admin Role Editing Authorization):** Authenticate as an `admin`. Open an operator created by this admin who holds the `admin` role. Verify the `System Role` dropdown is enabled, lists non-root roles (`admin`, `noc`, `installer`, `csr`), and omits `root`. Change the role to `noc` and click Save; verify `PUT /api/v1/user/{id}` succeeds with `200 OK`. Attempting to submit `userRole: "root"` returns `401 Unauthorized` (`ACCESS_DENIED`). Verify that an admin cannot edit their own role.
+- **TC-USR-012 (Token-Driven Authorization & Non-Admin Graceful Handling):** Authenticate with a non-admin role (e.g. `noc`, `installer`, `csr`). Navigate to the Users tab. Verify the UI does not pre-block or crash the route. When `GET /api/v1/users` returns `401 Unauthorized` (`ACCESS_DENIED`), verify the UI renders a graceful unauthorized state indicating the caller is not authorized to retrieve the user directory.
 
 ### 11.3 Scoped Access (MRA) Tests
 - **TC-SCA-001 (Fetch Scoped Access):** Select user with active assignments. Verify `GET /api/v1/managementRole?userId={id}` displays individual 1:1 cards.
@@ -934,7 +945,7 @@ A critical architectural principle of the OpenWifi policy system is that **all p
 1. **Root-Only CRUD Authority:**
    - Any policy can be created, updated, or deleted **exclusively by operators holding the `root` platform role** (`userRole === 'root'`).
    - The `OWPROV` microservice authoritatively validates the caller's session token and enforces root restriction on mutating endpoints (`POST`, `PUT`, `DELETE`). The UI simply enforces presentation guards (hiding or disabling mutation controls for non-root users).
-   - Operators with non-root roles (`admin`, `noc`, `installer`, `csr`) have view-only access to inspect policy permissions and assign them to users.
+   - Operators with non-root roles (`admin`, `noc`, `installer`, `csr`) have view-only access to inspect policy definitions and permissions. Scoped user assignments in the Scoped Access interface are governed authoritatively by the backend based on the caller's authority over the target user. As detailed in §1.2, UI tabs and modules are not bound or restricted by user role; downstream services authoritatively inspect the session token and return data if authorized, or `401`/`403` if denied.
 2. **Authoritative Deletion Protection (`StillInUse`):**
    - A policy can only be deleted if its active assignments count is `0`.
    - If a policy is currently assigned to one or more active Management Role Assignments (`inUse.length > 0`), `OWPROV` authoritatively rejects deletion with:
