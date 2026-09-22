@@ -105,20 +105,27 @@ Above the main directory table, the Users tab displays four real-time summary ca
 ```
 +-------------------+   +-------------------+   +-------------------+   +-------------------+
 |    Total Users    |   |      Active       |   |     Suspended     |   |    MFA Enabled    |
-|        18         |   |        16         |   |         2         |   |      15 of 18     |
+|        17         |   |        15         |   |         2         |   |      14 of 17     |
 +-------------------+   +-------------------+   +-------------------+   +-------------------+
 ```
 
-### 2.1 Metric Calculation Specifications
+### 2.1 Metric Calculation Specifications & Self-Account Exclusion Rule
 
-All metrics are derived directly from the cached `['users']` TanStack Query state returned by `OWSEC` `GET /api/v1/users`:
+To guarantee complete counting consistency between the headline KPI metrics and the directory table (Section 3), **the currently authenticated operator is excluded from the manageable user population**:
+
+```typescript
+// Define the manageable user population excluding the authenticated caller
+const manageableUsers = users.filter(u => u.id !== currentSession.userId);
+```
+
+All KPI metrics are strictly computed from `manageableUsers` (i.e. `total manageable users = allUsers.length - 1`):
 
 | KPI Card | Metric Calculation | Underlying Fields / Logic | Empty / Loading State |
 | :--- | :--- | :--- | :--- |
-| **Total Users** | `users.length` | Total manageable users returned by `OWSEC` for the active operator session. | Skeleton shimmer / `0` |
-| **Active** | `users.filter(u => !u.suspended).length` | Count of operators with operational access enabled (`user.suspended === false`). | Skeleton shimmer / `0` |
-| **Suspended** | `users.filter(u => u.suspended === true).length` | Count of locked or deactivated operators (`user.suspended === true`). | Skeleton shimmer / `0` |
-| **MFA Enabled** | `mfaCount + " of " + users.length` | Count where `user.userTypeProprietaryInfo?.mfa?.enabled === true` compared against total users. | Skeleton shimmer / `0 of 0` |
+| **Total Users** | `manageableUsers.length` | Total manageable operators excluding current operator (`allUsers.length - 1`). | Skeleton shimmer / `0` |
+| **Active** | `manageableUsers.filter(u => !u.suspended).length` | Count of manageable operators with operational access enabled (`u.suspended === false`). | Skeleton shimmer / `0` |
+| **Suspended** | `manageableUsers.filter(u => u.suspended === true).length` | Count of locked or deactivated manageable operators (`u.suspended === true`). | Skeleton shimmer / `0` |
+| **MFA Enabled** | `manageableUsers.filter(u => u.userTypeProprietaryInfo?.mfa?.enabled).length + " of " + manageableUsers.length` | Proportion of manageable operators with active multi-factor authentication. | Skeleton shimmer / `0 of 0` |
 
 ### 2.2 Behavior & Refresh
 - When the operator clicks the top-level **Refresh button** (`↻`), the client triggers `queryClient.invalidateQueries(['users'])` and `queryClient.invalidateQueries(['managementRoles'])`.
@@ -156,13 +163,14 @@ Upstream `OWSEC` `GET /api/v1/users` returns paginated subsets bounded by `limit
   };
   ```
 - **Architectural Guarantees:**
-  1. **Accurate KPI Calculations:** KPI summary cards (`Total Users`, `Active`, `Suspended`, `MFA Enabled`) compute over 100% of manageable users.
+  1. **Accurate KPI Calculations:** KPI summary cards (`Total Users`, `Active`, `Suspended`, `MFA Enabled`) compute over 100% of manageable users (`allUsers.filter(u => u.id !== currentSession.userId)`).
   2. **Complete In-Memory Filtering:** Real-time search and role filtering evaluate against all records without premature truncation.
   3. **Deterministic Pagination:** Client-side table pagination slices the complete cached dataset deterministically.
 
-### 3.2 Self-Account Exclusion Rule
+### 3.2 Self-Account Exclusion Rule & Population Parity
 To prevent operators from inadvertently locking themselves out, modifying their own platform role, or suspending their own account:
 - The UI filters out the currently authenticated user's ID (`user.id !== currentSession.userId`).
+- **Complete Population Parity:** This exact same filter is applied to the KPI summary cards (§2.1). If `OWSEC` returns 18 total accessible users, both the KPI card ("Total Users") and the Directory Table count indicator evaluate against the 17 manageable users (`total - 1`), preventing counting discrepancies across the view.
 - Personal account configurations (password changes, profile updates, personal MFA setup) are handled exclusively via the global profile menu in the application header.
 
 ### 3.3 Search & Filter Controls
@@ -203,7 +211,7 @@ Directly above the directory table, three interactive controls govern the table 
 
 ### 3.5 Pagination Contract
 - Default page size: **5 rows** (configurable to 10 or 25).
-- Pagination controls: Previous (`<`), page numbers (`1`, `2`, `3`), Next (`>`), and count indicator (`Showing 1-5 of 18`).
+- Pagination controls: Previous (`<`), page numbers (`1`, `2`, `3`), Next (`>`), and count indicator (`Showing 1-5 of 17`).
 - Pagination state is reset to page 1 whenever the search query, role filter, or status filter changes.
 
 ---
@@ -823,8 +831,8 @@ export const CreateScopedAccessValidationSchema = Yup.object().shape({
 ## 11. Acceptance Criteria & QA Test Scenarios
 
 ### 11.1 KPI Metrics & Directory Table Tests
-- **TC-USR-001 (KPI Metrics Accuracy):** Verify `Total Users`, `Active`, `Suspended`, and `MFA Enabled` accurately reflect the `OWSEC` user list.
-- **TC-USR-002 (Self-Account Exclusion):** Verify the currently logged-in user is not displayed in the directory table.
+- **TC-USR-001 (KPI Metrics Accuracy & Population Parity):** Verify `Total Users`, `Active`, `Suspended`, and `MFA Enabled` accurately compute from the manageable population (`allUsers.length - 1`), excluding the authenticated operator and exactly matching the Directory Table total count.
+- **TC-USR-002 (Self-Account Exclusion):** Verify the currently authenticated user is excluded from both the Directory Table and the headline KPI summary calculations.
 - **TC-USR-003 (Admin Visibility Enforcement):** Authenticate as an `admin`. Verify `OWSEC` returns strictly users where `createdBy == currentAdminId`.
 - **TC-USR-004 (Table Search Filtering):** Enter query in search bar. Verify real-time 300ms debounced filtering across name, email, and description.
 - **TC-USR-005 (Role & Status Filtering):** Filter by `noc` role and `Active` status. Verify table renders only active NOC operators.
@@ -996,7 +1004,7 @@ Selecting a policy row loads the policy details split panel on the right. If no 
 ### 15.1 Header & Administrative Context Menu (`...`)
 - **Panel Header:** Policy Icon, Policy Name, Description subtitle, and Context Menu button (`...`).
 - **Context Actions Menu (`...`):**
-  - **`Edit Policy`:** Activates edit mode on the Permissions sub-tab (visible only to `root`).
+  - **`Edit Policy`:** Activates policy edit mode on the Permissions sub-tab (visible only to `root`). Switches the sub-tab to edit mode, exposing editable fields for **Policy Name**, **Description**, **Policy Preset**, and the **Resource Permissions Matrix**, with `[ Cancel ]` and `[ Save policy ]` controls.
   - **`Delete Policy`:** Initiates policy deletion (visible only to `root`).
     - **In-Use Guard:** If the policy is bound to $\ge 1$ active assignments (`inUse.length > 0`), the delete button is disabled with tooltip:
       > *"Cannot delete policy: Currently assigned to one or more active management roles."*
@@ -1068,6 +1076,13 @@ The **Permissions** sub-tab provides visual inspection and root-only editing of 
 
 ```
 +-------------------------------------------------------------------+
+|  POLICY METADATA                                                  |
+|  Policy Name *                                                    |
+|  [ Network Operator                                           ]   |
+|  Description                                                      |
+|  [ Monitor devices and manage network configuration.          ]   |
+|  ---------------------------------------------------------------  |
+|  PERMISSIONS CONFIGURATION                                        |
 |  Policy preset                                                    |
 |  [ Custom                                                   v ]   |
 |                                                                   |
@@ -1092,7 +1107,19 @@ The **Permissions** sub-tab provides visual inspection and root-only editing of 
 +-------------------------------------------------------------------+
 ```
 
-### 17.1 Canonical 8 System Resources & Operational Verbs
+### 17.1 Policy Metadata Editing Fields (Root Only)
+When edit mode is triggered by a `root` operator (via the `...` context menu `Edit Policy` or directly within the Permissions tab), the top section renders editable input controls for policy metadata:
+1. **`Policy Name *` (Required):**
+   - Text input, initialized with `policy.name`.
+   - Minimum 1 character, maximum 128 characters.
+   - Validation: Required field; cannot be empty or whitespace only.
+2. **`Description` (Optional):**
+   - Multi-line textarea, initialized with `policy.description || ''`.
+   - Maximum 256 characters.
+
+In standard **View Mode** (for non-root operators or prior to entering edit mode), Policy Name and Description are rendered statically in the split panel header and Overview tab, while the Permissions tab displays the read-only permissions matrix without form input controls or action buttons.
+
+### 17.2 Canonical 8 System Resources & Operational Verbs
 The matrix maps strictly across the canonical 8 OpenWifi resources defined in `owprov-ui` (`CreatePolicyModal.tsx`):
 1. **`Entity` (`entity`):** Customer properties and organizational roots.
 2. **`Venue` (`venue`):** Physical subdivisions and venues.
@@ -1103,7 +1130,7 @@ The matrix maps strictly across the canonical 8 OpenWifi resources defined in `o
 7. **`Contact` (`contact`):** Administrative and technical contacts.
 8. **`Location` (`location`):** Physical addresses and geo-coordinates.
 
-### 17.2 Bidirectional Mapping & Serialization Rules
+### 17.3 Bidirectional Mapping & Serialization Rules
 
 | UI Column | Backend Access Verb | Serialization Rule | Deserialization Rule |
 | :--- | :--- | :--- | :--- |
@@ -1114,20 +1141,33 @@ The matrix maps strictly across the canonical 8 OpenWifi resources defined in `o
 | **All 4 Checked** | `FULL` | Compacted to `['FULL']`. | All 4 checkboxes rendered checked. |
 | **None Checked** | `NOACCESS` | Entry omitted from `entries` array. | All 4 checkboxes rendered unchecked. |
 
-### 17.3 Preset Base Dropdown
+### 17.4 Preset Base Dropdown
 The dropdown offers standard starting configurations:
 - **`Full Access`:** Sets all 8 resources to `['FULL']`.
 - **`Read Only`:** Sets all 8 resources to `['READ']`.
 - **`Custom`:** Permits arbitrary checkbox combinations.
 
-### 17.4 Policy Impact Banner & Root Mutation Flow
+### 17.5 Policy Impact Banner & Root Mutation Flow
 - **Impact Callout:** Displays real-time assignment impact:
   > *"Policy impact: [X] users across [Y] scoped assignments will be affected by permission changes."*
-- **Authorization Guard:** For non-root users, checkboxes are disabled (`readOnly: true`) and footer buttons are hidden.
-- **Root Mutation:**
-  - `root` operators can toggle checkboxes freely.
-  - Clicking **`Save policy`** groups entries by access permissions and dispatches `PUT /api/v1/managementPolicy/{id}` to `OWPROV`.
-  - On success: invalidates `['managementPolicies']` and `['managementPolicy', id]`, shows success toast, and updates UI.
+- **Authorization Guard:** For non-root users, metadata fields are non-editable, matrix checkboxes are disabled (`readOnly: true`), and footer action buttons are hidden.
+- **Root Mutation Flow:**
+  - `root` operators can edit `name`, `description`, select presets, and toggle individual resource checkboxes.
+  - Clicking **`Cancel`** reverts all form fields (`name`, `description`, `entries`) back to their cached `policy` values and exits edit mode.
+  - Clicking **`Save policy`** validates fields, groups matrix entries by access permissions, and dispatches `PUT /api/v1/managementPolicy/{id}` to `OWPROV` with:
+    ```json
+    {
+      "name": "Network Operator",
+      "description": "Updated device and network monitoring permissions",
+      "entries": [
+        {
+          "resources": ["configuration", "inventory"],
+          "access": ["READ", "CREATE", "MODIFY"]
+        }
+      ]
+    }
+    ```
+  - On success: invalidates `['managementPolicies']`, `['managementPolicy', id]`, and `['policyOverview', id]`, displays a success toast (`"Policy [Name] updated successfully"`), updates the panel header with the new name and description, and exits edit mode.
 
 ---
 
@@ -1380,6 +1420,12 @@ export interface CreateManagementPolicyPayload {
   entries: PolicyEntry[];
 }
 
+export interface UpdateManagementPolicyPayload {
+  name?: string;
+  description?: string;
+  entries?: PolicyEntry[];
+}
+
 // ==========================================
 // Aggregation Backend (Overview) Types
 // ==========================================
@@ -1438,5 +1484,6 @@ export interface PolicyOverviewSummary {
 - **TC-POL-008 (Root Mutation Enforcement):** Log in as non-root operator. Verify `+ Create policy` button is hidden and matrix edit controls are disabled.
 - **TC-POL-009 (In-Use Policy Deletion Guard):** Attempt to delete a policy with active assignments. Verify delete button is disabled with tooltip, and backend rejects with `400 Bad Request` (`StillInUse`).
 - **TC-POL-010 (Create Policy Success):** Log in as `root`. Open `+ Create policy`, fill name and permissions, submit. Verify `POST /api/v1/managementPolicy/0` executes and adds policy to catalog.
+- **TC-POL-011 (Edit Policy Metadata & Permissions):** Log in as `root`. From the `...` context menu, select `Edit Policy`. Modify Policy Name and Description, toggle permissions in the matrix, and click `Save policy`. Verify `PUT /api/v1/managementPolicy/{id}` dispatches updated `name`, `description`, and `entries`, updates split panel header text and catalog table rows, and returns to view mode.
 
 
