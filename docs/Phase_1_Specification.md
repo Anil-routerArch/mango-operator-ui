@@ -253,12 +253,15 @@ The **Profile** sub-tab provides direct inline modification of the selected oper
 
 | Field | Input Control | Mutability & RBAC | Validation Rules & Behavior |
 | :--- | :--- | :--- | :--- |
-| **`Email *`** | Text Input | Read-only for standard admins; editable only by `root`. | Valid RFC 5322 email syntax. Must be unique across `OWSEC`. |
+| **`Email`** | Text Input (Disabled) | **Permanently Immutable** (Read-only for all users, including `root`). | Primary identity key in `OWSEC`. Cannot be modified once created; field is permanently disabled across all roles and excluded from update payloads. |
 | **`Name *`** | Text Input | Editable | Required. Minimum 1 character, maximum 128 characters. |
 | **`System Role *`** | Dropdown Selector | Editable based on RBAC rules. | Options: `admin`, `noc`, `installer`, `csr` (plus `root` if current user is `root`). Cannot downgrade own role. |
 | **`Password`** | Masked text input with `Show`/`Hide` toggle | Editable | Optional on update. Helper: *"Leave unchanged to keep current password. Minimum 8 characters with uppercase, lowercase, number, and symbol."* |
 | **`Description`** | Multi-line Textarea | Editable | Optional operational responsibility summary. |
 | **`Notes`** | Audit Notes List + Add Note input | Editable / Append-only | Displays timestamped internal notes. Entering text appends `{ "note": text, "created": Math.floor(Date.now()/1000) }`. |
+
+> [!NOTE]
+> **Email Immutability:** In `OWSEC`, a user's email address serves as the permanent primary identity key and cannot be updated after account creation (in `RESTAPI_user_handler.cpp`, `ApplyProfileFields` only mutates `name`, `description`, `location`, `locale`, and `changePassword`). Consequently, the email input field is permanently disabled for all user roles, including `root`, and is excluded from `UpdateUserPayload`.
 
 ### 5.2 Role Modification Authorization Rules
 - `root` operators can edit the system role of any user.
@@ -553,6 +556,9 @@ Content-Type: application/json
 ```
 **Response (`200 OK`):** Updated `User` record.
 
+> [!NOTE]
+> **Email Immutability:** `OWSEC` does not support updating user email addresses. `email` acts as the permanent primary identity key and cannot be altered after creation. Neither standard administrators nor `root` users can modify a user's email address. The `email` field is excluded from `UpdateUserPayload`.
+
 #### 8.1.5 Administrative Security & Lifecycle Actions
 - **Suspend User:** `PUT /api/v1/user/{id}` with `{ "suspended": true }`
 - **Reactivate User:** `PUT /api/v1/user/{id}` with `{ "suspended": false }`
@@ -712,6 +718,7 @@ export interface UpdateUserPayload {
   userRole?: UserRole;
   currentPassword?: string;
   notes?: { note: string }[];
+  // Note: 'email' is permanently immutable in OWSEC and excluded from update payloads
 }
 
 // ==========================================
@@ -842,7 +849,7 @@ export const CreateScopedAccessValidationSchema = Yup.object().shape({
 - **TC-USR-007 (Create User Validation):** Attempt to submit Create User with password under 8 characters or lacking required character classes. Verify inline error.
 - **TC-USR-008 (Create User Success):** Fill valid details with role `noc`, submit form. Verify `POST /api/v1/user/0` is dispatched, modal closes, and new user appears in table.
 - **TC-USR-009 (Administrative Actions):** Trigger Reset MFA, Send Password Reset, and Suspend User from context menu. Verify correct API parameters on `PUT /api/v1/user/{id}`.
-- **TC-USR-010 (Profile Editing):** Update name and description in Profile sub-tab, click Save. Verify `PUT /api/v1/user/{id}` executes and updates cached data.
+- **TC-USR-010 (Profile Editing & Email Immutability):** Verify `Email` input field is disabled and read-only across all roles (including `root`). Update name and description in Profile sub-tab, click Save. Verify `PUT /api/v1/user/{id}` dispatches only editable fields (`name`, `description`, `userRole`, `notes`, etc.) without `email`, executes successfully, and updates cached data.
 
 ### 11.3 Scoped Access (MRA) Tests
 - **TC-SCA-001 (Fetch Scoped Access):** Select user with active assignments. Verify `GET /api/v1/managementRole?userId={id}` displays individual 1:1 cards.
