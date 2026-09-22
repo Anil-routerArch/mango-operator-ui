@@ -1,0 +1,1363 @@
+# Phase 1 Technical Specification: Users & Access Module
+
+---
+
+## Document Metadata
+
+| Attribute | Value |
+| :--- | :--- |
+| **Document Version** | 1.0.0 |
+| **Module** | Administration — Users & Access |
+| **Target Codebase** | `mango-operator-ui` (React / TypeScript / TanStack Query / Vite) |
+| **Reference Implementation** | `ra-wlan-cloud-owprov-ui` (`src/hooks/Network/Users.ts`, `src/hooks/Network/ManagementRoles.ts`) |
+| **Downstream Microservices** | `OWSEC` (Port 9002) & `OWPROV` (Port 9005 / V1 & V2) |
+| **Target Audience** | Frontend Engineers, QA Automation Engineers, Backend Integration Engineers |
+| **Status** | Authoritative Normative Specification |
+| **UI Design Authority** | Approved Figma Workspace (`media_1790061771415.png`, `media_1790063724718.png`, `media_1790064164851.png`) |
+
+---
+
+## Specification Strategy & Phasing Note
+
+> [!IMPORTANT]
+> **Tab-Wise Implementation Strategy:**  
+> The Phase 1 delivery for `mango-operator-ui` is executed and specified **tab-by-tab**. Each functional tab is specified to industry standards with complete API contracts, component architecture, state machines, validation schemas, and test scenarios. Once the specification for a tab is approved, engineering implements and validates that specific tab end-to-end before proceeding to subsequent modules.
+>
+> In Phase 1, the **Users & Access** module contains two primary tabs:
+> 1. **Users Tab:** Identity management, authentication lifecycles, user directory with search/filters/pagination, real-time KPI metrics, detailed profile editing, scoped access infrastructure management (MRAs), and user onboarding.
+> 2. **Policies Tab:** Management policy catalog, headline policy KPIs, resource permissions visualizer, overview aggregation API, and root-only policy lifecycle administration.
+>
+> **Scope of this Document:**  
+> This specification covers both tabs of the Users & Access module: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab, its resource permissions matrix, and aggregation integrations.
+>
+> **Visual Styling & Dimensions:**  
+> Explicit pixel dimensions, color hex codes, and typography scales are intentionally decoupled from this document. Frontend developers must reference the official Figma design files for layout geometry, spacing, and styling tokens. This specification provides the normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
+
+---
+
+# Part 1: Users Tab Specification
+
+---
+
+## 1. Domain Model & Conceptual Architecture
+
+The Users & Access module manages platform authentication, coarse role assignment, and physical infrastructure authorization by interfacing directly with two upstream OpenWifi microservices:
+
+```
++---------------------------------------------------------------------------------------------------+
+|                                        Browser Client                                             |
+|                                     (mango-operator-ui)                                           |
++---------------------------------------------------------------------------------------------------+
+                               |                                           |
+             Direct REST (JWT Bearer)                     Direct REST (JWT Bearer)
+             axiosSec (/api/v1)                           axiosProv (/api/v1) & axiosProvV2 (/api/v2)
+                               |                                           |
+                               v                                           v
+             +----------------------------------+        +-----------------------------------+
+             |              OWSEC               |        |              OWPROV               |
+             |   (Identity & Authentication)    |        | (Hierarchy & Infrastructure RBAC) |
+             +----------------------------------+        +-----------------------------------+
+             | • User records (id, name, email) |        | • Management Roles (MRAs)         |
+             | • System role (userRole)         |        | • Management Policies             |
+             | • Credentials & MFA status       |        | • Entities (Properties)           |
+             | • Account status (suspended)     |        | • Venues                          |
+             | • Avatars & Internal Notes       |        |                                   |
+             +----------------------------------+        +-----------------------------------+
+```
+
+### 1.1 Separation of Concerns: System Role vs. Management Role
+
+A fundamental architectural principle of OpenWifi is the strict decoupling of **Platform Identity** (`OWSEC`) from **Scoped Infrastructure Authorization** (`OWPROV`):
+
+```
++----------------------------------------------------+       +-------------------------------------------------------+
+|              System Role (OWSEC userRole)          |       |              Scoped Access (OWPROV MRA)               |
+|      "Determines platform-wide capabilities"       | ----> | "Determines which properties/venues they apply to"    |
++----------------------------------------------------+       +-------------------------------------------------------+
+```
+
+1. **System Role (`userRole` stored in `OWSEC`):**
+   - Assigned at user creation in `OWSEC`.
+   - Coarse platform classification governing service-level API accessibility.
+   - Authoritative values are strictly: `'root' | 'admin' | 'csr' | 'noc' | 'installer'`.
+
+2. **Management Role Assignment (MRA stored in `OWPROV`):**
+   - Scoped operational bindings created and stored in `OWPROV`.
+   - Each MRA binds a single user to an operational **Management Policy** over a defined physical boundary:
+   
+     MRA=⟨User ID,Property (Entity ID),Venue ID (Optional),Management Policy ID⟩
+   - A user can have zero, one, or multiple MRAs across different properties and venues.
+   - Management roles have arbitrary, descriptive names and live entirely in `OWPROV`.
+
+### 1.2 OWSEC Admin Visibility Rule
+
+When fetching the user directory (`GET /api/v1/users`), `OWSEC` enforces the following authoritative filtering logic:
+- **`root` operator:** `OWSEC` returns **all** platform users across the entire system.
+- **`admin` operator:** `OWSEC` authoritatively restricts results to users created by that specific admin (`createdBy == currentAdminId`).
+- **Frontend Contract:** The UI client attaches the standard Bearer token and does not compute or filter tenancy hierarchies client-side. The UI consumes the returned array directly.
+
+---
+
+## 2. Headline KPI Metric Cards
+
+Above the main directory table, the Users tab displays four real-time summary cards that provide an operational health overview of the manageable user population.
+
+```
++-------------------+   +-------------------+   +-------------------+   +-------------------+
+|    Total Users    |   |      Active       |   |     Suspended     |   |    MFA Enabled    |
+|        18         |   |        16         |   |         2         |   |      15 of 18     |
++-------------------+   +-------------------+   +-------------------+   +-------------------+
+```
+
+### 2.1 Metric Calculation Specifications
+
+All metrics are derived directly from the cached `['users']` TanStack Query state returned by `OWSEC` `GET /api/v1/users?withExtendedInfo=true`:
+
+| KPI Card | Metric Calculation | Underlying Fields / Logic | Empty / Loading State |
+| :--- | :--- | :--- | :--- |
+| **Total Users** | `users.length` | Total manageable users returned by `OWSEC` for the active operator session. | Skeleton shimmer / `0` |
+| **Active** | `users.filter(u => !u.suspended).length` | Count of operators with operational access enabled (`user.suspended === false`). | Skeleton shimmer / `0` |
+| **Suspended** | `users.filter(u => u.suspended === true).length` | Count of locked or deactivated operators (`user.suspended === true`). | Skeleton shimmer / `0` |
+| **MFA Enabled** | `mfaCount + " of " + users.length` | Count where `user.userTypeProprietaryInfo?.mfa?.enabled === true` compared against total users. | Skeleton shimmer / `0 of 0` |
+
+### 2.2 Behavior & Refresh
+- When the operator clicks the top-level **Refresh button** (`↻`), the client triggers `queryClient.invalidateQueries(['users'])` and `queryClient.invalidateQueries(['managementRoles'])`.
+- The KPI cards display animated skeleton placeholders during background fetching without unmounting the existing layout.
+
+---
+
+## 3. Users Directory Table (Left Panel)
+
+The left side of the split-view layout renders the master operator directory table.
+
+### 3.1 Self-Account Exclusion Rule
+To prevent operators from inadvertently locking themselves out, modifying their own platform role, or suspending their own account:
+- The UI filters out the currently authenticated user's ID (`user.id !== currentSession.userId`).
+- Personal account configurations (password changes, profile updates, personal MFA setup) are handled exclusively via the global profile menu in the application header.
+
+### 3.2 Search & Filter Controls
+
+Directly above the directory table, three interactive controls govern the table view:
+
+1. **Search Input (`Search users...`):**
+   - Debounced by **300ms** to avoid extraneous renders.
+   - Performs a case-insensitive substring match against:
+     - `user.name`
+     - `user.email`
+     - `user.description`
+2. **System Role Filter Dropdown:**
+   - Filters the table by backend `userRole`.
+   - Available options:
+     - `All Roles` (default)
+     - `admin` (Administrator)
+     - `noc` (Network Operations)
+     - `installer` (Field Technician / Installer)
+     - `csr` (Customer Support Representative)
+     - `root` (Visible only if the logged-in user is `root`)
+3. **Status Filter Dropdown:**
+   - Filters by operational account state:
+     - `All Status` (default)
+     - `Active` (`suspended === false`)
+     - `Suspended` (`suspended === true`)
+
+### 3.3 Directory Table Columns
+
+| Column | UI Content & Mapping | Data Source & Transformation |
+| :--- | :--- | :--- |
+| **User** | • Circular Avatar image or 2-letter uppercase initials fallback.<br>• Full Name (Primary text, bold).<br>• Email Address (Secondary text, muted). | • Avatar: `user.avatar` base64 data URL via `avatar/${user.id}` binary fetch.<br>• Fallback initials: Derived from `user.name` (e.g., `"Anita Sharma"` $\rightarrow$ `"AS"`).<br>• `user.name`<br>• `user.email` |
+| **System Role** | Standardized status badge indicating platform role: `admin`, `noc`, `installer`, `csr`, `root`. | Direct mapping from `user.userRole`. |
+| **Scoped Access** | Human-readable badge summarizing active infrastructure scope grants: `"2 properties"`, `"3 venues"`, `"All properties"`, or `"None"`. | Computed client-side by matching active MRAs from `useGetManagementRoles(user.id)`. |
+| **Status** | Pill badge: `Active` (Green) or `Suspended` (Orange/Red). | `user.suspended ? 'Suspended' : 'Active'` |
+| **Last Login** | Relative timestamp (e.g., `"12 min ago"`, `"1h ago"`, `"18 Aug 2026"`). | Formatted from Unix epoch `user.lastLogin`. If `user.lastLogin === 0`, render `"Never"`. |
+| **Row Selection** | Chevron icon (`>`) highlighting the currently active user loaded into the right details panel. | Highlights when `selectedUserId === user.id`. Clicking anywhere on the row selects the user. |
+
+### 3.4 Pagination Contract
+- Default page size: **5 rows** (configurable to 10 or 25).
+- Pagination controls: Previous (`<`), page numbers (`1`, `2`, `3`), Next (`>`), and count indicator (`Showing 1-5 of 18`).
+- Pagination state is reset to page 1 whenever the search query, role filter, or status filter changes.
+
+---
+
+## 4. Selected User Details Split Panel (Right Panel)
+
+Clicking any row in the directory table loads the comprehensive **User Details Panel** in the right viewport. If no user is selected, the first row in the directory table is selected by default.
+
+```
++-------------------------------------------------------------------+
+|  (AS)  Anita Sharma                           [Active]       [...] |
+|        anita@ipnx.example                                         |
+|  ---------------------------------------------------------------  |
+|  [ Profile ]       [ Scoped Access ]                              |
+|  ---------------------------------------------------------------  |
+|  (Content of active sub-tab rendered here)                        |
++-------------------------------------------------------------------+
+```
+
+### 4.1 Header & Administrative Context Menu (`...`)
+
+The panel header displays the operator's avatar/initials, full name, email address, status badge, and an administrative actions menu button (`...`):
+
+| Context Action | Downstream API Call | Behavior & Confirmation |
+| :--- | :--- | :--- |
+| **Reset MFA** | `PUT /api/v1/user/{id}?resetMFA=true` | Prompts confirmation. Clears `authenticatorSecret` and resets `mfa.enabled` to `false`. |
+| **Send Password Reset Email** | `PUT /api/v1/user/{id}?forgotPassword=true` | Dispatches password reset email containing one-time reset token directly from `OWSEC`. |
+| **Resend Verification Email** | `PUT /api/v1/user/{id}?email_verification=true` | Dispatches email verification link to `user.email`. |
+| **Suspend / Reactivate User** | `PUT /api/v1/user/{id}` with `{ "suspended": !user.suspended }` | Toggles account lock. If suspending, prompts modal confirmation. Updates KPI cards and table row. |
+| **Delete User** | `DELETE /api/v1/user/{id}` | High-friction modal requiring confirmation. On success: removes user from cache, invalidates `['users']`, and selects next available user. |
+
+---
+
+## 5. Profile Sub-Tab (User Editing)
+
+The **Profile** sub-tab provides direct inline modification of the selected operator's identity, credentials, and internal administrative audit notes.
+
+### 5.1 Field Specifications & Form Controls
+
+| Field | Input Control | Mutability & RBAC | Validation Rules & Behavior |
+| :--- | :--- | :--- | :--- |
+| **`Email *`** | Text Input | Read-only for standard admins; editable only by `root`. | Valid RFC 5322 email syntax. Must be unique across `OWSEC`. |
+| **`Name *`** | Text Input | Editable | Required. Minimum 1 character, maximum 128 characters. |
+| **`System Role *`** | Dropdown Selector | Editable based on RBAC rules. | Options: `admin`, `noc`, `installer`, `csr` (plus `root` if current user is `root`). Cannot downgrade own role. |
+| **`Password`** | Masked text input with `Show`/`Hide` toggle | Editable | Optional on update. Helper: *"Leave unchanged to keep current password. Minimum 8 characters with uppercase, lowercase, number, and symbol."* |
+| **`Description`** | Multi-line Textarea | Editable | Optional operational responsibility summary. |
+| **`Notes`** | Audit Notes List + Add Note input | Editable / Append-only | Displays timestamped internal notes. Entering text appends `{ "note": text, "created": Math.floor(Date.now()/1000) }`. |
+
+### 5.2 Role Modification Authorization Rules
+- `root` operators can edit the system role of any user.
+- `admin` operators can modify roles for `noc`, `installer`, and `csr` operators, but **cannot** elevate a user to `root` or modify another `admin`.
+- A user's role cannot be changed if the user currently holds active MRAs that conflict with the target role privileges.
+
+### 5.3 Action Buttons
+- **`Cancel`:** Discards unsaved modifications and resets form to pristine initial values.
+- **`Save profile`:** Dispatches `PUT /api/v1/user/{id}` to `OWSEC`. On success: invalidates `['users']` and `['users', id]`, shows a success toast, and updates table.
+
+---
+
+## 6. Scoped Access Sub-Tab (Management Role Assignments)
+
+The **Scoped Access** sub-tab is the core infrastructure permissions interface. It manages the operator's operational scopes across properties and venues using `OWPROV`'s `managementRole` resource.
+
+```
++-------------------------------------------------------------------+
+|  System Role                                                      |
+|  [ Network Operator                                         v ]   |
+|  Controls platform capabilities.                                  |
+|                                                                   |
+|  Access Assignments (2)                                           |
+|  +-------------------------------------------------------------+  |
+|  | [Building] Sunrise Apartments             [Network Operator]|  |
+|  |            All venues                              [/]  [x] |  |
+|  +-------------------------------------------------------------+  |
+|  | [Building] Oakwood Housing                           [CSR]  |  |
+|  |            Building A                              [/]  [x] |  |
+|  +-------------------------------------------------------------+  |
+|  | + - - - - - - - - - - - - - - - - - - - - - - - - - - - - + |  |
+|  | :                     + Assign access                     : |  |
+|  | + - - - - - - - - - - - - - - - - - - - - - - - - - - - - + |  |
+|                                                                   |
+|  (i) Effective access: Network operations for Sunrise            |
+|      Apartments; CSR access to Building A at Oakwood Housing.     |
+|                                                                   |
+|  [ Cancel ]                                       [ Save access ] |
++-------------------------------------------------------------------+
+```
+
+### 6.1 Data Fetching (`OWPROV`)
+Scoped access records are fetched directly using:
+```typescript
+GET /api/v1/managementRole?userId={selectedUserId}
+```
+The UI loads associated metadata in parallel:
+- Properties (`Entities`): `GET /api/v1/entity` (resolves `role.entity` $\rightarrow$ Property Name).
+- Venues: `GET /api/v1/venue` (resolves `role.venue` $\rightarrow$ Venue Name).
+- Policies: `GET /api/v1/managementPolicy` (resolves `role.managementPolicy` $\rightarrow$ Policy Name).
+
+### 6.2 1:1 Backend MRA Card Representation
+Each `managementRole` returned by `OWPROV` is rendered as an independent card:
+- **Building Icon:** Infrastructure visual anchor.
+- **Property Name:** Primary bold title (e.g., `"Sunrise Apartments"`).
+- **Venue Scope:** Subtitle text:
+  - If `role.venue === ""` or undefined: displays `"All venues"` (Property-wide grant).
+  - If `role.venue` contains a UUID: displays the resolved venue name (e.g., `"Building A"`).
+- **Policy Pill Badge:** Displays the assigned policy name (e.g., `"NOC"`, `"CSR"`, `"Admin"`).
+- **Inline Edit Action (Pencil Icon):** Enters card editing mode.
+- **Inline Revoke Action (Trash Bin Icon):** Triggers single-item revocation.
+
+### 6.3 Policy-Only Card Editing & Scope Immutability
+When the operator clicks the edit icon on an existing assignment card:
+- **Scope Immutability:** In `OWPROV`, an MRA's physical boundary (`entity` and `venue`) is **immutable**. Changing physical boundaries represents a different scoping grant.
+- **Locked Fields:** The Property and Venue labels remain read-only. The UI displays the helper text:
+  > *"To change property or venue scope, revoke this assignment and create a new one."*
+- **Editable Field:** The Policy dropdown is editable, allowing the operator to switch the assigned policy.
+- **Submission:** Submits `PUT /api/v2/managementRole/{id}` with `{ "managementPolicy": newPolicyId }`.
+
+### 6.4 Single-Item Revocation
+- Clicking the Trash Bin icon displays a confirmation modal:
+  `"Revoke access for [User Name] on [Property Name - Venue Scope]?"`
+- On confirmation, executes `DELETE /api/v2/managementRole/{id}` directly against `OWPROV` V2.
+- On success: invalidates `['managementRoles', userId]`, removes the card, and updates the table's Scoped Access summary badge.
+
+### 6.5 Inline Expandable Assignment Form (`+ Assign access`)
+Clicking the dashed `+ Assign access` button expands an inline scoping form:
+
+1. **`Entity *` (Property Dropdown, Required):**
+   - Populated via `GET /api/v1/entity`.
+   - Displays all properties accessible to the operator.
+2. **`Venues` (Venue Multi-Select Dropdown, Optional):**
+   - Populated via `GET /api/v1/venue` and dynamically filtered to venues where `venue.entity === selectedEntityId`.
+   - **Property-Wide Selection:** Leaving this field empty assigns the role to the entire property (`"All venues"`).
+   - **Multi-Venue Batch Selection:** Selecting one or more venues configures a batch assignment (`venueIds: [id1, id2, ...]`).
+3. **`Policy *` (Management Policy Dropdown, Required):**
+   - Populated via `GET /api/v1/managementPolicy`.
+   - Displays all active policies with their descriptions.
+4. **Submission Execution (`OWPROV` V2 API):**
+   - Endpoint: `POST /api/v2/managementRole/0`
+   - Payload format:
+     ```json
+     {
+       "name": "Generated or descriptive assignment name",
+       "description": "Assigned via Mango Operator UI",
+       "entity": "entity-uuid-1234",
+       "venueIds": ["venue-uuid-001", "venue-uuid-002"],
+       "managementPolicy": "policy-uuid-5678",
+       "users": ["selected-user-uuid"]
+     }
+     ```
+   - **Normalized Response Envelope:** The V2 endpoint returns a normalized `{ "roles": [...] }` envelope containing the created MRA records.
+   - On success: closes the inline form, invalidates `['managementRoles', userId]`, and displays the new cards.
+
+---
+
+## 7. Create User Workflow (Modal Dialog)
+
+Clicking the top-level `+ Create user` button opens the focused user creation modal dialog.
+
+```
++-------------------------------------------------------------------+
+|  [+] Create user                                              [X] |
+|      Create an account and configure its initial authentication.  |
+|  ---------------------------------------------------------------  |
+|  USER DETAILS                                                     |
+|  Email *             [ name@company.com                         ] |
+|  Name *              [ Enter full name                          ] |
+|  System role *       [ Select a role                          v ] |
+|  Description         [ Describe this user's responsibility      ] |
+|  Note                [ Add an internal administrative note      ] |
+|                                                                   |
+|  AUTHENTICATION SETTINGS                                          |
+|  Password *          [ ****************               ] [Show]    |
+|                      Minimum 8 characters with uppercase,         |
+|                      lowercase, number, and symbol.               |
+|  [x] Force password change                                        |
+|      Require a new password at first sign-in.                     |
+|  [x] Email validation                                             |
+|      Require the user to verify their email address.              |
+|  ---------------------------------------------------------------  |
+|  [ Cancel ]                                       [ Create user ] |
++-------------------------------------------------------------------+
+```
+
+### 7.1 Field Specifications & Form Rules
+
+1. **`Email *` (Required):**
+   - Must satisfy RFC 5322 email formatting.
+   - Checked for uniqueness against `OWSEC`. Duplicate emails return `400 Bad Request` (`UserAlreadyExists`).
+2. **`Name *` (Required):**
+   - Full display name. Minimum 1 character, maximum 128 characters.
+3. **`System role *` (Required):**
+   - **No default value is preselected.** The dropdown placeholder displays `"Select a role"`.
+   - Offers strictly backend operational roles: `admin`, `noc`, `installer`, `csr` (plus `root` if creator is `root`).
+   - `subscriber` is strictly excluded.
+4. **`Description` (Optional):**
+   - Contextual description of operational responsibilities.
+5. **`Note` (Optional):**
+   - Optional initial administrative note saved into `user.notes`.
+6. **`Password *` (Required for manual password mode):**
+   - Visibility toggle (`Show` / `Hide`).
+   - Validation: Minimum 8 characters, containing at least one uppercase letter, one lowercase letter, one digit, and one special character (`[!@#$%^&*(),.?":{}|<>]`).
+   - Helper text: *"Minimum 8 characters with uppercase, lowercase, number, and symbol. View password policy."*
+7. **`Force password change` (Toggle):**
+   - Default: `true`. Sets `changePassword: true`.
+   - Requires operator to set a new password on initial login.
+8. **`Email validation` (Toggle):**
+   - Default: `false`. Sets `emailValidation: true`.
+   - Appends `?email_verification=true` to the creation endpoint to trigger an automated verification email.
+
+### 7.2 Creation Payload & Endpoint
+- **Target Endpoint:** `POST /api/v1/user/0` (with optional `?email_verification=true`)
+- **Request Body:**
+  ```json
+  {
+    "name": "Anita Sharma",
+    "email": "anita@ipnx.example",
+    "userRole": "noc",
+    "currentPassword": "InitialPassword123!",
+    "description": "Regional NOC Engineer",
+    "notes": [{ "note": "Provisioned during Phase 1 onboarding" }],
+    "changePassword": true,
+    "emailValidation": false
+  }
+  ```
+- **Lifecycle on Success:**
+  1. `OWSEC` returns the newly created `User` JSON object with generated UUID.
+  2. The UI closes the modal and invalidates `['users']`.
+  3. Displays a success notification toast: `"User [Name] created successfully."`
+  4. Automatically selects the newly created user in the directory table and opens their Profile in the right details panel.
+
+---
+
+## 8. Authoritative API Contracts for Frontend Developers
+
+> [!IMPORTANT]
+> **Source-Verified Contract Assurance:**  
+> All request payloads, query parameters, JSON response keys, field naming conventions, and HTTP status codes below are verified directly against authoritative C++ daemon source code (`ra-wlan-cloud-ucentralsec/src/RESTAPI/`, `ra-wlan-cloud-owprov/src/RESTAPI/`) and official OpenAPI specifications (`owsec.yaml`, `owprov.yaml`, `owprov-v2.yaml`).
+
+### 8.1 OWSEC User API Contracts
+
+#### 8.1.1 List Users
+```http
+GET /api/v1/users?offset=0&limit=500&withExtendedInfo=true HTTP/1.1
+Host: <owsec-host>:9002
+Authorization: Bearer <jwt-token>
+```
+**Response (`200 OK`):**
+```json
+{
+  "users": [
+    {
+      "id": "c1f7a052-8239-4d3b-9e48-e8d91a92a101",
+      "name": "Anita Sharma",
+      "email": "anita@ipnx.example",
+      "userRole": "noc",
+      "description": "Tier 2 Support Engineer",
+      "avatar": "1",
+      "suspended": false,
+      "lastLogin": 1726052400,
+      "userTypeProprietaryInfo": {
+        "mfa": {
+          "enabled": true,
+          "method": "authenticator"
+        },
+        "mobiles": []
+      },
+      "notes": [
+        {
+          "note": "Initial onboarding complete",
+          "created": 1725900000
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 8.1.2 Get User Avatar
+```http
+GET /avatar/{userId}?cache={avatarId} HTTP/1.1
+Host: <owsec-host>:9002
+Authorization: Bearer <jwt-token>
+```
+**Response (`200 OK`):** Binary image stream (`image/jpeg` or `image/png`).  
+*Frontend implementation converts binary arraybuffer to `data:image/png;base64,...` URL with query caching.*
+
+#### 8.1.3 Create User
+```http
+POST /api/v1/user/0 HTTP/1.1
+Host: <owsec-host>:9002
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "name": "David Okafor",
+  "email": "david@ipnx.example",
+  "userRole": "installer",
+  "currentPassword": "SecurePassword123!",
+  "description": "Field Technician",
+  "changePassword": true
+}
+```
+**Response (`200 OK`):** Full created `User` record including generated `id`.
+
+#### 8.1.4 Update User
+```http
+PUT /api/v1/user/{userId} HTTP/1.1
+Host: <owsec-host>:9002
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "name": "David Okafor",
+  "description": "Senior Field Technician",
+  "userRole": "installer"
+}
+```
+**Response (`200 OK`):** Updated `User` record.
+
+#### 8.1.5 Administrative Security & Lifecycle Actions
+- **Suspend User:** `PUT /api/v1/user/{id}` with `{ "suspended": true }`
+- **Reactivate User:** `PUT /api/v1/user/{id}` with `{ "suspended": false }`
+- **Reset MFA:** `PUT /api/v1/user/{id}?resetMFA=true` with `{}`
+- **Send Password Reset:** `PUT /api/v1/user/{id}?forgotPassword=true` with `{}`
+- **Resend Email Verification:** `PUT /api/v1/user/{id}?email_verification=true` with `{}` (Response `200 OK`)
+- **Delete User:** `DELETE /api/v1/user/{id}` (Response `204 No Content`)
+
+---
+
+### 8.2 OWPROV Scoped Access (Management Role) API Contracts
+
+#### 8.2.1 List User's Management Roles (V1)
+```http
+GET /api/v1/managementRole?userId={userId} HTTP/1.1
+Host: <owprov-host>:9005
+Authorization: Bearer <jwt-token>
+```
+**Response (`200 OK`):**
+```json
+{
+  "roles": [
+    {
+      "id": "mra-001",
+      "name": "Sunrise Towers Access",
+      "description": "Building technician scope",
+      "managementPolicy": "policy-noc-uuid",
+      "users": ["c1f7a052-8239-4d3b-9e48-e8d91a92a101"],
+      "entity": "entity-uuid-1234",
+      "venue": "",
+      "created": 1725900000,
+      "modified": 1725900000
+    }
+  ]
+}
+```
+
+#### 8.2.2 Create Scoped Access (V2 Batch & Single Scope)
+```http
+POST /api/v2/managementRole/0 HTTP/1.1
+Host: <owprov-host>:9005
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "name": "Oakwood Building A Tech Access",
+  "description": "Provisioned for maintenance",
+  "entity": "entity-uuid-5678",
+  "venueIds": ["venue-uuid-building-a"],
+  "managementPolicy": "policy-installer-uuid",
+  "users": ["c1f7a052-8239-4d3b-9e48-e8d91a92a101"]
+}
+```
+**Response (`200 OK`):** Normalized envelope:
+```json
+{
+  "roles": [
+    {
+      "id": "mra-002",
+      "name": "Oakwood Building A Tech Access",
+      "managementPolicy": "policy-installer-uuid",
+      "users": ["c1f7a052-8239-4d3b-9e48-e8d91a92a101"],
+      "entity": "entity-uuid-5678",
+      "venue": "venue-uuid-building-a",
+      "created": 1726052400,
+      "modified": 1726052400
+    }
+  ]
+}
+```
+
+#### 8.2.3 Update Scoped Access (V2 Policy Mutation)
+```http
+PUT /api/v2/managementRole/{id} HTTP/1.1
+Host: <owprov-host>:9005
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "managementPolicy": "policy-noc-uuid",
+  "description": "Elevated to NOC policy"
+}
+```
+**Response (`200 OK`):** Updated `ManagementRole` record.
+
+#### 8.2.4 Revoke Scoped Access (V2)
+```http
+DELETE /api/v2/managementRole/{id} HTTP/1.1
+Host: <owprov-host>:9005
+Authorization: Bearer <jwt-token>
+```
+**Response (`200 OK`):** `{}`
+
+---
+
+## 9. Frontend Data Structures & Type Definitions
+
+```typescript
+// ==========================================
+// OWSEC Identity Types
+// ==========================================
+
+export type UserRole = 'root' | 'admin' | 'csr' | 'noc' | 'installer';
+
+export interface UserMfa {
+  enabled: boolean;
+  method?: 'authenticator' | 'sms' | 'email' | '';
+}
+
+export interface UserProprietaryInfo {
+  authenticatorSecret?: string;
+  mfa: UserMfa;
+  mobiles?: { number: string }[];
+}
+
+export interface UserNote {
+  note: string;
+  created: number;
+}
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  userRole: UserRole;
+  description?: string;
+  avatar?: string;
+  suspended: boolean;
+  blackListed?: boolean;
+  lastLogin: number;
+  creationDate?: number;
+  modified?: number;
+  notes: UserNote[];
+  userTypeProprietaryInfo?: UserProprietaryInfo;
+}
+
+export interface CreateUserPayload {
+  name: string;
+  email: string;
+  userRole: UserRole;
+  currentPassword: string;
+  description?: string;
+  notes?: { note: string }[];
+  changePassword: boolean;
+  emailValidation: boolean;
+}
+
+export interface UpdateUserPayload {
+  id: string;
+  name?: string;
+  description?: string;
+  userRole?: UserRole;
+  currentPassword?: string;
+  notes?: { note: string }[];
+}
+
+// ==========================================
+// OWPROV Scoped Access Types
+// ==========================================
+
+export interface ManagementRole {
+  id: string;
+  name: string;
+  description?: string;
+  managementPolicy: string;
+  users: string[];
+  entity: string;
+  venue: string;
+  inUse?: string[];
+  tags?: string[];
+  notes?: UserNote[];
+  created?: number;
+  modified?: number;
+}
+
+export interface CreateManagementRolePayload {
+  name: string;
+  description?: string;
+  entity: string;
+  venueIds?: string[];
+  managementPolicy: string;
+  users: string[];
+}
+
+export interface UpdateManagementRolePayload {
+  name?: string;
+  description?: string;
+  managementPolicy?: string;
+}
+
+// Infrastructure Metadata
+export interface EntityMetadata {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface VenueMetadata {
+  id: string;
+  name: string;
+  entity: string;
+  description?: string;
+}
+
+export interface ManagementPolicyMetadata {
+  id: string;
+  name: string;
+  description?: string;
+  inUse?: string[];
+}
+```
+
+---
+
+## 10. Frontend Form Validation Schemas (Yup Reference)
+
+```typescript
+import * as Yup from 'yup';
+
+const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+
+export const CreateUserValidationSchema = Yup.object().shape({
+  email: Yup.string()
+    .email('Please enter a valid email address')
+    .required('Email is required'),
+  name: Yup.string()
+    .min(1, 'Name must be at least 1 character')
+    .max(128, 'Name cannot exceed 128 characters')
+    .required('Full name is required'),
+  userRole: Yup.string()
+    .oneOf(['admin', 'noc', 'installer', 'csr', 'root'], 'Please select a valid system role')
+    .required('System role is required'),
+  currentPassword: Yup.string()
+    .required('Password is required')
+    .matches(
+      passwordPattern,
+      'Password must be at least 8 characters long and contain uppercase, lowercase, a number, and a symbol'
+    ),
+  description: Yup.string().max(256, 'Description cannot exceed 256 characters'),
+  note: Yup.string().max(500, 'Note cannot exceed 500 characters'),
+  changePassword: Yup.boolean(),
+  emailValidation: Yup.boolean(),
+});
+
+export const UpdateUserValidationSchema = Yup.object().shape({
+  name: Yup.string()
+    .min(1, 'Name must be at least 1 character')
+    .max(128, 'Name cannot exceed 128 characters')
+    .required('Full name is required'),
+  userRole: Yup.string()
+    .oneOf(['admin', 'noc', 'installer', 'csr', 'root'], 'Please select a valid system role')
+    .required('System role is required'),
+  currentPassword: Yup.string()
+    .notRequired()
+    .test('password-complexity', 'Password must meet complexity requirements', function (value) {
+      if (!value || value.length === 0) return true;
+      return passwordPattern.test(value);
+    }),
+  description: Yup.string().max(256, 'Description cannot exceed 256 characters'),
+});
+
+export const CreateScopedAccessValidationSchema = Yup.object().shape({
+  entity: Yup.string().required('Please select a Property (Entity)'),
+  venueIds: Yup.array().of(Yup.string()),
+  managementPolicy: Yup.string().required('Please select a Management Policy'),
+});
+```
+
+---
+
+## 11. Acceptance Criteria & QA Test Scenarios
+
+### 11.1 KPI Metrics & Directory Table Tests
+- **TC-USR-001 (KPI Metrics Accuracy):** Verify `Total Users`, `Active`, `Suspended`, and `MFA Enabled` accurately reflect the `OWSEC` user list.
+- **TC-USR-002 (Self-Account Exclusion):** Verify the currently logged-in user is not displayed in the directory table.
+- **TC-USR-003 (Admin Visibility Enforcement):** Authenticate as an `admin`. Verify `OWSEC` returns strictly users where `createdBy == currentAdminId`.
+- **TC-USR-004 (Table Search Filtering):** Enter query in search bar. Verify real-time 300ms debounced filtering across name, email, and description.
+- **TC-USR-005 (Role & Status Filtering):** Filter by `noc` role and `Active` status. Verify table renders only active NOC operators.
+- **TC-USR-006 (Pagination):** Verify pagination navigates through pages correctly and resets to page 1 upon search/filter changes.
+
+### 11.2 User Lifecycle & Security Action Tests
+- **TC-USR-007 (Create User Validation):** Attempt to submit Create User with password under 8 characters or lacking required character classes. Verify inline error.
+- **TC-USR-008 (Create User Success):** Fill valid details with role `noc`, submit form. Verify `POST /api/v1/user/0` is dispatched, modal closes, and new user appears in table.
+- **TC-USR-009 (Administrative Actions):** Trigger Reset MFA, Send Password Reset, and Suspend User from context menu. Verify correct API parameters on `PUT /api/v1/user/{id}`.
+- **TC-USR-010 (Profile Editing):** Update name and description in Profile sub-tab, click Save. Verify `PUT /api/v1/user/{id}` executes and updates cached data.
+
+### 11.3 Scoped Access (MRA) Tests
+- **TC-SCA-001 (Fetch Scoped Access):** Select user with active assignments. Verify `GET /api/v1/managementRole?userId={id}` displays individual 1:1 cards.
+- **TC-SCA-002 (Scope Immutability):** Click edit on an assignment card. Verify Property and Venue fields are read-only and only Policy is editable.
+- **TC-SCA-003 (MRA Policy Update):** Change policy on existing card, click save. Verify `PUT /api/v2/managementRole/{id}` sends `{ "managementPolicy": newId }`.
+- **TC-SCA-004 (Single-Item Revocation):** Click trash icon on card, confirm prompt. Verify `DELETE /api/v2/managementRole/{id}` removes the assignment card.
+- **TC-SCA-005 (Assign Property-Wide Access):** In inline form, select Entity, leave Venues empty, select Policy, submit. Verify `POST /api/v2/managementRole/0` creates property-wide MRA (`venue: ""`).
+- **TC-SCA-006 (Assign Multi-Venue Batch Access):** In inline form, select Entity, select 2 Venues, select Policy, submit. Verify V2 backend returns normalized `{ "roles": [...] }` envelope and 2 distinct cards render.
+
+---
+
+# Part 2: Policies Tab Specification
+
+---
+
+## 12. Domain Model & Policy Architecture
+
+The Policies tab provides centralized cataloging, resource permission inspection, and root-only policy lifecycle management directly integrated with `OWPROV` and the aggregation backend (`mango-mdu-service`).
+
+```
++---------------------------------------------------------------------------------------------------+
+|                                        Browser Client                                             |
+|                                     (mango-operator-ui)                                           |
++---------------------------------------------------------------------------------------------------+
+                               |                                           |
+             Direct REST (JWT Bearer)                             REST (JWT Bearer)
+             axiosProv (/api/v1)                                  axiosMdu (/api/v1)
+             (Authoritative CRUD & Listing)                       (Policy Overview Aggregation)
+                               |                                           |
+                               v                                           v
+             +----------------------------------+        +-----------------------------------+
+             |              OWPROV              |        |         mango-mdu-service         |
+             |   (Management Policy Engine)     |        |      (Aggregation Backend)        |
+             +----------------------------------+        +-----------------------------------+
+             | • ManagementPolicies table       |        | • Joins OWPROV MRAs               |
+             | • Canonical 8 system resources   |        | • Joins OWSEC Visible Users       |
+             | • 5 operational access verbs     |        | • Computes set intersection       |
+             | • Root-only mutation enforcement |        | • Delivers consolidated overview  |
+             +----------------------------------+        +-----------------------------------+
+```
+
+### 12.1 Uniform Policy Architecture (No "Built-in" vs. "Custom" Types)
+
+A critical architectural principle of the OpenWifi policy system is that **all policies share an identical record schema in `OWPROV`**:
+- Every policy record consists of `id`, `name`, `description`, `entries`, `entity`, `venue`, `inUse`, `tags`, `created`, and `modified`.
+- The `OWPROV` backend has **no concept of a policy `type` column** (there is no `built-in` vs. `custom` classification in the backend).
+- Baseline policies (e.g., `Admin`, `CSR`, `Installer`, `NOC`) are auto-seeded into `OWPROV` during service initialization (`service up`) simply to provide convenient starting blueprints. They are not structurally distinct or locked.
+- Policy names are descriptive identifiers and **must not be conflated with `OWSEC` platform `userRole`**. A policy named `"Admin"` or `"Network Operator"` is simply a ruleset template that can be assigned to any user via Scoped Access.
+
+### 12.2 Root-Only Mutation Authority & Deletion Protection
+1. **Root-Only CRUD Authority:**
+   - Any policy can be created, updated, or deleted **exclusively by operators holding the `root` platform role** (`userRole === 'root'`).
+   - The `OWPROV` microservice authoritatively validates the caller's session token and enforces root restriction on mutating endpoints (`POST`, `PUT`, `DELETE`). The UI simply enforces presentation guards (hiding or disabling mutation controls for non-root users).
+   - Operators with non-root roles (`admin`, `noc`, `installer`, `csr`) have view-only access to inspect policy permissions and assign them to users.
+2. **Authoritative Deletion Protection (`StillInUse`):**
+   - A policy can only be deleted if its active assignments count is `0`.
+   - If a policy is currently assigned to one or more active Management Role Assignments (`inUse.length > 0`), `OWPROV` authoritatively rejects deletion with:
+     ```json
+     {
+       "ErrorCode": 400,
+       "ErrorDescription": "StillInUse",
+       "ErrorDetails": "Policy cannot be deleted while assigned to active management roles."
+     }
+     ```
+   - In the UI, the delete action is disabled with an explanatory tooltip whenever active assignments exist.
+
+---
+
+## 13. Headline KPI Metric Cards (Policies Tab)
+
+Above the Policies catalog table, four real-time KPI metric cards provide platform policy distribution and operational assignment statistics:
+
+```
++-------------------+   +-------------------+   +-------------------+   +-------------------+
+|   Total Policies  |   |  Policies in Use  |   |Unassigned Policies|   | Active Assignments|
+|         8         |   |         6         |   |         2         |   |        27         |
++-------------------+   +-------------------+   +-------------------+   +-------------------+
+```
+
+### 13.1 KPI Calculation Specifications
+
+Metrics are derived directly from cached `['managementPolicies']` (`OWPROV` `GET /api/v1/managementPolicy`) and cached `['managementRoles']` (`OWPROV` `GET /api/v1/managementRole`):
+
+| KPI Card | Calculation Formula | Source & Underlying Logic |
+| :--- | :--- | :--- |
+| **Total Policies** | `policies.length` | Total policies returned by `OWPROV` `GET /api/v1/managementPolicy`. |
+| **Policies in Use** | `policies.filter(p => (p.inUse?.length ?? 0) > 0 || mras.some(r => r.managementPolicy === p.id)).length` | Count of policies currently bound to $\ge 1$ active Management Role Assignments. |
+| **Unassigned Policies** | `policies.filter(p => (p.inUse?.length ?? 0) === 0 && !mras.some(r => r.managementPolicy === p.id)).length` | Count of dormant policies eligible for deletion by `root`. |
+| **Active Assignments** | `mras.length` | Total active scoped infrastructure assignments across the entire platform. |
+
+---
+
+## 14. Policies Catalog Table (Left Panel)
+
+The left side of the split-view layout renders the master Policies Catalog table, aligning with `ra-wlan-cloud-owprov-ui` (`PoliciesPage/Table.tsx`).
+
+### 14.1 Search & Scope Controls
+- **Search Policies Input (`Search policies...`):**
+  - Debounced by **300ms**.
+  - Matches `name` and `description` (case-insensitive substring).
+- **Scope Filter Dropdown:**
+  - Options: `All Scopes` (default), `Entity-wide`, or filter by specific Property.
+
+### 14.2 Table Column Specifications
+
+| Column | Header | Data Source & Transformation | Display Behavior |
+| :--- | :--- | :--- | :--- |
+| **`Policy`** | `Policy` / `Name` | `policy.name` | Shield Icon + Policy Name (bold primary text). |
+| **`Entity`** | `Property` / `Entity` | `policy.entity` | Resolved entity name via `useGetEntities()`. Displays `"Entity-wide"` or `"—"` if empty (global template). |
+| **`Venue`** | `Venue` | `policy.venue` | Resolved venue name via `useGetVenues()`. Displays `"Entity-wide"` if empty. |
+| **`Description`** | `Description` | `policy.description` | Truncated single-line summary with tooltip for full text. |
+| **`Used By`** | `Used By` | `policy.inUse?.length` or matching MRAs count | Formatted string: e.g. `"6 users"` or `"Unassigned"`. |
+| **`Modified`** | `Modified` | `policy.modified` | Formatted relative or calendar date (e.g. `"1 Sep 2026"`). If `0`, render `"Never"`. |
+| **Selection** | Chevron (`>`) | `selectedPolicyId === policy.id` | Highlights active row loaded into right detail panel. |
+
+### 14.3 Pagination & Row Actions
+- Controlled pagination matching `DataTable` (default 5 or 10 rows per page, page numbers `< 1 2 >`, item count indicator).
+- Clicking any row selects the policy and immediately loads its details into the right split panel.
+
+---
+
+## 15. Selected Policy Details Split Panel (Right Panel)
+
+Selecting a policy row loads the policy details split panel on the right. If no policy is selected, the first row in the catalog is selected by default.
+
+```
++-------------------------------------------------------------------+
+|  [Shield] Network Operator                                   [...] |
+|           Monitor devices and manage network configuration.       |
+|  ---------------------------------------------------------------  |
+|  [ Overview ]      [ Permissions ]                                |
+|  ---------------------------------------------------------------  |
+|  (Content of active sub-tab rendered here)                        |
++-------------------------------------------------------------------+
+```
+
+### 15.1 Header & Administrative Context Menu (`...`)
+- **Panel Header:** Policy Icon, Policy Name, Description subtitle, and Context Menu button (`...`).
+- **Context Actions Menu (`...`):**
+  - **`Edit Policy`:** Activates edit mode on the Permissions sub-tab (visible only to `root`).
+  - **`Delete Policy`:** Initiates policy deletion (visible only to `root`).
+    - **In-Use Guard:** If the policy is bound to $\ge 1$ active assignments (`inUse.length > 0`), the delete button is disabled with tooltip:
+      > *"Cannot delete policy: Currently assigned to one or more active management roles."*
+    - **Execution:** For unassigned policies, prompts high-friction confirmation and dispatches `DELETE /api/v1/managementPolicy/{id}` to `OWPROV`.
+    - Non-root users do not see mutation options in the context menu.
+
+---
+
+## 16. Overview Sub-Tab (Aggregation Backend Integration)
+
+The **Overview** sub-tab provides a 360-degree operational view of how the selected policy is deployed across the platform.
+
+### 16.1 Backend Aggregation Call (`mango-mdu-service`)
+To eliminate complex multi-service queries in the browser, the UI queries the aggregation backend:
+```http
+GET /api/v1/policy/{id}/overview HTTP/1.1
+Host: <mango-mdu-host>:8080
+Authorization: Bearer <jwt-token>
+```
+The aggregation service joins `OWPROV` MRAs, applies `OWSEC` caller visibility, matches infrastructure metadata, and returns a single pre-calculated payload. The frontend consumes this payload directly without client-side join logic.
+
+### 16.2 UI Layout & Components
+
+```
++-------------------------------------------------------------------+
+|  USAGE SUMMARY                                                    |
+|  +-------------+  +-------------+  +-------------+  +-----------+ |
+|  |    Users    |  | Scoped Asgns|  | Properties  |  |  Venues   | |
+|  |      9      |  |     14      |  |      4      |  |    12     | |
+|  +-------------+  +-------------+  +-------------+  +-----------+ |
+|                                                                   |
+|  POLICY DETAILS                                                   |
+|  ID: policy-uuid-5678              Scope: Entity-wide             |
+|  Status: In Use                    Modified: 1 Sep 2026           |
+|  Description: Monitor devices and manage network configuration.   |
+|                                                                   |
+|  USERS WITH THIS POLICY (9)                                       |
+|  +-------------------------------------------------------------+  |
+|  | (AS) Anita Sharma           2 assignments                   |  |
+|  |      anita@ipnx.example     [Sunrise Apartments - All]      |  |
+|  |                             [Oakwood Housing - Building A]  |  |
+|  +-------------------------------------------------------------+  |
+|  | (DO) David Okafor           1 assignment                    |  |
+|  |      david@ipnx.example     [Sunrise Apartments - Tower B]  |  |
+|  +-------------------------------------------------------------+  |
++-------------------------------------------------------------------+
+```
+
+1. **Usage Summary Mini-Cards:**
+   - **Users:** Total distinct operators assigned this policy.
+   - **Scoped Assignments:** Total active MRAs referencing this policy.
+   - **Properties:** Distinct count of organizational entities bound to this policy.
+   - **Venues:** Distinct count of physical venues bound to this policy.
+2. **Policy Details Section:**
+   - Identifier, Scope classification (`Entity-wide` vs. property-specific), Status badge (`In Use` [Green] vs. `Unassigned` [Gray]), Last modified timestamp, and Description.
+3. **"Users with this policy" Roster Table:**
+   - Interactive list displaying all operators holding this policy.
+   - Each row shows:
+     - Avatar circle with uppercase 2-letter initials fallback.
+     - Full Name (bold) and Email (muted).
+     - Scoped Assignments count badge (e.g. `"2 assignments"`).
+     - Direct Infrastructure Scope Badges indicating physical boundaries (e.g. `[Sunrise Apartments - All venues]`, `[Oakwood Housing - Building A]`).
+
+---
+
+## 17. Permissions Sub-Tab (Resource Permissions Matrix)
+
+The **Permissions** sub-tab provides visual inspection and root-only editing of the policy's operational rules across all system resources.
+
+```
++-------------------------------------------------------------------+
+|  Policy preset                                                    |
+|  [ Custom                                                   v ]   |
+|                                                                   |
+|  Resource permissions                                             |
+|  +-------------------------------------------------------------+  |
+|  | Resource        |  Read   |  Create  |  Update  |  Delete   |  |
+|  |-----------------+---------+----------+----------+-----------|  |
+|  | Entity          |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
+|  | Venue           |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
+|  | Configuration   |   [x]   |   [x]    |   [x]    |    [ ]    |  |
+|  | Inventory       |   [x]   |   [ ]    |   [x]    |    [ ]    |  |
+|  | Operator        |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
+|  | Subscriber      |   [ ]   |   [ ]    |   [ ]    |    [ ]    |  |
+|  | Contact         |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
+|  | Location        |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
+|  +-------------------------------------------------------------+  |
+|                                                                   |
+|  (i) Policy impact: 9 users across 14 scoped assignments will be  |
+|      affected by permission changes.                              |
+|                                                                   |
+|  [ Cancel ]                                       [ Save policy ] |
++-------------------------------------------------------------------+
+```
+
+### 17.1 Canonical 8 System Resources & Operational Verbs
+The matrix maps strictly across the canonical 8 OpenWifi resources defined in `owprov-ui` (`CreatePolicyModal.tsx`):
+1. **`Entity` (`entity`):** Customer properties and organizational roots.
+2. **`Venue` (`venue`):** Physical subdivisions and venues.
+3. **`Configuration` (`configuration`):** Device and network configurations. *(Note: Configuration profile handling is managed in the Configuration module; this row represents all configuration management).*
+4. **`Inventory` (`inventory`):** Physical devices, gateways, access points, and switches.
+5. **`Operator` (`operator`):** Platform administrative accounts and operator profiles.
+6. **`Subscriber` (`subscriber`):** End-user residents, captive portals, and guest Wi-Fi.
+7. **`Contact` (`contact`):** Administrative and technical contacts.
+8. **`Location` (`location`):** Physical addresses and geo-coordinates.
+
+### 17.2 Bidirectional Mapping & Serialization Rules
+
+| UI Column | Backend Access Verb | Serialization Rule | Deserialization Rule |
+| :--- | :--- | :--- | :--- |
+| **`Read`** | `READ` | If checked, serialize `'READ'`. | Checked if array contains `'READ'` or `'LIST'`. |
+| **`Create`** | `CREATE` | If checked, serialize `'CREATE'`. | Checked if array contains `'CREATE'`. |
+| **`Update`** | `MODIFY` | **Must serialize strictly to `'MODIFY'`.** | Checked if array contains `'MODIFY'` or `'UPDATE'`. |
+| **`Delete`** | `DELETE` | If checked, serialize `'DELETE'`. | Checked if array contains `'DELETE'`. |
+| **All 4 Checked** | `FULL` | Compacted to `['FULL']`. | All 4 checkboxes rendered checked. |
+| **None Checked** | `NOACCESS` | Entry omitted from `entries` array. | All 4 checkboxes rendered unchecked. |
+
+### 17.3 Preset Base Dropdown
+The dropdown offers standard starting configurations:
+- **`Full Access`:** Sets all 8 resources to `['FULL']`.
+- **`Read Only`:** Sets all 8 resources to `['READ']`.
+- **`Custom`:** Permits arbitrary checkbox combinations.
+
+### 17.4 Policy Impact Banner & Root Mutation Flow
+- **Impact Callout:** Displays real-time assignment impact:
+  > *"Policy impact: [X] users across [Y] scoped assignments will be affected by permission changes."*
+- **Authorization Guard:** For non-root users, checkboxes are disabled (`readOnly: true`) and footer buttons are hidden.
+- **Root Mutation:**
+  - `root` operators can toggle checkboxes freely.
+  - Clicking **`Save policy`** groups entries by access permissions and dispatches `PUT /api/v1/managementPolicy/{id}` to `OWPROV`.
+  - On success: invalidates `['managementPolicies']` and `['managementPolicy', id]`, shows success toast, and updates UI.
+
+---
+
+## 18. Create Policy Workflow (Root-Only Console)
+
+The top-level `+ Create policy` button in the application header provides direct policy creation.
+
+### 18.1 Visibility & Access Control
+- The `+ Create policy` button is **strictly visible and enabled for `root` operators** (`userRole === 'root'`).
+- For non-root operators, the button is hidden from the header.
+- Upstream `OWPROV` authoritatively verifies caller role; attempts by non-root users to dispatch creation requests are rejected with `403 Forbidden`.
+
+### 18.2 Modal Form Specifications
+1. **`Policy Name *` (Required):**
+   - Text input, placeholder `"e.g., Tier 2 Support"`.
+   - Minimum 1 character, maximum 128 characters.
+2. **`Description` (Optional):**
+   - Textarea describing operational boundaries.
+3. **`Preset Selector`:**
+   - Dropdown options: `Custom` (default), `Full Access`, `Read Only`.
+4. **`Resource Permissions Matrix`:**
+   - Interactive 8x4 checkbox grid initialized according to selected preset.
+
+### 18.3 Submission Endpoint & Payload
+- **Target Endpoint:** `POST /api/v1/managementPolicy/0`
+  > [!NOTE]
+  > In `OWPROV`, the path parameter on `POST /api/v1/managementPolicy/{id}` is ignored by the backend daemon. Sending `0` by convention is standard across OpenWifi microservices.
+- **Request Body:**
+  ```json
+  {
+    "name": "Tier 2 Network Operations",
+    "description": "Operator policy for regional field support",
+    "entity": "",
+    "venue": "",
+    "entries": [
+      {
+        "resources": ["entity", "venue", "inventory", "configuration"],
+        "access": ["READ", "CREATE", "MODIFY"]
+      },
+      {
+        "resources": ["operator", "subscriber", "contact", "location"],
+        "access": ["READ"]
+      }
+    ]
+  }
+  ```
+- **Lifecycle on Success:**
+  1. `OWPROV` returns the created `ManagementPolicy` record.
+  2. UI invalidates `['managementPolicies']`.
+  3. Displays success toast: `"Policy [Name] created successfully."`
+  4. Automatically selects the new policy in the catalog and displays its details.
+
+---
+
+## 19. Authoritative REST API Contracts for Policies
+
+> [!IMPORTANT]
+> **Source-Verified Contract Assurance:**  
+> The `OWPROV` contracts below are verified directly against `ra-wlan-cloud-owprov` C++ daemon source code (`RESTAPI_managementPolicy_handler.cpp`, `RESTAPI_managementPolicy_list_handler.cpp`) and official OpenAPI definitions (`owprov.yaml`). The `mango-mdu-service` Overview contract defines the exact composite schema to be consumed by the UI.
+
+### 19.1 OWPROV Management Policy APIs
+
+#### 19.1.1 Get All Management Policies
+```http
+GET /api/v1/managementPolicy HTTP/1.1
+Host: <owprov-host>:9005
+Authorization: Bearer <jwt-token>
+```
+**Response (`200 OK`):**
+```json
+{
+  "managementPolicies": [
+    {
+      "id": "policy-001",
+      "name": "Admin",
+      "description": "Administrative access within assigned role scope",
+      "entity": "",
+      "venue": "",
+      "inUse": ["mra-001", "mra-002"],
+      "created": 1725000000,
+      "modified": 1725500000,
+      "entries": [
+        {
+          "resources": [
+            "entity",
+            "venue",
+            "configuration",
+            "inventory",
+            "operator",
+            "subscriber",
+            "contact",
+            "location"
+          ],
+          "access": ["FULL"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 19.1.2 Create Management Policy (Root Only)
+```http
+POST /api/v1/managementPolicy/0 HTTP/1.1
+Host: <owprov-host>:9005
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "name": "Field Technician Tier 1",
+  "description": "Inventory and venue read/modify permissions",
+  "entity": "",
+  "venue": "",
+  "entries": [
+    {
+      "resources": ["inventory", "venue"],
+      "access": ["READ", "MODIFY"]
+    }
+  ]
+}
+```
+**Response (`200 OK`):** Created `ManagementPolicy` JSON object.
+
+#### 19.1.3 Update Management Policy (Root Only)
+```http
+PUT /api/v1/managementPolicy/{id} HTTP/1.1
+Host: <owprov-host>:9005
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "name": "Field Technician Tier 1",
+  "description": "Updated technician permissions",
+  "entries": [
+    {
+      "resources": ["inventory", "venue"],
+      "access": ["READ", "CREATE", "MODIFY"]
+    }
+  ]
+}
+```
+**Response (`200 OK`):** Updated `ManagementPolicy` JSON object.
+
+#### 19.1.4 Delete Management Policy (Root Only)
+```http
+DELETE /api/v1/managementPolicy/{id} HTTP/1.1
+Host: <owprov-host>:9005
+Authorization: Bearer <jwt-token>
+```
+**Response (`200 OK`):** `{}`  
+*If policy is in use, returns `400 Bad Request` with `StillInUse` error.*
+
+---
+
+### 19.2 Aggregation Backend API (`mango-mdu-service`)
+
+#### 19.2.1 Get Policy Overview Summary
+```http
+GET /api/v1/policy/{id}/overview HTTP/1.1
+Host: <mango-mdu-host>:8080
+Authorization: Bearer <jwt-token>
+```
+**Response (`200 OK`):**
+```json
+{
+  "policy": {
+    "id": "policy-001",
+    "name": "Network Operator",
+    "description": "Monitor devices and manage network configuration.",
+    "entity": "",
+    "venue": "",
+    "created": 1725000000,
+    "modified": 1725500000
+  },
+  "totalUsers": 9,
+  "totalScopedAssignments": 14,
+  "totalProperties": 4,
+  "totalVenues": 12,
+  "usersWithPolicy": [
+    {
+      "id": "user-uuid-1",
+      "name": "Anita Sharma",
+      "email": "anita@ipnx.example",
+      "userRole": "noc",
+      "avatar": "1",
+      "scopedAssignmentsCount": 2,
+      "scopes": [
+        {
+          "entityId": "entity-uuid-1",
+          "entityName": "Sunrise Apartments",
+          "venueId": "",
+          "venueName": "All venues"
+        },
+        {
+          "entityId": "entity-uuid-2",
+          "entityName": "Oakwood Housing",
+          "venueId": "venue-uuid-001",
+          "venueName": "Building A"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 20. Frontend Data Structures & Type Definitions (Policies)
+
+```typescript
+// ==========================================
+// OWPROV Policy Types
+// ==========================================
+
+export type CanonicalResource =
+  | 'entity'
+  | 'venue'
+  | 'configuration'
+  | 'inventory'
+  | 'operator'
+  | 'subscriber'
+  | 'contact'
+  | 'location';
+
+export type PolicyAccessVerb = 'READ' | 'CREATE' | 'MODIFY' | 'DELETE' | 'FULL';
+
+export interface PolicyEntry {
+  resources: CanonicalResource[];
+  access: PolicyAccessVerb[];
+}
+
+export interface ManagementPolicy {
+  id: string;
+  name: string;
+  description: string;
+  entity: string;
+  venue: string;
+  entries: PolicyEntry[];
+  inUse?: string[];
+  tags?: string[];
+  created?: number;
+  modified?: number;
+}
+
+export interface CreateManagementPolicyPayload {
+  name: string;
+  description?: string;
+  entity: string;
+  venue: string;
+  entries: PolicyEntry[];
+}
+
+// ==========================================
+// Aggregation Backend (Overview) Types
+// ==========================================
+
+export interface UserPolicyScopeInfo {
+  entityId: string;
+  entityName: string;
+  venueId: string;
+  venueName: string;
+}
+
+export interface UserWithPolicySummary {
+  id: string;
+  name: string;
+  email: string;
+  userRole: string;
+  avatar?: string;
+  scopedAssignmentsCount: number;
+  scopes: UserPolicyScopeInfo[];
+}
+
+export interface PolicyOverviewSummary {
+  policy: {
+    id: string;
+    name: string;
+    description: string;
+    entity: string;
+    venue: string;
+    created: number;
+    modified: number;
+  };
+  totalUsers: number;
+  totalScopedAssignments: number;
+  totalProperties: number;
+  totalVenues: number;
+  usersWithPolicy: UserWithPolicySummary[];
+}
+```
+
+---
+
+## 21. Acceptance Criteria & QA Test Scenarios (Policies Tab)
+
+### 21.1 Catalog Listing & Search
+- **TC-POL-001 (Catalog Ingestion):** Verify `GET /api/v1/managementPolicy` populates the catalog table with all returned policies.
+- **TC-POL-002 (Search Filtering):** Enter search text matching policy name or description. Verify debounced real-time table filtering.
+- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies`, `Policies in Use`, and `Unassigned Policies` accurately calculate from policy `inUse` and active MRAs.
+
+### 21.2 Overview Aggregation Integration
+- **TC-POL-004 (Overview Aggregation Query):** Select policy row. Verify `GET /api/v1/policy/{id}/overview` loads summary mini-cards and the "Users with this policy" roster table.
+- **TC-POL-005 (Roster Scope Badges):** Verify each user in the overview roster renders their assigned property and venue badges correctly.
+
+### 21.3 Permissions Matrix & Serialization
+- **TC-POL-006 (Matrix Rendering):** Open Permissions sub-tab. Verify 8 canonical resources render with appropriate checkmarks matching backend `entries`.
+- **TC-POL-007 (UPDATE to MODIFY Serialization):** In edit mode, check `Update` column, save policy. Verify request payload maps to `MODIFY` in the `access` array.
+- **TC-POL-008 (Root Mutation Enforcement):** Log in as non-root operator. Verify `+ Create policy` button is hidden and matrix edit controls are disabled.
+- **TC-POL-009 (In-Use Policy Deletion Guard):** Attempt to delete a policy with active assignments. Verify delete button is disabled with tooltip, and backend rejects with `400 Bad Request` (`StillInUse`).
+- **TC-POL-010 (Create Policy Success):** Log in as `root`. Open `+ Create policy`, fill name and permissions, submit. Verify `POST /api/v1/managementPolicy/0` executes and adds policy to catalog.
+
+
