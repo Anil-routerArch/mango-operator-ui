@@ -380,7 +380,7 @@ Clicking the top-level `+ Create user` button opens the focused user creation mo
 |                      lowercase, number, and symbol.               |
 |  [x] Force password change                                        |
 |      Require a new password at first sign-in.                     |
-|  [x] Email validation                                             |
+|  [ ] Email validation                                             |
 |      Require the user to verify their email address.              |
 |  ---------------------------------------------------------------  |
 |  [ Cancel ]                                       [ Create user ] |
@@ -410,11 +410,24 @@ Clicking the top-level `+ Create user` button opens the focused user creation mo
    - Default: `true`. Sets `changePassword: true`.
    - Requires operator to set a new password on initial login.
 8. **`Email validation` (Toggle):**
-   - Default: `false`. Sets `emailValidation: true`.
-   - Appends `?email_verification=true` to the creation endpoint to trigger an automated verification email.
+   - **Default:** `false` (unchecked in UI).
+   - **Toggle Semantics:**
+     - **When Enabled (`true`):**
+       - Form state: `emailValidation = true`
+       - Network invocation: Append query parameter `?email_verification=true` to the URL (`POST /api/v1/user/0?email_verification=true`).
+       - Backend behavior: `OWSEC` creates the user record with `waitingForEmailCheck: true`, sets `validated: false`, and dispatches an automated verification email with an action link (`AuthService::VerifyEmail()`).
+     - **When Disabled (`false`):**
+       - Form state: `emailValidation = false`
+       - Network invocation: Do **not** append the query parameter (`POST /api/v1/user/0`).
+       - Backend behavior: `OWSEC` creates the user record pre-validated (`validated: true`), with `waitingForEmailCheck: false`. No verification email is dispatched.
+   - **Authoritative Contract Determination:**
+     - The **URL query parameter (`?email_verification=true`) is authoritatively evaluated by `OWSEC`** (`RESTAPI_user_handler.cpp` line 400: `if (GetParameter("email_verification", "") == "true")`).
+     - The JSON body field (`emailValidation: boolean`) is maintained within frontend Formik form values for client-side state tracking and reference parity with `owprov-ui`, but is ignored by the backend JSON parser. The query parameter alone governs the backend email verification workflow.
 
 ### 7.2 Creation Payload & Endpoint
-- **Target Endpoint:** `POST /api/v1/user/0` (with optional `?email_verification=true`)
+- **Target Endpoint:** 
+  - When `emailValidation === true`: `POST /api/v1/user/0?email_verification=true`
+  - When `emailValidation === false`: `POST /api/v1/user/0`
 - **Request Body:**
   ```json
   {
@@ -506,9 +519,15 @@ Content-Type: application/json
   "userRole": "installer",
   "currentPassword": "SecurePassword123!",
   "description": "Field Technician",
-  "changePassword": true
+  "changePassword": true,
+  "emailValidation": false
 }
 ```
+> [!NOTE]
+> **Email Verification Activation & Authoritative Scope:**
+> - **Query Parameter Authority:** To require email verification on newly created operators, the frontend appends `?email_verification=true` to the URL: `POST /api/v1/user/0?email_verification=true`. As source-verified in `OWSEC` (`RESTAPI_user_handler.cpp` line 400), `GetParameter("email_verification", "") == "true"` is the sole authoritative trigger that flags the user account with `waitingForEmailCheck = true`, sets `validated = false`, and dispatches the verification email.
+> - **Body Field vs Query Parameter:** When the email validation toggle is disabled, the frontend sends `POST /api/v1/user/0` without query parameters, creating the account pre-validated (`validated: true`). The JSON body property `"emailValidation": boolean` is passed for client form state tracking and reference parity with `owprov-ui`, but is ignored by the backend JSON deserializer.
+
 **Response (`200 OK`):** Full created `User` record including generated `id`.
 
 #### 8.1.4 Update User
