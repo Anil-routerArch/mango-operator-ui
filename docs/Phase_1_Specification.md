@@ -255,7 +255,7 @@ The **Profile** sub-tab provides direct inline modification of the selected oper
 | :--- | :--- | :--- | :--- |
 | **`Email`** | Text Input (Disabled) | **Permanently Immutable** (Read-only for all users, including `root`). | Primary identity key in `OWSEC`. Cannot be modified once created; field is permanently disabled across all roles and excluded from update payloads. |
 | **`Name *`** | Text Input | Editable | Required. Minimum 1 character, maximum 128 characters. |
-| **`System Role *`** | Dropdown Selector | Editable based on RBAC rules. | Options: `admin`, `noc`, `installer`, `csr` (plus `root` if current user is `root`). Cannot downgrade own role. |
+| **`System Role *`** | Dropdown Selector | Editable based on RBAC rules (`ACLProcessor::CanChangeUserRole`). | Options for `root`: `root`, `admin`, `noc`, `installer`, `csr`. Options for `admin`: `admin`, `noc`, `installer`, `csr` (excluding `root`). Cannot modify own role (`!IsSelf`). |
 | **`Password`** | Masked text input with `Show`/`Hide` toggle | Editable | Optional on update. Helper: *"Leave unchanged to keep current password. Minimum 8 characters with uppercase, lowercase, number, and symbol."* |
 | **`Description`** | Multi-line Textarea | Editable | Optional operational responsibility summary. |
 | **`Notes`** | Audit Notes List + Add Note input | Editable / Append-only | Displays timestamped internal notes. Entering text appends `{ "note": text, "created": Math.floor(Date.now()/1000) }`. |
@@ -263,10 +263,40 @@ The **Profile** sub-tab provides direct inline modification of the selected oper
 > [!NOTE]
 > **Email Immutability:** In `OWSEC`, a user's email address serves as the permanent primary identity key and cannot be updated after account creation (in `RESTAPI_user_handler.cpp`, `ApplyProfileFields` only mutates `name`, `description`, `location`, `locale`, and `changePassword`). Consequently, the email input field is permanently disabled for all user roles, including `root`, and is excluded from `UpdateUserPayload`.
 
-### 5.2 Role Modification Authorization Rules
-- `root` operators can edit the system role of any user.
-- `admin` operators can modify roles for `noc`, `installer`, and `csr` operators, but **cannot** elevate a user to `root` or modify another `admin`.
-- A user's role cannot be changed if the user currently holds active MRAs that conflict with the target role privileges.
+### 5.2 Role Modification Authorization Rules (OWSEC ACL Verification)
+
+Role modifications dispatched via `PUT /api/v1/user/{id}` are strictly governed by `OWSEC`'s source-verified `ACLProcessor::CanChangeUserRole()` logic:
+
+```cpp
+static inline bool CanChangeUserRole(const SecurityObjects::UserInfo &User,
+                                     const SecurityObjects::UserInfo &Target,
+                                     SecurityObjects::USER_ROLE NewRole) {
+    if (IsSelf(User, Target)) {
+        return false;
+    }
+    if (IsRoot(User)) {
+        return true;
+    }
+    if (!IsAdmin(User)) {
+        return false;
+    }
+    return NewRole != SecurityObjects::ROOT && IsNonRootTarget(Target) &&
+           WasCreatedBy(User, Target);
+}
+```
+
+- **`root` operators:**
+  - Can modify the system role of any user across the entire system.
+  - Can assign any valid system role: `root`, `admin`, `noc`, `installer`, `csr`.
+- **`admin` operators:**
+  - Can modify the system role of **any non-root user they created** (`WasCreatedBy(User, Target) === true`), **including another `admin`** (e.g. demoting an admin-created admin to `noc`, `installer`, or `csr`, or changing an operator between operational roles).
+  - Can assign any non-root role: `admin`, `noc`, `installer`, `csr`.
+  - **Restrictions for `admin` operators:**
+    - **Cannot elevate any user to `root`** (`NewRole != SecurityObjects::ROOT`).
+    - **Cannot modify a `root` user** (`IsNonRootTarget(Target)`).
+    - **Cannot modify their own role** (`!IsSelf(User, Target)`).
+    - **Cannot modify users created by other operators** (`WasCreatedBy(User, Target)` is required; foreign users are neither visible in `GET /api/v1/users` nor editable).
+- **MRA Privilege Constraints:** A user's role cannot be modified if the user currently holds active Management Role Assignments (MRAs) that conflict with the target role privileges.
 
 ### 5.3 Action Buttons
 - **`Cancel`:** Discards unsaved modifications and resets form to pristine initial values.
@@ -850,6 +880,7 @@ export const CreateScopedAccessValidationSchema = Yup.object().shape({
 - **TC-USR-008 (Create User Success):** Fill valid details with role `noc`, submit form. Verify `POST /api/v1/user/0` is dispatched, modal closes, and new user appears in table.
 - **TC-USR-009 (Administrative Actions):** Trigger Reset MFA, Send Password Reset, and Suspend User from context menu. Verify correct API parameters on `PUT /api/v1/user/{id}`.
 - **TC-USR-010 (Profile Editing & Email Immutability):** Verify `Email` input field is disabled and read-only across all roles (including `root`). Update name and description in Profile sub-tab, click Save. Verify `PUT /api/v1/user/{id}` dispatches only editable fields (`name`, `description`, `userRole`, `notes`, etc.) without `email`, executes successfully, and updates cached data.
+- **TC-USR-011 (Admin Role Editing Authorization):** Authenticate as an `admin`. Open an operator created by this admin who holds the `admin` role. Verify the `System Role` dropdown is enabled, lists non-root roles (`admin`, `noc`, `installer`, `csr`), and omits `root`. Change the role to `noc` and click Save; verify `PUT /api/v1/user/{id}` succeeds with `200 OK`. Attempting to submit `userRole: "root"` returns `401 Unauthorized` (`ACCESS_DENIED`). Verify that an admin cannot edit their own role.
 
 ### 11.3 Scoped Access (MRA) Tests
 - **TC-SCA-001 (Fetch Scoped Access):** Select user with active assignments. Verify `GET /api/v1/managementRole?userId={id}` displays individual 1:1 cards.
