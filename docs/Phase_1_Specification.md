@@ -100,10 +100,23 @@ A core architectural principle of the Operator UI is that **UI modules and navig
     - **Non-admin roles (`noc`, `installer`, `csr`, etc.):** `OWSEC` authoritatively rejects the request with `401 Unauthorized` (`ACCESS_DENIED`) as source-verified in `RESTAPI_users_handler.cpp`.
   - **`GET /api/v1/managementPolicy` (`OWPROV`):**
     - Policy definitions are inspectable by authenticated operators.
-- **UI Presentation Philosophy (Data-Driven Display):**
-  - The UI does not need to worry about client-side pre-evaluating role permissions before dispatching queries:
-    - **If the API returns data:** The UI displays the data, metric cards, and relevant controls.
-    - **If the API returns `401`/`403` (Access Denied) or empty results:** The UI gracefully renders an unauthorized empty state (e.g. *"You do not have administrative permissions to view the user directory."*) without blocking navigation or crashing the route.
+- **UI Presentation Philosophy (Distinct Data-Driven States):**
+  The UI strictly decouples response states into five distinct visual presentations, ensuring that empty datasets are never confused with access restrictions:
+  1. **Loading State (`isLoading`):** Renders animated skeleton shimmers across KPI summary cards and table rows without shifting the layout or unmounting controls.
+  2. **Success with Data (`200 OK` + `manageableUsers.length > 0`):** Renders populated KPI metric cards, active directory table rows, search/filter controls, and loads the selected user into the detail panel.
+  3. **Empty Dataset (`200 OK` + `manageableUsers.length === 0`):**
+     - Typical for newly provisioned `admin` accounts who have not yet created any operators, or when search/filters match 0 records.
+     - **This is NOT an error or access restriction.** The operator holds full administrative privileges.
+     - Headline KPI metric cards display `0` (Total: `0`, Active: `0`, Suspended: `0`, MFA: `0 of 0`).
+     - Directory table renders an informative **Empty State** view (*"No users found. Click '+ Create user' to onboard your first operator."*).
+     - The top-level `+ Create user` button remains active and visible. The split detail panel displays an idle prompt (*"No operator selected"*).
+  4. **Unauthorized State (`401 Unauthorized` / `403 Forbidden`):**
+     - Occurs when non-administrative roles (`noc`, `installer`, `csr`) query `GET /api/v1/users`.
+     - The UI does not crash or redirect away. Instead, it renders an inline **Access Restricted** banner in place of the directory:
+       > *"Access Restricted: You do not have administrative privileges to view or manage user accounts in this domain."*
+     - Headline KPI summary cards are hidden or rendered in a disabled state.
+  5. **Network / Server Error (`5xx` or connection timeout):**
+     - Renders an inline error boundary card with an explanation (*"Failed to connect to authentication service."*) and an interactive `[ Retry ]` button that invalidates the query cache.
 - **Frontend Contract:** The UI client attaches the standard Bearer token and does not compute or filter tenancy hierarchies client-side. The UI simply consumes the returned payload.
 
 ---
@@ -229,6 +242,19 @@ Directly above the directory table, three interactive controls govern the table 
 - Default page size: **5 rows** (configurable to 10 or 25).
 - Pagination controls: Previous (`<`), page numbers (`1`, `2`, `3`), Next (`>`), and count indicator (`Showing 1-5 of 17`).
 - Pagination state is reset to page 1 whenever the search query, role filter, or status filter changes.
+
+### 3.6 Directory Table Presentation States
+
+To ensure crisp visual differentiation between empty datasets, access restrictions, loading, and system errors:
+
+| UI Presentation State | Trigger Condition | KPI Cards Display | Table / Main View Area | Available Actions |
+| :--- | :--- | :--- | :--- | :--- |
+| **Loading** | Query is fetching / background refetch | Animated skeleton shimmers | Skeleton table row shimmers | Background refresh spinner |
+| **Populated** | `200 OK` and `manageableUsers.length > 0` | Calculated metrics for active manageable population | Paginated user rows + split details panel | Search, filter, sort, row select, `+ Create user` |
+| **Empty Dataset** | `200 OK` and `manageableUsers.length === 0` (e.g. newly created `admin`) | All cards render `0` (`0`, `0`, `0`, `"0 of 0"`) | Dedicated empty state illustration + *"No users found"* message | **`+ Create user` (fully enabled)**, `↻ Refresh` |
+| **Filter Empty** | `200 OK`, search query or filter returns 0 matches | Unchanged (reflects total dataset metrics) | *"No users match the selected filters"* | *"Clear filters"* button |
+| **Unauthorized** | `401 Unauthorized` / `403 Forbidden` (`ACCESS_DENIED`) | Hidden / disabled | Inline Access Restricted card: *"You do not have administrative privileges to view or manage user accounts."* | Global navigation |
+| **Service Error** | `5xx` or Network Disconnection | Error boundary fallback | Alert banner: *"Failed to connect to authentication service."* | **`[ Retry ]` button** |
 
 ---
 
@@ -898,6 +924,9 @@ export const CreateScopedAccessValidationSchema = Yup.object().shape({
 - **TC-USR-010 (Profile Editing & Email Immutability):** Verify `Email` input field is disabled and read-only across all roles (including `root`). Update name and description in Profile sub-tab, click Save. Verify `PUT /api/v1/user/{id}` dispatches only editable fields (`name`, `description`, `userRole`, `notes`, etc.) without `email`, executes successfully, and updates cached data.
 - **TC-USR-011 (Admin Role Editing Authorization):** Authenticate as an `admin`. Open an operator created by this admin who holds the `admin` role. Verify the `System Role` dropdown is enabled, lists non-root roles (`admin`, `noc`, `installer`, `csr`), and omits `root`. Change the role to `noc` and click Save; verify `PUT /api/v1/user/{id}` succeeds with `200 OK`. Attempting to submit `userRole: "root"` returns `401 Unauthorized` (`ACCESS_DENIED`). Verify that an admin cannot edit their own role.
 - **TC-USR-012 (Token-Driven Authorization & Non-Admin Graceful Handling):** Authenticate with a non-admin role (e.g. `noc`, `installer`, `csr`). Navigate to the Users tab. Verify the UI does not pre-block or crash the route. When `GET /api/v1/users` returns `401 Unauthorized` (`ACCESS_DENIED`), verify the UI renders a graceful unauthorized state indicating the caller is not authorized to retrieve the user directory.
+- **TC-USR-013 (Empty Dataset vs. Unauthorized State Distinction):**
+  1. Authenticate as a newly created `admin` who has not created any operators (`GET /api/v1/users` returns `200 OK` with `{"users": []}`). Verify the UI displays all KPI cards as `0`, renders the friendly empty state (*"No users found"*), keeps the `+ Create user` button enabled, and does NOT display an Access Denied or error alert.
+  2. Authenticate as a `noc` operator (`GET /api/v1/users` returns `401 Unauthorized`). Verify the UI displays the distinct Access Restricted alert card without rendering an empty table or misinforming the user that no records exist.
 
 ### 11.3 Scoped Access (MRA) Tests
 - **TC-SCA-001 (Fetch Scoped Access):** Select user with active assignments. Verify `GET /api/v1/managementRole?userId={id}` displays individual 1:1 cards.
