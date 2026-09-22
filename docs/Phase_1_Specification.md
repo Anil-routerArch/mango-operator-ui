@@ -937,6 +937,7 @@ The Policies tab provides centralized cataloging, resource permission inspection
 
 A critical architectural principle of the OpenWifi policy system is that **all policies share an identical record schema in `OWPROV`**:
 - Every policy record consists of `id`, `name`, `description`, `entries`, `entity`, `venue`, `inUse`, `tags`, `created`, and `modified`.
+- **Global, Scope-Independent Templates (Legacy Schema Fields):** Management Policies in Mango are intentionally independent of physical scope. They define *what* actions can be performed, while Management Role Assignments (MRAs) define *where* (the physical scope: entity and venue) and *to whom* (the user) they apply. While `entity` and `venue` fields exist in the policy record due to legacy `OWPROV` schema compatibility, they always remain empty strings (`""`) because policies are global, reusable blueprints not bound to any specific property or venue.
 - The `OWPROV` backend has **no concept of a policy `type` column** (there is no `built-in` vs. `custom` classification in the backend).
 - Baseline policies (e.g., `Admin`, `CSR`, `Installer`, `NOC`) are auto-seeded into `OWPROV` during service initialization (`service up`) simply to provide convenient starting blueprints. They are not structurally distinct or locked.
 - Policy names are descriptive identifiers and **must not be conflated with `OWSEC` platform `userRole`**. A policy named `"Admin"` or `"Network Operator"` is simply a ruleset template that can be assigned to any user via Scoped Access.
@@ -992,20 +993,25 @@ The left side of the split-view layout renders the master Policies Catalog table
 - **Search Policies Input (`Search policies...`):**
   - Debounced by **300ms**.
   - Matches `name` and `description` (case-insensitive substring).
-- **Scope Filter Dropdown:**
-  - Options: `All Scopes` (default), `Entity-wide`, or filter by specific Property.
+- **Scope Filter Dropdown (Legacy Compatibility):**
+  - Options: `All Scopes` (default), `Global (Unscoped)`.
+  - In the Mango model, policies are global permission templates not bound to a physical scope. Scope is bound exclusively via MRAs; hence all policy records evaluate as global templates.
 
 ### 14.2 Table Column Specifications
 
 | Column | Header | Data Source & Transformation | Display Behavior |
 | :--- | :--- | :--- | :--- |
 | **`Policy`** | `Policy` / `Name` | `policy.name` | Shield Icon + Policy Name (bold primary text). |
-| **`Entity`** | `Property` / `Entity` | `policy.entity` | Resolved entity name via `useGetEntities()`. Displays `"Entity-wide"` or `"—"` if empty (global template). |
-| **`Venue`** | `Venue` | `policy.venue` | Resolved venue name via `useGetVenues()`. Displays `"Entity-wide"` if empty. |
+| **`Entity`** | `Property` / `Entity` | `policy.entity` | Legacy schema field. Always empty (`""`) as policies are global templates independent of scope. Displays `"Global"` or `"—"`. |
+| **`Venue`** | `Venue` | `policy.venue` | Legacy schema field. Always empty (`""`) as policies are global templates independent of scope. Displays `"Global"` or `"—"`. |
 | **`Description`** | `Description` | `policy.description` | Truncated single-line summary with tooltip for full text. |
 | **`Used By`** | `Used By` | Distinct users computed from active MRAs (see §14.2.1) | Formatted string: `"X users"` (e.g. `"4 users"`, or `"Unassigned"` if 0). Tooltip on hover displays total assignment scope: `"X users across Y scoped assignments"`. |
 | **`Modified`** | `Modified` | `policy.modified` | Formatted relative or calendar date (e.g. `"1 Sep 2026"`). If `0`, render `"Never"`. |
 | **Selection** | Chevron (`>`) | `selectedPolicyId === policy.id` | Highlights active row loaded into right detail panel. |
+
+> [!NOTE]
+> **Scope Independence & Legacy Schema Preservation:**
+> While `entity` and `venue` columns are preserved in the table for interface parity with `owprov-ui`'s legacy schema, their values remain empty (`""`) across all policies. Policies define platform permission sets, whereas physical scoping (`entity` and `venue`) is applied dynamically when assigning policies to users via Management Role Assignments (MRAs).
 
 #### 14.2.1 Distinct Users vs. Scoped Assignments Calculation
 Because an individual user can hold scoped access across multiple properties or venues under the same policy, displaying raw assignment counts as "users" produces inaccurate figures (e.g., 1 operator with 3 venue assignments would erroneously report as "3 users"). The catalog table strictly computes distinct user IDs:
@@ -1263,6 +1269,7 @@ The top-level `+ Create policy` button in the application header provides direct
     ]
   }
   ```
+- **Legacy Scope Fields:** `"entity": ""` and `"venue": ""` remain empty strings in creation payloads. Policies are global and scope-independent templates; physical boundary scoping is applied when assigning the policy to an operator via an MRA.
 - **Lifecycle on Success:**
   1. `OWPROV` returns the created `ManagementPolicy` record.
   2. UI invalidates `['managementPolicies']`.
@@ -1452,8 +1459,8 @@ export interface ManagementPolicy {
   id: string;
   name: string;
   description: string;
-  entity: string;
-  venue: string;
+  entity: string; // Legacy OWPROV schema field: always empty ("") as policies are global, scope-independent templates
+  venue: string;  // Legacy OWPROV schema field: always empty ("") as policies are global, scope-independent templates
   entries: PolicyEntry[];
   inUse?: string[];
   tags?: string[];
@@ -1464,8 +1471,8 @@ export interface ManagementPolicy {
 export interface CreateManagementPolicyPayload {
   name: string;
   description?: string;
-  entity: string;
-  venue: string;
+  entity: string; // Legacy OWPROV schema field: sent as "" (scope is bound dynamically via MRAs)
+  venue: string;  // Legacy OWPROV schema field: sent as "" (scope is bound dynamically via MRAs)
   entries: PolicyEntry[];
 }
 
