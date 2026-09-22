@@ -183,10 +183,12 @@ The left panel renders the master operator table populated directly via `useGetU
 - **Search & Filter Controls:**
   - **Search Users:** Debounced input (300ms) matching `name`, `email`, and `description`.
   - **System Role Filter:** Dropdown filtering by operational role (`All Roles`, `Network Operator`, `Administrator`, `Installer`, `CSR`, `Read Only`).
+  - **System Role Filter:** Dropdown filtering by backend system role (`All Roles`, `admin`, `noc`, `csr`, `installer`, `root`).
   - **Status Filter:** Dropdown filtering by account state (`All Status`, `Active`, `Suspended`).
 - **Table Columns:**
   - `User`: Circular avatar badge (with fallback 2-letter uppercase initials, e.g., `AS`), Full Name (bold primary text), and Email Address (muted secondary text).
   - `System Role`: Standardized badge reflecting the operator's coarse platform capability (`Network Operator`, `Administrator`, `Installer`, `CSR`, `Read Only`).
+  - `System Role`: Standardized badge reflecting the operator's platform capability (`admin`, `noc`, `csr`, `installer`, `root`).
   - `Scoped Access`: Human-readable summary badge indicating assigned physical boundaries (e.g., `"2 properties"`, `"3 venues"`, `"All properties"`), computed client-side from active MRAs.
   - `Status`: Pill badge (`Active` [Green] vs. `Suspended` [Orange]).
   - `Last Login`: Relative timestamp (e.g., `"12 min ago"`, `"1h ago"`) or formatted date (`"18 Aug 2026"`).
@@ -241,10 +243,12 @@ Clicking `+ Create user` opens a focused modal dialog:
   - `Email *`: Required input, placeholder `"name@company.com"`. Validated for RFC 5322 syntax and checked for uniqueness in `OWSEC`.
   - `Name *`: Required input, placeholder `"Enter full name"`.
   - `System role *`: Required dropdown. **No default value is preselected.** Offers exclusively operational roles: `Network Operator`, `Administrator`, `Installer`, `CSR`, `Read Only` (plus `root` if created by root). `subscriber` is strictly excluded.
+  - `System role *`: Required dropdown. **No default value is preselected.** Offers backend operational roles: `admin`, `noc`, `csr`, `installer` (plus `root` if creator is root). Note: `Read Only` is an `OWPROV` management policy, not an `OWSEC` user role.
   - `Description`: Optional input, placeholder `"Describe this user's responsibility"`.
   - `Note`: Optional textarea, placeholder `"Add an internal administrative note"`.
 - **Section 2 — Authentication Settings:**
   - `Password *`: Password input with `Show`/`Hide` visibility toggle and helper: *"Minimum 12 characters with uppercase, lowercase, number, and symbol. View password policy."*
+  - `Password *`: Password input with `Show`/`Hide` visibility toggle and helper: *"Minimum 8 characters with uppercase, lowercase, number, and symbol. View password policy."*
   - `Force password change`: Switch toggle with caption *"Require a new password at first sign-in."* (`changePassword: true`).
   - `Email validation`: Switch toggle with caption *"Require the user to verify their email address."* (`emailValidation: true`, appending `?email_verification=true`).
 - **Modal Footer Actions:** `Cancel` (dismisses modal) and `Create user` (solid green button dispatching `POST /api/v1/user/0` to `OWSEC`).
@@ -267,6 +271,7 @@ Scoped Access is the authoritative mechanism in OpenWifi that grants a user oper
 An MRA binds:
 $$	ext{MRA} = \langle 	ext{User ID}, 	ext{Property (Entity ID)}, 	ext{Venue ID (Optional)}, 	ext{Management Policy ID} 
 angle$$
+$$\text{MRA} = \langle \text{User ID}, \text{Property (Entity ID)}, \text{Venue ID (Optional)}, \text{Management Policy ID} \rangle$$
 
 In `OWPROV` V2 (`owprov-v2.yaml`), `managementRole` records are modeled as:
 ```json
@@ -510,6 +515,18 @@ Provides an interactive visual inspection and editing matrix for operational cap
      | **Configuration** | ✓ | ✓ | ✓ | — |
      | **Configuration Profile** | ✓ | ✓ | ✓ | — |
    - Checkmark (`✓`) indicates granted permission; dash (`—`) indicates omitted permission.
+   - Renders an interactive, 2-dimensional grid mapping system resources against operational verbs (normatively serialized per [§14.4](#144-permission-matrix-mapping--serialization-rules)):
+     | Resource (UI Display) | Backend Resource Identifier | Read (`READ`) | Create (`CREATE`) | Update (`MODIFY`) | Delete (`DELETE`) |
+     | :--- | :--- | :---: | :---: | :---: | :---: |
+     | **Property** | `entity` | ✓ | — | — | — |
+     | **Venue** | `venue` | ✓ | — | — | — |
+     | **Device** | `inventory` | ✓ | — | ✓ | — |
+     | **Configuration** | `configuration` | ✓ | ✓ | ✓ | — |
+     | **Configuration Profile** | `configuration` | ✓ | ✓ | ✓ | — |
+     | **Operator** | `operator` | — | — | — | — |
+     | **Subscriber** | `subscriber` | — | — | — | — |
+   - Checkmark (`✓`) indicates granted permission; dash (`—`) indicates omitted permission (`NOACCESS`).
+   - **Serialization Note:** The UI column **Update** is serialized strictly as **`MODIFY`** in the backend `access: string[]` array (never as `"Update"` or `"UPDATE"`). The UI resource **Device** is serialized strictly as **`inventory`**.
 3. **Policy Impact Alert Banner:**
    - Informative blue callout box computing the real-time blast radius of changes:  
      `[i] Policy impact: 9 users across 14 scoped assignments will be affected by permission changes.`
@@ -527,6 +544,7 @@ Clicking `+ Create policy` opens the dedicated policy creation workflow (modal o
   - `Description`: String (optional, explaining the operational tier or target technicians).
   - `Policy Preset Base`: Optional dropdown allowing the root operator to clone permissions from an existing preset (`Network Operator`, `Administrator`, `Installer`, `CSR`, `Read Only`) or start with a blank matrix.
   - `Resource Permissions Grid`: Interactive, checkable matrix allowing the operator to toggle `Read`, `Create`, `Update`, `Delete` across system resources (`Property`, `Venue`, `Device`, `Configuration`, `Configuration Profile`, `Inventory`, `Subscriber`).
+  - `Resource Permissions Grid`: Interactive, checkable matrix allowing the operator to toggle `Read`, `Create`, `Update`, `Delete` across system resources (`Property` $\to$ `entity`, `Venue` $\to$ `venue`, `Device` $\to$ `inventory`, `Configuration` $\to$ `configuration`, `Operator` $\to$ `operator`, `Subscriber` $\to$ `subscriber`, `Contact` $\to$ `contact`, `Location` $\to$ `location`). Serialization strictly adheres to [§14.4](#144-permission-matrix-mapping--serialization-rules) (e.g., `Update` maps to `MODIFY`).
   - `entity` and `venue`: Enforced automatically as empty strings `""` by the UI client to maintain global template architecture.
 - **Submission:**
   - Dispatches `POST /api/v1/managementPolicy/0` directly to `OWPROV` via `axiosProv`.
@@ -629,15 +647,18 @@ sequenceDiagram
 1. **Step 1 — Scoped Role Filtering (`OWPROV`):**
    - Fetches MRAs visible and authorized for the caller from `OWPROV` (forwarding caller's Bearer token) and filters assignments matching `policyId`:
      $$	ext{filteredMRAs} = \{ r \in 	ext{Caller-Authorized ManagementRoles} \mid r.	ext{managementPolicy} = 	ext{policyId} \}$$
+     $$\text{filteredMRAs} = \{ r \in \text{Caller-Authorized ManagementRoles} \mid r.\text{managementPolicy} = \text{policyId} \}$$
    - Collects distinct user UUIDs assigned to this policy:
      $$	ext{mraUserIds} = 	ext{Set}\left( igcup_{r \in 	ext{filteredMRAs}} r.	ext{users} 
 ight)$$
+     $$\text{mraUserIds} = \text{Set}\left( \bigcup_{r \in \text{filteredMRAs}} r.\text{users} \right)$$
 2. **Step 2 — Operator-Visible Users Query (`OWSEC`):**
    - Calls `OWSEC` `GET /api/v1/users` forwarding the calling operator's JWT Bearer token.
    - `OWSEC` authoritatively applies its tenant visibility filter, returning strictly the subset of users that the calling operator is permitted to see.
 3. **Step 3 — Mathematical Set Intersection (True Policy Users):**
    - Computes the strict set intersection:
      $$	ext{Assigned Policy Users} = \{ u \in 	ext{OWSEC Visible Users} \mid u.	ext{id} \in 	ext{mraUserIds} \}$$
+     $$\text{Assigned Policy Users} = \{ u \in \text{OWSEC Visible Users} \mid u.\text{id} \in \text{mraUserIds} \}$$
    - **Guarantees:**
      - Only authentic assignees holding active MRAs for this policy are included.
      - Synthetic platform-role mappings are completely eliminated.
@@ -647,6 +668,7 @@ ight)$$
    - Resolves display names via `OWPROV` entity and venue tables.
    - Computes headline summary metrics:
      $$	ext{totalProperties} = |	ext{distinctEntityIds}|, \quad 	ext{totalVenues} = |	ext{distinctVenueIds}|, \quad 	ext{totalUsers} = |	ext{Assigned Policy Users}|$$
+     $$\text{totalProperties} = |\text{distinctEntityIds}|, \quad \text{totalVenues} = |\text{distinctVenueIds}|, \quad \text{totalUsers} = |\text{Assigned Policy Users}|$$
 5. **Step 5 — Response Delivery & Client Caching:**
    - Returns the consolidated [`PolicyOverviewSummary`](#13-data-mapping--type-definitions) response.
    - The UI caches this result under `['policyOverview', policyId]` with a 5-minute stale time.
@@ -709,6 +731,8 @@ To ensure transparent integration without exposing internal microservice mechani
 | **Users** | Resend Email Verification | `OWSEC` | `PUT /api/v1/user/{id}?email_verification=true` | None | Updated `User` JSON | `200 OK` |
 | **Users** | Fetch User Avatar Stream | `OWSEC` | `GET /avatar/{id}?cache={ts}` | None (`responseType: 'arraybuffer'`) | Binary JPEG/PNG byte stream | `200 OK` |
 | **Scoped Access** | List User Scopes | `OWPROV` (V1) | `GET /api/v1/managementRole?userId={id}` | None | `{ "roles": [ ManagementRole, ... ] }` | `200 OK` |
+| **Scoped Access** | Get Single Management Role | `OWPROV` (V2) | `GET /api/v2/managementRole/{id}` | None | `ManagementRole` JSON | `200 OK` |
+| **Scoped Access** | Inspect Role In-Use References | `OWPROV` (V2) | `GET /api/v2/managementRole/{id}?expandInUse=true` | None | `{ "entries": { ... } }` (`ExpandedUseEntryMapList`) | `200 OK` |
 | **Scoped Access** | Fetch Properties (Entities) | `OWPROV` (V1) | `GET /api/v1/entity` | None | `{ "entities": [ Entity, ... ] }` | `200 OK` |
 | **Scoped Access** | Fetch Venues Hierarchy | `OWPROV` (V1) | `GET /api/v1/venue` | None | `{ "venues": [ Venue, ... ] }` | `200 OK` |
 | **Scoped Access** | Assign Access (Batch / Single) | `OWPROV` (V2) | `POST /api/v2/managementRole/0` | `{ entity, venueIds, managementPolicy, users }` | `{ "roles": [ ManagementRole, ... ] }` | `200 OK` |
@@ -934,9 +958,13 @@ To ensure transparent integration without exposing internal microservice mechani
 
 #### 12.3.3 Get Single Management Role (Direct OWPROV V2)
 `GET /api/v2/managementRole/{id}?expandInUse=true`
+
+##### Standard Role Retrieval:
+`GET /api/v2/managementRole/{id}`
 - **Headers:** `Authorization: Bearer <token>`
 - **Query Parameter:** `expandInUse=true` (optional, returns expanded usage entities referencing this role).
 - **Response `200 OK`:**
+- **Response `200 OK` (`ManagementRole`):** Returns the complete management role record:
   ```json
   {
     "id": "mra-uuid-1",
@@ -947,6 +975,19 @@ To ensure transparent integration without exposing internal microservice mechani
     "entity": "entity-uuid-1",
     "venue": "",
     "inUse": ["entity-uuid-1"],
+    "created": 1718000000,
+    "modified": 1718000000
+  }
+  ```
+
+##### Expanded In-Use Reference Retrieval:
+`GET /api/v2/managementRole/{id}?expandInUse=true`
+- **Headers:** `Authorization: Bearer <token>`
+- **Query Parameter:** `expandInUse=true`
+- **Critical Backend Handler Behavior:** In the `OWPROV` V2 handler (`RESTAPI_managementRole_v2_handler`), when `expandInUse=true` is requested, the handler returns early and responds **exclusively** with the expanded references object (`ExpandedUseEntryMapList`). It does **not** include the parent role record attributes (`id`, `name`, `managementPolicy`, `users`, etc.):
+- **Response `200 OK` (`ExpandedUseEntryMapList`):**
+  ```json
+  {
     "entries": {
       "entity": [
         {
@@ -958,6 +999,7 @@ To ensure transparent integration without exposing internal microservice mechani
     },
     "created": 1718000000,
     "modified": 1718000000
+    }
   }
   ```
 
@@ -1027,6 +1069,7 @@ To ensure transparent integration without exposing internal microservice mechani
     "entries": [
       {
         "resources": ["device", "configuration"],
+        "resources": ["inventory", "configuration"],
         "access": ["READ"]
       }
     ]
@@ -1188,9 +1231,30 @@ export type ExpandedUseEntryMapList = {
 };
 
 // --- Management Policies (OWPROV) ---
+export type PolicyResource =
+  | 'entity'
+  | 'venue'
+  | 'inventory'
+  | 'configuration'
+  | 'operator'
+  | 'subscriber'
+  | 'contact'
+  | 'location';
+
+export type PolicyAccessVerb =
+  | 'READ'
+  | 'CREATE'
+  | 'MODIFY'
+  | 'DELETE'
+  | 'FULL'
+  | 'NOACCESS'
+  | 'UPDATE';
+
 export type PolicyEntry = {
   resources: string[];
   access: string[]; // 'READ' | 'CREATE' | 'MODIFY' | 'DELETE' | 'FULL'
+  resources: PolicyResource[] | string[];
+  access: PolicyAccessVerb[] | string[];
 };
 
 export type ManagementPolicy = {
@@ -1283,6 +1347,118 @@ export type EndpointApiResponse = {
 - **`description`:** Optional, max 255 characters.
 - **`entries`:** Must contain at least one valid resource permission block.
 - **`entity` / `venue`:** UI enforces empty string `""` values to guarantee global template status.
+
+### 14.4 Permission Matrix Mapping & Serialization Rules
+To prevent implementers from dispatching UI presentation strings to the backend or misinterpreting backend policy access entries, the frontend must strictly adhere to the following normative mapping and serialization rules:
+
+#### 14.4.1 Resource Identifier Mapping Table
+| UI Display Label | Canonical OWPROV Resource Identifier (`PolicyResource`) | Description / Domain Scope |
+| :--- | :--- | :--- |
+| **Property** | `entity` | Physical organizational entity / property hierarchy |
+| **Venue** | `venue` | Sub-entity physical venues, facilities, or buildings |
+| **Device** (or **Inventory**) | `inventory` | Device inventory, serial numbers, hardware state |
+| **Configuration** (or **Profile**) | `configuration` | Device configuration profiles and templates |
+| **Operator** | `operator` | Administrative operators and accounts |
+| **Subscriber** | `subscriber` | End-user residential subscriber records |
+| **Contact** | `contact` | Technical and administrative contacts |
+| **Location** | `location` | Physical geographic coordinates and address records |
+
+> [!IMPORTANT]
+> The UI label **Device** MUST always be serialized to backend resource identifier `inventory`. Similarly, **Configuration Profile** MUST serialize to `configuration`, and **Property** MUST serialize to `entity`. Never send display strings (e.g., `"Device"`, `"device"`, `"Property"`, `"Profile"`) directly in the `resources: string[]` array.
+
+#### 14.4.2 Operational Access Verb Mapping Table
+| UI Matrix Column Verb | Backend OWPROV Access Enum (`PolicyAccessVerb`) | Serialization Rule (UI $\to$ Payload) | Deserialization Rule (Payload $\to$ UI) |
+| :--- | :--- | :--- | :--- |
+| **Read** | `READ` | If checked, includes `"READ"` in `access` array | Checked if `access` contains `"READ"` or `"FULL"` |
+| **Create** | `CREATE` | If checked, includes `"CREATE"` in `access` array | Checked if `access` contains `"CREATE"` or `"FULL"` |
+| **Update** | `MODIFY` | **Mandatory:** `Update` MUST serialize to `"MODIFY"` | Checked if `access` contains `"MODIFY"`, `"UPDATE"`, or `"FULL"` |
+| **Delete** | `DELETE` | If checked, includes `"DELETE"` in `access` array | Checked if `access` contains `"DELETE"` or `"FULL"` |
+| *(All Selected / Full)* | `FULL` | If all CRUD verbs are checked, UI sends `["FULL"]` | Checks all four columns (`Read`, `Create`, `Update`, `Delete`) |
+| *(None Selected)* | `NOACCESS` | If no verbs are checked, UI omits entry or sends `["NOACCESS"]` | Unchecks all columns |
+
+> [!WARNING]
+> **UPDATE $\to$ MODIFY Serialization:** The UI column is labeled **Update** for operator clarity, but the authoritative OWPROV OpenAPI specification enum is `MODIFY`. The UI client MUST map `Update: true` $\to$ `"MODIFY"`. When deserializing, the UI client MUST recognize both `"MODIFY"` (standard OpenAPI) and legacy `"UPDATE"` (internal database preset string) as activating the **Update** toggle. Never send `"Update"` or `"UPDATE"` in client mutation requests.
+
+#### 14.4.3 Bidirectional Transformation Code Reference
+```typescript
+// Mapping constants
+export const RESOURCE_UI_TO_API: Record<string, PolicyResource> = {
+  'Property': 'entity',
+  'Venue': 'venue',
+  'Device': 'inventory',
+  'Configuration': 'configuration',
+  'Configuration Profile': 'configuration',
+  'Operator': 'operator',
+  'Subscriber': 'subscriber',
+  'Contact': 'contact',
+  'Location': 'location',
+};
+
+export const RESOURCE_API_TO_UI: Record<PolicyResource, string> = {
+  'entity': 'Property',
+  'venue': 'Venue',
+  'inventory': 'Device',
+  'configuration': 'Configuration',
+  'operator': 'Operator',
+  'subscriber': 'Subscriber',
+  'contact': 'Contact',
+  'location': 'Location',
+};
+
+// Serialization: Matrix Row State -> PolicyEntry
+export function serializeMatrixRow(
+  resourceKey: PolicyResource,
+  rowState: { read: boolean; create: boolean; update: boolean; delete: boolean }
+): PolicyEntry | null {
+  if (rowState.read && rowState.create && rowState.update && rowState.delete) {
+    return { resources: [resourceKey], access: ['FULL'] };
+  }
+  const access: PolicyAccessVerb[] = [];
+  if (rowState.read) access.push('READ');
+  if (rowState.create) access.push('CREATE');
+  if (rowState.update) access.push('MODIFY'); // Mandatory UPDATE -> MODIFY rule
+  if (rowState.delete) access.push('DELETE');
+
+  if (access.length === 0) return null;
+  return { resources: [resourceKey], access };
+}
+
+// Deserialization: PolicyEntry[] -> UI Matrix State
+export function deserializePolicyEntries(
+  entries: PolicyEntry[]
+): Record<PolicyResource, { read: boolean; create: boolean; update: boolean; delete: boolean }> {
+  const matrix: Record<string, { read: boolean; create: boolean; update: boolean; delete: boolean }> = {
+    entity: { read: false, create: false, update: false, delete: false },
+    venue: { read: false, create: false, update: false, delete: false },
+    inventory: { read: false, create: false, update: false, delete: false },
+    configuration: { read: false, create: false, update: false, delete: false },
+    operator: { read: false, create: false, update: false, delete: false },
+    subscriber: { read: false, create: false, update: false, delete: false },
+    contact: { read: false, create: false, update: false, delete: false },
+    location: { read: false, create: false, update: false, delete: false },
+  };
+
+  for (const entry of entries) {
+    const isFull = entry.access.includes('FULL');
+    const hasRead = isFull || entry.access.includes('READ');
+    const hasCreate = isFull || entry.access.includes('CREATE');
+    const hasUpdate = isFull || entry.access.includes('MODIFY') || entry.access.includes('UPDATE');
+    const hasDelete = isFull || entry.access.includes('DELETE');
+
+    for (const res of entry.resources) {
+      if (matrix[res]) {
+        matrix[res] = {
+          read: matrix[res].read || hasRead,
+          create: matrix[res].create || hasCreate,
+          update: matrix[res].update || hasUpdate,
+          delete: matrix[res].delete || hasDelete,
+        };
+      }
+    }
+  }
+  return matrix as Record<PolicyResource, { read: boolean; create: boolean; update: boolean; delete: boolean }>;
+}
+```
 
 ---
 
@@ -1414,6 +1590,7 @@ This specification defines the frontend security boundaries and hardening requir
 - **FR-POL-03:** The UI shall allow operators with `userRole === 'root'` to edit any policy, including auto-seeded default policies, via `PUT /api/v1/managementPolicy/{id}` directly on `OWPROV`.
 - **FR-POL-04:** The UI shall hide or disable policy creation, modification, and deletion controls for all non-root operators (`admin`, `csr`, `noc`, `installer`).
 - **FR-POL-05:** The UI shall render an interactive Permission Matrix Visualizer displaying resource categories against standard CRUD access verbs (`Read`, `Create`, `Update`, `Delete`).
+- **FR-POL-05:** The UI shall render an interactive Permission Matrix Visualizer displaying resource categories against standard CRUD access verbs (`Read`, `Create`, `Update`, `Delete`), strictly enforcing normative bidirectional serialization to backend `OWPROV` identifiers per [§14.4](#144-permission-matrix-mapping--serialization-rules) (including `Update` $\to$ `MODIFY` and `Device` $\to$ `inventory`).
 - **FR-POL-06:** The UI shall enforce that all created or edited policies have `entity: ""` and `venue: ""` to ensure global template architecture.
 - **FR-POL-07:** The UI shall gate policy deletion in the UI based on whether the policy is currently in use (`Used By > 0` or active MRA count $\ge 1$), disabling the delete action with a tooltip when active assignments exist. In addition, downstream `OWPROV` shall authoritatively reject deletion of any policy referenced by active MRAs with `400 Bad Request` (`StillInUse`), completely eliminating orphaned Management Role records.
 - **FR-POL-08:** The UI shall display a Policies Catalog tab featuring headline KPI metric summary cards for `Total Policies`, `Built-in`, `Custom`, and `Active Assignments`.
@@ -1440,6 +1617,9 @@ This specification defines the frontend security boundaries and hardening requir
 - **TC-USR-004 (Create User Manual Password):** Fill create user modal with name, email, select role `Network Operator` (no default), enter manual password, toggle `force password change`, submit. Verify `POST /api/v1/user/0` directly to `OWSEC` and table update.
 - **TC-USR-005 (Create User Email Invite):** Fill create user modal, toggle `email validation`, select role `CSR`, submit. Verify call to `POST /api/v1/user/0?email_verification=true` on `OWSEC`.
 - **TC-USR-006 (Role Dropdown Excludes Subscriber):** Open Create User modal, inspect role dropdown options. Verify operational roles are present, and `subscriber` is absent.
+- **TC-USR-004 (Create User Manual Password):** Fill create user modal with name, email, select role `noc` (no default), enter manual password, toggle `force password change`, submit. Verify `POST /api/v1/user/0` directly to `OWSEC` and table update.
+- **TC-USR-005 (Create User Email Invite):** Fill create user modal, toggle `email validation`, select role `csr`, submit. Verify call to `POST /api/v1/user/0?email_verification=true` on `OWSEC`.
+- **TC-USR-006 (Role Dropdown Excludes Subscriber):** Open Create User modal, inspect role dropdown options. Verify operational roles (`admin`, `noc`, `csr`, `installer`) are present, and `subscriber` is absent.
 - **TC-USR-007 (User Profile Split-Tab Save):** In User Details Profile sub-tab, update description, click "Save profile". Verify `PUT /api/v1/user/{id}` directly on `OWSEC`.
 - **TC-USR-008 (Avatar Upload & Delete):** In User Details, upload a valid PNG avatar. Verify `POST /avatar/{id}` is sent as multipart form-data to `OWSEC`. Delete avatar and verify `DELETE /avatar/{id}` and fallback to initials.
 - **TC-USR-009 (Administrative Security Actions):** Click context menu (`...`) on a user row. Trigger "Reset MFA", "Send Password Reset Email", and "Resend Verification Email". Verify respective query parameters on `PUT /api/v1/user/{id}` directly on `OWSEC`.
@@ -1482,6 +1662,7 @@ This specification defines the frontend security boundaries and hardening requir
 - [ ] **Root-Only Policy Creation Workflow:** Top-action `+ Create policy` button is strictly visible and accessible to `root` operators (`userRole === 'root'`), allowing creation of custom global policies persisted directly via `POST /api/v1/managementPolicy/0` on `OWPROV`.
 - [ ] **Policy Overview Usage Summary & Assigned Users Roster:** Policy Overview sub-tab displays usage metrics (Users, Scoped assignments, Properties, Venues) and lists authentic assigned operators with their resolved property and venue scopes.
 - [ ] **Resource Permissions Matrix Visualizer:** Policies tab renders an interactive 2D grid mapping system resources (`Property`, `Venue`, `Device`, `Configuration`, `Configuration Profile`) against operational verbs (`Read`, `Create`, `Update`, `Delete`).
+- [ ] **Resource Permissions Matrix Visualizer:** Policies tab renders an interactive 2D grid mapping system resources (`Property`, `Venue`, `Device`, `Configuration`) against operational verbs (`Read`, `Create`, `Update`, `Delete`), with authoritative bidirectional serialization adhering strictly to §14.4 (including `Update` $\to$ `MODIFY` and `Device` $\to$ `inventory`).
 - [ ] **Built-in Policy Deletion Guard:** Built-in policies cannot be deleted in the UI; custom policies can only be deleted if active assignments count is zero.
 - [ ] **Authoritative Policy Deletion Protection & Zero Orphans:** Backend `OWPROV` rejects deletion of in-use policies with `400 Bad Request` (`StillInUse`), preventing orphaned MRAs.
 - [ ] **Auto-Seeded Default Policies & Root Mutation:** Default policies auto-seeded on service up are fully mutable by `root` operators (`userRole === 'root'`) directly via `OWPROV`.
@@ -1528,6 +1709,7 @@ This specification defines the frontend security boundaries and hardening requir
 
 ### Decision 3: No Default Role & Strict Exclusion of Subscriber Role
 - **Decision:** The User Creation form does not preselect any default role. The dropdown contains exclusively operational roles (`Network Operator`, `Administrator`, `Installer`, `CSR`, `Read Only`, plus `root` if created by root). The end-user `subscriber` role is strictly excluded.
+- **Decision:** The User Creation form does not preselect any default role. The dropdown contains exclusively backend operational user roles (`admin`, `noc`, `csr`, `installer`, plus `root` if created by root). Note: `Read Only` is an `OWPROV` management policy, not an `OWSEC` user role.
 - **Rationale:** Prevents accidental high-privilege account creation and maintains clean domain separation between operator identities (`OWSEC` users) and resident subscribers (`OWSUB` subusers).
 
 ### Decision 4: Dual Credential Onboarding
@@ -1600,3 +1782,8 @@ This specification defines the frontend security boundaries and hardening requir
 ### Decision 20: Unified Two-Tab Delivery & Root-Only Policy Creation
 - **Decision:** The Users & Access module delivers a unified two-tab administrative interface: the **Users** tab (identity directory, user lifecycle, authentication, and per-user Scoped Access split panel) and the **Policies** tab (policy catalog, KPI cards, policy overview usage metrics, resource permissions matrix visualizer, and root-only policy creation and customization).
 - **Rationale:** Aligns completely with approved Figma product designs. Consolidates user onboarding, infrastructure scoping, and policy definition into a single coherent operator domain. Restricting policy creation and editing to `root` protects multi-tenant permissions while empowering platform administrators with full template customization directly on `OWPROV`.
+
+### Decision 21: Normative Permission Matrix Serialization (UPDATE -> MODIFY)
+- **Decision:** The UI presents human-friendly column labels (`Read`, `Create`, `Update`, `Delete`) and resource names (`Property`, `Device`, `Configuration Profile`), but serializes strictly to canonical `OWPROV` identifiers (`entity`, `inventory`, `configuration`, `MODIFY`) per [§14.4](#144-permission-matrix-mapping--serialization-rules). Deserialization accepts both `MODIFY` and backend-seeded `UPDATE`.
+- **Rationale:** The `OWPROV` OpenAPI specification strictly defines access verbs as `['READ', 'CREATE', 'MODIFY', 'DELETE', 'FULL']` and resources as `['entity', 'venue', 'inventory', 'configuration', 'operator', 'subscriber', 'contact', 'location']`. Dispatching unmapped UI display labels (such as sending `"Update"` or `"Device"`) results in upstream schema rejection or unhandled permissions.
+
