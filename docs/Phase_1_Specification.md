@@ -97,21 +97,25 @@ A core architectural principle of the Operator UI is that **UI modules and navig
   - **`GET /api/v1/managementPolicy` (`OWPROV`):**
     - Policy definitions are inspectable by authenticated operators.
 - **UI Presentation Philosophy (Distinct Data-Driven States):**
-  The UI strictly decouples response states into five distinct visual presentations, ensuring that empty datasets are never confused with access restrictions:
+  The UI strictly decouples response states into distinct visual presentations, ensuring that true empty datasets and active filter states are never confused with access restrictions or system errors:
   1. **Loading State (`isLoading`):** Renders animated skeleton shimmers across KPI summary cards and table rows without shifting the layout or unmounting controls.
-  2. **Success with Data (`200 OK` + `manageableUsers.length > 0`):** Renders populated KPI metric cards, active directory table rows, search/filter controls, and loads the selected user into the detail panel.
+  2. **Populated Dataset (`200 OK` + `manageableUsers.length > 0`):** Renders populated KPI metric cards, active directory table rows, search/filter controls, and loads the selected user into the detail panel.
   3. **Empty Dataset (`200 OK` + `manageableUsers.length === 0`):**
-     - Typical for newly provisioned `admin` accounts who have not yet created any operators, or when search/filters match 0 records.
+     - Occurs when the database contains no manageable operators (e.g. newly provisioned `admin` accounts who have not yet created any operators).
      - **This is NOT an error or access restriction.** The operator holds full administrative privileges.
      - Headline KPI metric cards display `0` (Total: `0`, Active: `0`, Suspended: `0`, MFA: `0 of 0`).
      - Directory table renders an informative **Empty State** view (*"No users found. Click '+ Create user' to onboard your first operator."*).
      - The top-level `+ Create user` button remains active and visible. The split detail panel displays an idle prompt (*"No operator selected"*).
-  4. **Access Restricted State (`403 Forbidden` / `ACCESS_DENIED`):**
+  4. **Filter Empty State (`manageableUsers.length > 0` && `filteredUsers.length === 0`):**
+     - Occurs when an active search query or status/role filter matches zero operators within an existing dataset.
+     - **KPI Summary Cards are strictly preserved:** Headline KPI cards remain unchanged, continuing to reflect the true operational counts of the total manageable population.
+     - Directory table renders a dedicated filter-empty view (*"No users match the selected filters."*) with a **`[ Clear filters ]`** button to reset filters back to the full dataset.
+  5. **Access Restricted State (`403 Forbidden` / `ACCESS_DENIED`):**
      - Occurs when non-administrative roles (`noc`, `installer`, `csr`) query `GET /api/v1/users`.
      - The UI does not crash or redirect away. Instead, it renders an inline **Access Restricted** banner in place of the directory:
        > *"Access Restricted: You do not have administrative privileges to view or manage user accounts in this domain."*
      - Headline KPI summary cards are hidden or rendered in a disabled state.
-  5. **Network / Server Error (`5xx` or connection timeout):**
+  6. **Network / Server Error (`5xx` or connection timeout):**
      - Renders an inline error boundary card with an explanation (*"Failed to connect to authentication service."*) and an interactive `[ Retry ]` button that invalidates the query cache.
 - **Frontend Contract:** The UI client attaches the standard Bearer token and does not compute or filter tenancy hierarchies client-side. The UI simply consumes the returned payload.
 
