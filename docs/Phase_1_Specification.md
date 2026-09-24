@@ -1196,7 +1196,7 @@ The aggregation service joins `OWPROV` MRAs, applies `OWSEC` caller visibility, 
 |  +-------------+  +-------------+  +-------------+  +-----------+ |
 |                                                                   |
 |  POLICY DETAILS                                                   |
-|  ID: policy-uuid-5678              Scope: Entity-wide             |
+|  ID: policy-uuid-5678              Scope: Global (Reusable)       |
 |  Status: In Use                    Modified: 1 Sep 2026           |
 |  Description: Monitor devices and manage network configuration.   |
 |                                                                   |
@@ -1218,7 +1218,8 @@ The aggregation service joins `OWPROV` MRAs, applies `OWSEC` caller visibility, 
    - **Properties:** Distinct count of organizational entities bound to this policy.
    - **Venues:** Distinct count of physical venues bound to this policy.
 2. **Policy Details Section:**
-   - Identifier, Scope classification (`Entity-wide` vs. property-specific), Status badge (`In Use` [Green] vs. `Unassigned` [Gray]), Last modified timestamp, and Description.
+   - Identifier, Scope classification (`Global`), Status badge (`In Use` [Green] vs. `Unassigned` [Gray]), Last modified timestamp, and Description.
+   - *(Note: In accordance with §12.1, all policies are global, reusable blueprints; physical infrastructure scope—entity-wide or venue-specific—belongs strictly to the individual assignment rows in the roster below).*
 3. **"Users with this policy" Roster Table:**
    - Interactive list displaying all operators holding this policy.
    - Each row shows:
