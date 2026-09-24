@@ -1160,7 +1160,7 @@ The **Permissions** sub-tab provides visual inspection and root-only editing of 
 |                                                                   |
 |  Resource permissions                                             |
 |  +-------------------------------------------------------------+  |
-|  | Resource        |  Read   |  Create  |  Update  |  Delete   |  |
+|  | Resource        |  READ   |  CREATE  |  MODIFY  |  DELETE   |  |
 |  |-----------------+---------+----------+----------+-----------|  |
 |  | Entity          |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
 |  | Venue           |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
@@ -1191,7 +1191,7 @@ When edit mode is triggered by a `root` operator (via the `...` context menu `Ed
 
 In standard **View Mode** (for non-root operators or prior to entering edit mode), Policy Name and Description are rendered statically in the split panel header and Overview tab, while the Permissions tab displays the read-only permissions matrix without form input controls or action buttons.
 
-### 17.2 Canonical 8 System Resources & Operational Verbs
+### 17.2 Canonical 8 System Resources
 The matrix maps strictly across the canonical 8 OpenWifi resources defined in `owprov-ui` (`CreatePolicyModal.tsx`):
 1. **`Entity` (`entity`):** Customer properties and organizational roots.
 2. **`Venue` (`venue`):** Physical subdivisions and venues.
@@ -1202,36 +1202,23 @@ The matrix maps strictly across the canonical 8 OpenWifi resources defined in `o
 7. **`Contact` (`contact`):** Administrative and technical contacts.
 8. **`Location` (`location`):** Physical addresses and geo-coordinates.
 
-### 17.3 Bidirectional Mapping & Serialization Rules
-
-| UI Column | Backend Access Verb | Serialization Rule | Deserialization Rule |
-| :--- | :--- | :--- | :--- |
-| **`Read`** | `READ` | If checked, serialize `'READ'`. | Checked if `access` array contains `'READ'` or `'FULL'`. |
-| **`Create`** | `CREATE` | If checked, serialize `'CREATE'`. | Checked if `access` array contains `'CREATE'` or `'FULL'`. |
-| **`Update`** | `MODIFY` | If checked, serialize `'MODIFY'`. | Checked if `access` array contains `'MODIFY'` or `'FULL'`. |
-| **`Delete`** | `DELETE` | If checked, serialize `'DELETE'`. | Checked if `access` array contains `'DELETE'` or `'FULL'`. |
-| **All 4 Checked** | `FULL` | Compacted to `['FULL']`. | All 4 checkboxes rendered checked if `access` contains `'FULL'`. |
-| **None Checked** | `NOACCESS` | Entry omitted from `entries` array. | All 4 checkboxes rendered unchecked if resource entry is omitted or empty. |
-
-> [!NOTE]
-> **Raw Token Mapping & Backend Authority:**
-> The UI maintains a straightforward 1:1 raw representation with canonical backend access verbs (`READ`, `CREATE`, `MODIFY`, `DELETE`, and `FULL`). The UI does not perform client-side permission inference or simulate backend authorization hierarchies. The backend daemon (`OWPROV`) serves as the authoritative decision-maker for all access checks and operation permissions.
-
+### 17.3 Backend-Authoritative Policy Requests
+The frontend implements no client-side permission logic, permission semantics, or authorization rules. The UI treats `entries` strictly as a structured data payload (`resources` and `access` action strings), dispatching creation and update requests directly to `OWPROV`. The backend daemon is authoritatively responsible for validating, parsing, and enforcing all permission semantics and operational checks.
 
 ### 17.4 Preset Base Dropdown
 The dropdown offers standard starting configurations:
-- **`Full Access`:** Sets all 8 resources to `['FULL']`.
-- **`Read Only`:** Sets all 8 resources to `['READ']`.
-- **`Custom`:** Permits arbitrary checkbox combinations.
+- **`Full Access`:** Configures all 8 resources with `['FULL']`.
+- **`Read Only`:** Configures all 8 resources with `['READ']`.
+- **`Custom`:** Permits custom resource and action selections.
 
 ### 17.5 Policy Impact Banner & Root Mutation Flow
 - **Impact Callout:** Displays real-time assignment impact:
   > *"Policy impact: [X] users across [Y] scoped assignments will be affected by permission changes."*
 - **Authorization Guard:** For non-root users, metadata fields are non-editable, matrix checkboxes are disabled (`readOnly: true`), and footer action buttons are hidden.
 - **Root Mutation Flow:**
-  - `root` operators can edit `name`, `description`, select presets, and toggle individual resource checkboxes.
+  - `root` operators can edit `name`, `description`, select presets, and toggle individual resource permissions.
   - Clicking **`Cancel`** reverts all form fields (`name`, `description`, `entries`) back to their cached `policy` values and exits edit mode.
-  - Clicking **`Save policy`** validates fields, groups matrix entries by access permissions, and dispatches `PUT /api/v1/managementPolicy/{id}` to `OWPROV` with:
+  - Clicking **`Save policy`** validates fields and dispatches `PUT /api/v1/managementPolicy/{id}` to `OWPROV` with:
     ```json
     {
       "name": "Network Operator",
@@ -1556,12 +1543,11 @@ export interface PolicyOverviewSummary {
 - **TC-POL-004 (Overview Aggregation Query):** Select policy row. Verify `GET /api/v1/policy/{id}/overview` loads summary mini-cards and the "Users with this policy" roster table.
 - **TC-POL-005 (Roster Scope Badges):** Verify each user in the overview roster renders their assigned property and venue badges correctly.
 
-### 21.3 Permissions Matrix & Serialization
-- **TC-POL-006 (Matrix Rendering):** Open Permissions sub-tab. Verify 8 canonical resources render with appropriate checkmarks matching backend `entries`.
-- **TC-POL-007 (UI Update Column to MODIFY Serialization):** In edit mode, check `Update` column, save policy. Verify request payload maps to `MODIFY` in the `access` array.
-- **TC-POL-008 (Root Mutation Enforcement):** Log in as non-root operator. Verify `+ Create policy` button is hidden and matrix edit controls are disabled.
-- **TC-POL-009 (In-Use Policy Deletion Guard):** Attempt to delete a policy with active assignments. Verify delete button is disabled with tooltip, and backend rejects with `400 Bad Request` (`StillInUse`).
-- **TC-POL-010 (Create Policy Success):** Log in as `root`. Open `+ Create policy`, fill name and permissions, submit. Verify `POST /api/v1/managementPolicy/0` executes and adds policy to catalog.
-- **TC-POL-011 (Edit Policy Metadata & Permissions):** Log in as `root`. From the `...` context menu, select `Edit Policy`. Modify Policy Name and Description, toggle permissions in the matrix, and click `Save policy`. Verify `PUT /api/v1/managementPolicy/{id}` dispatches updated `name`, `description`, and `entries`, updates split panel header text and catalog table rows, and returns to view mode.
+### 21.3 Permissions Matrix & Lifecycle
+- **TC-POL-006 (Matrix Rendering):** Open Permissions sub-tab. Verify 8 canonical resources render matching backend `entries`.
+- **TC-POL-007 (Root Mutation Enforcement):** Log in as non-root operator. Verify `+ Create policy` button is hidden and matrix edit controls are disabled.
+- **TC-POL-008 (In-Use Policy Deletion Guard):** Attempt to delete a policy with active assignments. Verify delete button is disabled with tooltip, and backend rejects with `400 Bad Request` (`StillInUse`).
+- **TC-POL-009 (Create Policy Success):** Log in as `root`. Open `+ Create policy`, fill name and permissions, submit. Verify `POST /api/v1/managementPolicy/0` executes and adds policy to catalog.
+- **TC-POL-010 (Edit Policy Metadata & Permissions):** Log in as `root`. From the `...` context menu, select `Edit Policy`. Modify Policy Name and Description, toggle permissions in the matrix, and click `Save policy`. Verify `PUT /api/v1/managementPolicy/{id}` dispatches updated `name`, `description`, and `entries`, updates split panel header text and catalog table rows, and returns to view mode.
 
 
