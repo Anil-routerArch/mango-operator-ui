@@ -279,7 +279,7 @@ The panel header displays the operator's avatar/initials, full name, email addre
 
 | Context Action | Downstream API Call | Behavior & Confirmation |
 | :--- | :--- | :--- |
-| **Reset MFA** | `PUT /api/v1/user/{id}?resetMFA=true` | Prompts confirmation. Clears `authenticatorSecret` and resets `mfa.enabled` to `false`. |
+| **Reset MFA** | `PUT /api/v1/user/{id}?resetMFA=true` | Prompts confirmation. Disables MFA (`mfa.enabled: false`), clears `mfa.method` and `mobiles`, and appends an administrative audit note. |
 | **Send Password Reset Email** | `PUT /api/v1/user/{id}?forgotPassword=true` | Dispatches password reset email containing one-time reset token directly from `OWSEC`. |
 | **Resend Verification Email** | `PUT /api/v1/user/{id}?email_verification=true` | Dispatches email verification link to `user.email`. |
 | **Suspend / Reactivate User** | `PUT /api/v1/user/{id}` with `{ "suspended": !user.suspended }` | Toggles account lock. If suspending, prompts modal confirmation. Updates KPI cards and table row. |
@@ -673,7 +673,7 @@ Content-Type: application/json
 #### 8.1.5 Administrative Security & Lifecycle Actions
 - **Suspend User:** `PUT /api/v1/user/{id}` with `{ "suspended": true }`
 - **Reactivate User:** `PUT /api/v1/user/{id}` with `{ "suspended": false }`
-- **Reset MFA:** `PUT /api/v1/user/{id}?resetMFA=true` with `{}`
+- **Reset MFA:** `PUT /api/v1/user/{id}?resetMFA=true` with `{}` (Response `200 OK`: sets `mfa.enabled: false`, clears `mfa.method` and `mobiles`, and appends an administrative audit note)
 - **Send Password Reset:** `PUT /api/v1/user/{id}?forgotPassword=true` with `{}`
 - **Resend Email Verification:** `PUT /api/v1/user/{id}?email_verification=true` with `{}` (Response `200 OK`)
 - **Delete User:** `DELETE /api/v1/user/{id}` (Response `200 OK` with empty response body)
