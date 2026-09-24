@@ -1009,14 +1009,14 @@ Above the Policies catalog table, four real-time KPI metric cards provide platfo
 
 ### 13.1 KPI Calculation Specifications
 
-Metrics are derived directly from cached `['managementPolicies']` (`OWPROV` `GET /api/v1/managementPolicy`) and cached `['managementRoles']` (`OWPROV` `GET /api/v1/managementRole`):
+Metrics are derived strictly from cached `['managementPolicies']` (`OWPROV` `GET /api/v1/managementPolicy`) using each policy record's native `inUse` assignment reference array. The Policies module makes **no unparameterized calls** to `GET /api/v1/managementRole`:
 
 | KPI Card | Calculation Formula | Source & Underlying Logic |
 | :--- | :--- | :--- |
-| **Total Policies** | `policies.length` | Total policies returned by `OWPROV` `GET /api/v1/managementPolicy`. |
-| **Policies in Use** | `policies.filter(p => (p.inUse?.length ?? 0) > 0 || mras.some(r => r.managementPolicy === p.id)).length` | Count of policies currently bound to $\ge 1$ active Management Role Assignments. |
-| **Unassigned Policies** | `policies.filter(p => (p.inUse?.length ?? 0) === 0 && !mras.some(r => r.managementPolicy === p.id)).length` | Count of dormant policies eligible for deletion by `root`. |
-| **Active Assignments** | `mras.length` | Total active scoped infrastructure assignments across the entire platform. |
+| **Total Policies** | `policies.length` | Total policy records returned by `OWPROV` `GET /api/v1/managementPolicy`. |
+| **Policies in Use** | `policies.filter(p => (p.inUse?.length ?? 0) > 0).length` | Count of policies currently bound to $\ge 1$ active Management Role Assignments (`inUse.length > 0`). |
+| **Unassigned Policies** | `policies.filter(p => (p.inUse?.length ?? 0) === 0).length` | Count of dormant policies with 0 active assignments, eligible for deletion by `root`. |
+| **Active Assignments** | `policies.reduce((sum, p) => sum + (p.inUse?.length ?? 0), 0)` | Total active scoped infrastructure assignments across all policies platform-wide. |
 
 ---
 
@@ -1024,7 +1024,13 @@ Metrics are derived directly from cached `['managementPolicies']` (`OWPROV` `GET
 
 The left side of the split-view layout renders the master Policies Catalog table, aligning with `ra-wlan-cloud-owprov-ui` (`PoliciesPage/Table.tsx`).
 
-### 14.1 Search & Scope Controls
+### 14.1 Ingestion Contract & Filter Controls
+- **Single-Request Catalog Ingestion (No Pagination Loop):**
+  Policies are global, reusable permission templates independent of physical scope or individual users. Because the total number of policies across a deployment is bounded and small (typically 5 to 20 blueprints), the client retrieves the complete policy catalog via a single standard query:
+  ```http
+  GET /api/v1/managementPolicy
+  ```
+  Following the reference implementation in `ra-wlan-cloud-owprov-ui` (`useGetManagementPolicies`), this request intentionally omits `limit` parameters and client-side batching loops. In contrast to user-scoped roles (`GET /api/v1/managementRole?userId={userId}`) where pagination applies per user, the policy catalog requires no client-side pagination ingestion loop.
 - **Search Policies Input (`Search policies...`):**
   - Debounced by **300ms**.
   - Matches `name` and `description` (case-insensitive substring).
@@ -1040,7 +1046,7 @@ The left side of the split-view layout renders the master Policies Catalog table
 | **`Entity`** | `Property` / `Entity` | `policy.entity` | Legacy schema field. Always empty (`""`) as policies are global templates independent of scope. Displays `"Global"` or `"—"`. |
 | **`Venue`** | `Venue` | `policy.venue` | Legacy schema field. Always empty (`""`) as policies are global templates independent of scope. Displays `"Global"` or `"—"`. |
 | **`Description`** | `Description` | `policy.description` | Truncated single-line summary with tooltip for full text. |
-| **`Used By`** | `Used By` | Distinct users computed from active MRAs (see §14.2.1) | Formatted string: `"X users"` (e.g. `"4 users"`, or `"Unassigned"` if 0). Tooltip on hover displays total assignment scope: `"X users across Y scoped assignments"`. |
+| **`Used By`** | `Used By` | `policy.inUse?.length ?? 0` (see §14.2.1) | Formatted string: `"X assignments"` (e.g. `"6 assignments"`, or `"Unassigned"` if 0). |
 | **`Modified`** | `Modified` | `policy.modified` | Formatted relative or calendar date (e.g. `"1 Sep 2026"`). If `0`, render `"Never"`. |
 | **Selection** | Chevron (`>`) | `selectedPolicyId === policy.id` | Highlights active row loaded into right detail panel. |
 
@@ -1048,27 +1054,17 @@ The left side of the split-view layout renders the master Policies Catalog table
 > **Scope Independence & Legacy Schema Preservation:**
 > While `entity` and `venue` columns are preserved in the table for interface parity with `owprov-ui`'s legacy schema, their values remain empty (`""`) across all policies. Policies define platform permission sets, whereas physical scoping (`entity` and `venue`) is applied dynamically when assigning policies to users via Management Role Assignments (MRAs).
 
-#### 14.2.1 Distinct Users vs. Scoped Assignments Calculation
-Because an individual user can hold scoped access across multiple properties or venues under the same policy, displaying raw assignment counts as "users" produces inaccurate figures (e.g., 1 operator with 3 venue assignments would erroneously report as "3 users"). The catalog table strictly computes distinct user IDs:
+#### 14.2.1 Assignment Indicator vs. Overview Roster Breakdown
+In the catalog table, the **`Used By`** column renders the immediate assignment count derived from `policy.inUse.length`:
 
 ```typescript
-// 1. Filter MRAs assigned to the target policy
-const matchingMRAs = mras.filter(r => r.managementPolicy === policy.id);
-
-// 2. Compute distinct user count
-const distinctUsersCount = new Set(
-  matchingMRAs.flatMap(r => r.users)
-).size;
-
-// 3. Compute total scoped assignments count
-const totalScopedAssignments = matchingMRAs.length;
-
-// 4. Render display string & secondary tooltip
-const displayLabel = distinctUsersCount > 0 ? `${distinctUsersCount} users` : "Unassigned";
-const tooltipText = distinctUsersCount > 0
-  ? `${distinctUsersCount} users across ${totalScopedAssignments} scoped assignments`
-  : "Not currently assigned to any users";
+const assignmentCount = policy.inUse?.length ?? 0;
+const displayLabel = assignmentCount > 0 
+  ? `${assignmentCount} ${assignmentCount === 1 ? 'assignment' : 'assignments'}` 
+  : "Unassigned";
 ```
+
+Detailed operator usage metrics—including distinct user counts, physical property and venue distributions, and the interactive "Users with this policy" roster table—are loaded on demand when an operator selects a policy row via the composite Overview endpoint (`GET /api/v1/policy/{id}/overview` from `mango-mdu-service`, as detailed in §16). This design eliminates any requirement for the client to retrieve raw, unparameterized `GET /api/v1/managementRole` records.
 
 ### 14.3 Pagination & Row Actions
 - Controlled pagination matching `DataTable` (default 5 or 10 rows per page, page numbers `< 1 2 >`, item count indicator).
@@ -1568,7 +1564,7 @@ export interface PolicyOverviewSummary {
 ### 21.1 Catalog Listing & Search
 - **TC-POL-001 (Catalog Ingestion):** Verify `GET /api/v1/managementPolicy` populates the catalog table with all returned policies.
 - **TC-POL-002 (Search Filtering):** Enter search text matching policy name or description. Verify debounced real-time table filtering.
-- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies`, `Policies in Use`, and `Unassigned Policies` accurately calculate from policy `inUse` and active MRAs.
+- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies`, `Policies in Use`, `Unassigned Policies`, and `Active Assignments` accurately calculate from `GET /api/v1/managementPolicy` records and `policy.inUse` without executing unparameterized `GET /api/v1/managementRole`.
 
 ### 21.2 Overview Aggregation Integration
 - **TC-POL-004 (Overview Aggregation Query):** Select policy row. Verify `GET /api/v1/policy/{id}/overview` loads summary mini-cards and the "Users with this policy" roster table.
