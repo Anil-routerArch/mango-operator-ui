@@ -984,7 +984,7 @@ A critical architectural principle of the OpenWifi policy system is that **all p
    - Operators with non-root roles (`admin`, `noc`, `installer`, `csr`) have view-only access to inspect policy definitions and permissions. Scoped user assignments in the Scoped Access interface are governed authoritatively by the backend based on the caller's authority over the target user. As detailed in §1.2, UI tabs and modules are not bound or restricted by user role; downstream services authoritatively inspect the session token and return data if authorized, or `401`/`403` if denied.
 2. **Authoritative Deletion Protection (`StillInUse`):**
    - A policy can only be deleted if its active assignments count is `0`.
-   - If a policy is currently assigned to one or more active Management Role Assignments (`inUse.length > 0`), `OWPROV` authoritatively rejects deletion with:
+   - If a policy is currently assigned to one or more active Management Role Assignments, `OWPROV` authoritatively rejects deletion with:
      ```json
      {
        "ErrorCode": 400,
@@ -996,26 +996,28 @@ A critical architectural principle of the OpenWifi policy system is that **all p
 
 ---
 
-## 13. Headline KPI Metric Cards (Policies Tab)
+## 13. Headline KPI Metric Card (Policies Tab)
 
-Above the Policies catalog table, real-time KPI metric cards provide platform policy distribution statistics calculated directly from the `GET /api/v1/managementPolicy` response:
+Above the Policies catalog table, a real-time KPI metric card provides the total policy count calculated directly from the `GET /api/v1/managementPolicy` response:
 
 ```
-+-------------------+   +-------------------+   +-------------------+
-|   Total Policies  |   |  Policies in Use  |   |Unassigned Policies|
-|        14         |   |         1         |   |        13         |
-+-------------------+   +-------------------+   +-------------------+
++-------------------+
+|   Total Policies  |
+|        14         |
++-------------------+
 ```
 
 ### 13.1 KPI Calculation Specifications
 
-Metrics are derived strictly from cached `['managementPolicies']` (`OWPROV` `GET /api/v1/managementPolicy`) by counting response items and inspecting each record's native `inUse` array. Assignment and user metrics (such as active assignments and user rosters) are intentionally excluded from global headline cards and loaded on demand within each policy's Overview sub-tab (§16):
+The metric is derived directly from cached `['managementPolicies']` (`OWPROV` `GET /api/v1/managementPolicy`) by counting the returned response items:
 
 | KPI Card | Calculation Formula | Source & Underlying Logic |
 | :--- | :--- | :--- |
 | **Total Policies** | `policies.length` | Total policy records returned in the `managementPolicies` array from `OWPROV` `GET /api/v1/managementPolicy`. |
-| **Policies in Use** | `policies.filter(p => (p.inUse?.length ?? 0) > 0).length` | Count of policies currently bound to $\ge 1$ active Management Role Assignments (`inUse.length > 0`). |
-| **Unassigned Policies** | `policies.filter(p => (p.inUse?.length ?? 0) === 0).length` | Count of dormant policies with 0 active assignments, eligible for deletion by `root`. |
+
+> [!NOTE]
+> **Policy-Specific Usage Isolation:**
+> Global cards do not calculate assignment or usage metrics across policies. All operational assignment metrics—including active scoped assignments, distinct user counts, and infrastructure scopes—are isolated to the selected policy and loaded on demand within the **Overview** sub-tab via `GET /api/v1/policy/{id}/overview` (§16).
 
 ---
 
@@ -1080,7 +1082,7 @@ Selecting a policy row loads the policy details split panel on the right. If no 
 - **Context Actions Menu (`...`):**
   - **`Edit Policy`:** Activates policy edit mode on the Permissions sub-tab (visible only to `root`). Switches the sub-tab to edit mode, exposing editable fields for **Policy Name**, **Description**, **Policy Preset**, and the **Resource Permissions Matrix**, with `[ Cancel ]` and `[ Save policy ]` controls.
   - **`Delete Policy`:** Initiates policy deletion (visible only to `root`).
-    - **In-Use Guard:** If the policy is bound to $\ge 1$ active assignments (`inUse.length > 0`), the delete button is disabled with tooltip:
+    - **In-Use Guard:** If the policy is bound to $\ge 1$ active assignments (verified via policy overview `totalScopedAssignments > 0`), the delete button is disabled with tooltip:
       > *"Cannot delete policy: Currently assigned to one or more active management roles."*
     - **Execution:** For unassigned policies, prompts high-friction confirmation and dispatches `DELETE /api/v1/managementPolicy/{id}` to `OWPROV`.
     - Non-root users do not see mutation options in the context menu.
@@ -1552,7 +1554,7 @@ export interface PolicyOverviewSummary {
 ### 21.1 Catalog Listing & Search
 - **TC-POL-001 (Catalog Ingestion):** Verify `GET /api/v1/managementPolicy` populates the catalog table with all returned policies.
 - **TC-POL-002 (Search Filtering):** Enter search text matching policy name or description. Verify debounced real-time table filtering.
-- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies`, `Policies in Use`, and `Unassigned Policies` accurately calculate directly from `GET /api/v1/managementPolicy` response items and `policy.inUse`.
+- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies` accurately calculates directly from the count of items in the `GET /api/v1/managementPolicy` response array.
 
 ### 21.2 Overview Aggregation Integration
 - **TC-POL-004 (Overview Aggregation Query):** Select policy row. Verify `GET /api/v1/policy/{id}/overview` loads summary mini-cards and the "Users with this policy" roster table.
