@@ -93,7 +93,7 @@ A core architectural principle of the Operator UI is that **UI modules and navig
   - **`GET /api/v1/users` (`OWSEC`):**
     - **`root`:** Returns **all** platform users across the entire system.
     - **`admin`:** Returns users created by that specific admin (`createdBy == currentAdminId`).
-    - **Non-admin roles (`noc`, `installer`, `csr`, etc.):** `OWSEC` authoritatively rejects the request with `401 Unauthorized` (`ACCESS_DENIED`) as source-verified in `RESTAPI_users_handler.cpp`.
+    - **Non-admin roles (`noc`, `installer`, `csr`, etc.):** `OWSEC` authoritatively rejects the request with `403 Forbidden` (`ACCESS_DENIED`) as source-verified in `RESTAPI_users_handler.cpp` and `RESTAPI_Handler.h` line 395.
   - **`GET /api/v1/managementPolicy` (`OWPROV`):**
     - Policy definitions are inspectable by authenticated operators.
 - **UI Presentation Philosophy (Distinct Data-Driven States):**
@@ -106,7 +106,7 @@ A core architectural principle of the Operator UI is that **UI modules and navig
      - Headline KPI metric cards display `0` (Total: `0`, Active: `0`, Suspended: `0`, MFA: `0 of 0`).
      - Directory table renders an informative **Empty State** view (*"No users found. Click '+ Create user' to onboard your first operator."*).
      - The top-level `+ Create user` button remains active and visible. The split detail panel displays an idle prompt (*"No operator selected"*).
-  4. **Unauthorized State (`401 Unauthorized` / `403 Forbidden`):**
+  4. **Access Restricted State (`403 Forbidden` / `ACCESS_DENIED`):**
      - Occurs when non-administrative roles (`noc`, `installer`, `csr`) query `GET /api/v1/users`.
      - The UI does not crash or redirect away. Instead, it renders an inline **Access Restricted** banner in place of the directory:
        > *"Access Restricted: You do not have administrative privileges to view or manage user accounts in this domain."*
@@ -249,7 +249,7 @@ To ensure crisp visual differentiation between empty datasets, access restrictio
 | **Populated** | `200 OK` and `manageableUsers.length > 0` | Calculated metrics for active manageable population | Paginated user rows + split details panel | Search, filter, sort, row select, `+ Create user` |
 | **Empty Dataset** | `200 OK` and `manageableUsers.length === 0` (e.g. newly created `admin`) | All cards render `0` (`0`, `0`, `0`, `"0 of 0"`) | Dedicated empty state illustration + *"No users found"* message | **`+ Create user` (fully enabled)**, `↻ Refresh` |
 | **Filter Empty** | `200 OK`, search query or filter returns 0 matches | Unchanged (reflects total dataset metrics) | *"No users match the selected filters"* | *"Clear filters"* button |
-| **Unauthorized** | `401 Unauthorized` / `403 Forbidden` (`ACCESS_DENIED`) | Hidden / disabled | Inline Access Restricted card: *"You do not have administrative privileges to view or manage user accounts."* | Global navigation |
+| **Access Restricted** | `403 Forbidden` (`ACCESS_DENIED`) / `401` | Hidden / disabled | Inline Access Restricted card: *"You do not have administrative privileges to view or manage user accounts."* | Global navigation |
 | **Service Error** | `5xx` or Network Disconnection | Error boundary fallback | Alert banner: *"Failed to connect to authentication service."* | **`[ Retry ]` button** |
 
 ---
@@ -521,8 +521,9 @@ Clicking the top-level `+ Create user` button opens the focused user creation mo
    - Optional initial administrative note saved into `user.notes`.
 6. **`Password *` (Required for manual password mode):**
    - Visibility toggle (`Show` / `Hide`).
-   - Validation: Minimum 8 characters, containing at least one uppercase letter, one lowercase letter, one digit, and one special character (`[!@#$%^&*(),.?":{}|<>]`).
-   - Helper text: *"Minimum 8 characters with uppercase, lowercase, number, and symbol. View password policy."*
+   - **Backend-Authoritative Validation:** Password complexity rules are governed authoritatively by `OWSEC` (`authentication.validation.expression`). On application startup, the client queries `POST /api/v1/oauth2?requirements=true` via the `useApiRequirements` hook (matching `ra-wlan-cloud-owprov-ui` `src/hooks/useApiRequirements.ts`) to retrieve the configured `passwordPattern` regex (falling back to OWSEC's default `^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$`).
+   - **"View password policy" Link:** Rendered beneath the password field as an external hyperlink opening `passwordPolicyLink` (`${secUrl}/wwwassets/password_policy.html` or the URI returned by `OWSEC` in `passwordPolicy`) in a new browser tab (`target="_blank" rel="noopener noreferrer"`).
+   - Helper text: *"Must satisfy password complexity requirements. View password policy."*
 7. **`Force password change` (Toggle):**
    - Default: `true`. Sets `changePassword: true`.
    - Requires operator to set a new password on initial login.
@@ -671,7 +672,28 @@ Content-Type: application/json
 - **Reset MFA:** `PUT /api/v1/user/{id}?resetMFA=true` with `{}`
 - **Send Password Reset:** `PUT /api/v1/user/{id}?forgotPassword=true` with `{}`
 - **Resend Email Verification:** `PUT /api/v1/user/{id}?email_verification=true` with `{}` (Response `200 OK`)
-- **Delete User:** `DELETE /api/v1/user/{id}` (Response `204 No Content`)
+- **Delete User:** `DELETE /api/v1/user/{id}` (Response `200 OK` with empty response body)
+
+#### 8.1.6 Get Security Requirements & Password Policy
+```http
+POST /api/v1/oauth2?requirements=true HTTP/1.1
+Host: <owsec-host>:9002
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{}
+```
+**Response (`200 OK`):**
+```json
+{
+  "passwordPattern": "^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]).{8,}$",
+  "accessPolicy": "/wwwassets/access_policy.html",
+  "passwordPolicy": "/wwwassets/password_policy.html"
+}
+```
+
+> [!NOTE]
+> `OWSEC` is authoritative for password complexity via `authentication.validation.expression`. The frontend hook `useApiRequirements` caches this payload indefinitely (`staleTime: Infinity`) to drive dynamic form validation and populate the "View password policy" link.
 
 ---
 
@@ -761,7 +783,7 @@ DELETE /api/v2/managementRole/{id} HTTP/1.1
 Host: <owprov-host>:9005
 Authorization: Bearer <jwt-token>
 ```
-**Response (`200 OK`):** `{}`
+**Response (`200 OK`):** Empty response body (calls `OK()`).
 
 ---
 
@@ -890,47 +912,53 @@ export interface ManagementPolicyMetadata {
 ```typescript
 import * as Yup from 'yup';
 
-const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/;
+// OWSEC default pattern fallback; actual pattern is dynamically populated from useApiRequirements()
+export const DEFAULT_PASSWORD_PATTERN =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).{8,}$/;
 
-export const CreateUserValidationSchema = Yup.object().shape({
-  email: Yup.string()
-    .email('Please enter a valid email address')
-    .required('Email is required'),
-  name: Yup.string()
-    .min(1, 'Name must be at least 1 character')
-    .max(128, 'Name cannot exceed 128 characters')
-    .required('Full name is required'),
-  userRole: Yup.string()
-    .oneOf(['admin', 'noc', 'installer', 'csr', 'root'], 'Please select a valid system role')
-    .required('System role is required'),
-  currentPassword: Yup.string()
-    .required('Password is required')
-    .matches(
-      passwordPattern,
-      'Password must be at least 8 characters long and contain uppercase, lowercase, a number, and a symbol'
-    ),
-  description: Yup.string().max(256, 'Description cannot exceed 256 characters'),
-  note: Yup.string().max(500, 'Note cannot exceed 500 characters'),
-  changePassword: Yup.boolean(),
-  emailValidation: Yup.boolean(),
-});
+export const getCreateUserValidationSchema = (passwordPattern: RegExp = DEFAULT_PASSWORD_PATTERN) =>
+  Yup.object().shape({
+    email: Yup.string()
+      .email('Please enter a valid email address')
+      .required('Email is required'),
+    name: Yup.string()
+      .min(1, 'Name must be at least 1 character')
+      .max(128, 'Name cannot exceed 128 characters')
+      .required('Full name is required'),
+    userRole: Yup.string()
+      .oneOf(['admin', 'noc', 'installer', 'csr', 'root'], 'Please select a valid system role')
+      .required('System role is required'),
+    currentPassword: Yup.string()
+      .required('Password is required')
+      .test(
+        'password-complexity',
+        'Password does not meet the complexity requirements configured on the security service',
+        (value) => !value || passwordPattern.test(value)
+      ),
+    description: Yup.string().max(256, 'Description cannot exceed 256 characters'),
+    note: Yup.string().max(500, 'Note cannot exceed 500 characters'),
+    changePassword: Yup.boolean(),
+    emailValidation: Yup.boolean(),
+  });
 
-export const UpdateUserValidationSchema = Yup.object().shape({
-  name: Yup.string()
-    .min(1, 'Name must be at least 1 character')
-    .max(128, 'Name cannot exceed 128 characters')
-    .required('Full name is required'),
-  userRole: Yup.string()
-    .oneOf(['admin', 'noc', 'installer', 'csr', 'root'], 'Please select a valid system role')
-    .required('System role is required'),
-  currentPassword: Yup.string()
-    .notRequired()
-    .test('password-complexity', 'Password must meet complexity requirements', function (value) {
-      if (!value || value.length === 0) return true;
-      return passwordPattern.test(value);
-    }),
-  description: Yup.string().max(256, 'Description cannot exceed 256 characters'),
-});
+export const getUpdateUserValidationSchema = (passwordPattern: RegExp = DEFAULT_PASSWORD_PATTERN) =>
+  Yup.object().shape({
+    name: Yup.string()
+      .min(1, 'Name must be at least 1 character')
+      .max(128, 'Name cannot exceed 128 characters')
+      .required('Full name is required'),
+    userRole: Yup.string()
+      .oneOf(['admin', 'noc', 'installer', 'csr', 'root'], 'Please select a valid system role')
+      .required('System role is required'),
+    currentPassword: Yup.string()
+      .notRequired()
+      .test(
+        'password-complexity',
+        'Password does not meet the complexity requirements configured on the security service',
+        (value) => !value || value.length === 0 || passwordPattern.test(value)
+      ),
+    description: Yup.string().max(256, 'Description cannot exceed 256 characters'),
+  });
 
 export const CreateScopedAccessValidationSchema = Yup.object().shape({
   entity: Yup.string().required('Please select a Property (Entity)'),
@@ -952,15 +980,15 @@ export const CreateScopedAccessValidationSchema = Yup.object().shape({
 - **TC-USR-006 (Pagination):** Verify pagination navigates through pages correctly and resets to page 1 upon search/filter changes.
 
 ### 11.2 User Lifecycle & Security Action Tests
-- **TC-USR-007 (Create User Validation):** Attempt to submit Create User with password under 8 characters or lacking required character classes. Verify inline error.
+- **TC-USR-007 (Create User Password Validation & Policy Link):** Attempt to submit Create User with a password that fails the dynamic `passwordPattern` from `POST /api/v1/oauth2?requirements=true`. Verify inline validation failure. Verify clicking "View password policy" opens `passwordPolicyLink` in a new browser tab.
 - **TC-USR-008 (Create User Success):** Fill valid details with role `noc`, submit form. Verify `POST /api/v1/user/0` is dispatched, modal closes, and new user appears in table.
 - **TC-USR-009 (Administrative Actions):** Trigger Reset MFA, Send Password Reset, and Suspend User from context menu. Verify correct API parameters on `PUT /api/v1/user/{id}`.
 - **TC-USR-010 (Profile Editing & Email Immutability):** Verify `Email` input field is disabled and read-only across all roles (including `root`). Update name and description in Profile sub-tab, click Save. Verify `PUT /api/v1/user/{id}` dispatches only editable fields (`name`, `description`, `userRole`, `notes`, etc.) without `email`, executes successfully, and updates cached data.
-- **TC-USR-011 (Admin Role Editing Authorization):** Authenticate as an `admin`. Open an operator created by this admin who holds the `admin` role. Verify the `System Role` dropdown is enabled, lists non-root roles (`admin`, `noc`, `installer`, `csr`), and omits `root`. Change the role to `noc` and click Save; verify `PUT /api/v1/user/{id}` succeeds with `200 OK`. Attempting to submit `userRole: "root"` returns `401 Unauthorized` (`ACCESS_DENIED`). Verify that an admin cannot edit their own role.
-- **TC-USR-012 (Token-Driven Authorization & Non-Admin Graceful Handling):** Authenticate with a non-admin role (e.g. `noc`, `installer`, `csr`). Navigate to the Users tab. Verify the UI does not pre-block or crash the route. When `GET /api/v1/users` returns `401 Unauthorized` (`ACCESS_DENIED`), verify the UI renders a graceful unauthorized state indicating the caller is not authorized to retrieve the user directory.
+- **TC-USR-011 (Admin Role Editing Authorization):** Authenticate as an `admin`. Open an operator created by this admin who holds the `admin` role. Verify the `System Role` dropdown is enabled, lists non-root roles (`admin`, `noc`, `installer`, `csr`), and omits `root`. Change the role to `noc` and click Save; verify `PUT /api/v1/user/{id}` succeeds with `200 OK`. Attempting to submit `userRole: "root"` returns `403 Forbidden` (`ACCESS_DENIED`). Verify that an admin cannot edit their own role.
+- **TC-USR-012 (Token-Driven Authorization & Non-Admin Graceful Handling):** Authenticate with a non-admin role (e.g. `noc`, `installer`, `csr`). Navigate to the Users tab. Verify the UI does not pre-block or crash the route. When `GET /api/v1/users` returns `403 Forbidden` (`ACCESS_DENIED`), verify the UI renders a graceful unauthorized state indicating the caller is not authorized to retrieve the user directory.
 - **TC-USR-013 (Empty Dataset vs. Unauthorized State Distinction):**
   1. Authenticate as a newly created `admin` who has not created any operators (`GET /api/v1/users` returns `200 OK` with `{"users": []}`). Verify the UI displays all KPI cards as `0`, renders the friendly empty state (*"No users found"*), keeps the `+ Create user` button enabled, and does NOT display an Access Denied or error alert.
-  2. Authenticate as a `noc` operator (`GET /api/v1/users` returns `401 Unauthorized`). Verify the UI displays the distinct Access Restricted alert card without rendering an empty table or misinforming the user that no records exist.
+  2. Authenticate as a `noc` operator (`GET /api/v1/users` returns `403 Forbidden`). Verify the UI displays the distinct Access Restricted alert card without rendering an empty table or misinforming the user that no records exist.
 
 ### 11.3 Scoped Access (MRA) Tests
 - **TC-SCA-001 (Fetch Scoped Access):** Select user with active assignments. Verify `GET /api/v1/managementRole?userId={id}` displays individual 1:1 cards.
@@ -1016,7 +1044,7 @@ A critical architectural principle of the OpenWifi policy system is that **all p
 1. **Root-Only CRUD Authority:**
    - Any policy can be created, updated, or deleted **exclusively by operators holding the `root` platform role** (`userRole === 'root'`).
    - The `OWPROV` microservice authoritatively validates the caller's session token and enforces root restriction on mutating endpoints (`POST`, `PUT`, `DELETE`). The UI simply enforces presentation guards (hiding or disabling mutation controls for non-root users).
-   - Operators with non-root roles (`admin`, `noc`, `installer`, `csr`) have view-only access to inspect policy definitions and permissions. Scoped user assignments in the Scoped Access interface are governed authoritatively by the backend based on the caller's authority over the target user. As detailed in §1.2, UI tabs and modules are not bound or restricted by user role; downstream services authoritatively inspect the session token and return data if authorized, or `401`/`403` if denied.
+   - Operators with non-root roles (`admin`, `noc`, `installer`, `csr`) have view-only access to inspect policy definitions and permissions. Scoped user assignments in the Scoped Access interface are governed authoritatively by the backend based on the caller's authority over the target user. As detailed in §1.2, UI tabs and modules are not bound or restricted by user role; downstream services authoritatively inspect the session token and return data if authorized, or `403 Forbidden` (`ACCESS_DENIED`) if denied.
 2. **Authoritative Deletion Protection (`StillInUse`):**
    - A policy can only be deleted if its active assignments count is `0`.
    - If a policy is currently assigned to one or more active Management Role Assignments, `OWPROV` authoritatively rejects deletion with:
@@ -1445,7 +1473,7 @@ DELETE /api/v1/managementPolicy/{id} HTTP/1.1
 Host: <owprov-host>:9005
 Authorization: Bearer <jwt-token>
 ```
-**Response (`200 OK`):** `{}`  
+**Response (`200 OK`):** Empty response body (calls `OK()`).  
 *If policy is in use, returns `400 Bad Request` with `StillInUse` error.*
 
 ---
