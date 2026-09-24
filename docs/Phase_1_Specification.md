@@ -998,25 +998,24 @@ A critical architectural principle of the OpenWifi policy system is that **all p
 
 ## 13. Headline KPI Metric Cards (Policies Tab)
 
-Above the Policies catalog table, four real-time KPI metric cards provide platform policy distribution and operational assignment statistics:
+Above the Policies catalog table, real-time KPI metric cards provide platform policy distribution statistics calculated directly from the `GET /api/v1/managementPolicy` response:
 
 ```
-+-------------------+   +-------------------+   +-------------------+   +-------------------+
-|   Total Policies  |   |  Policies in Use  |   |Unassigned Policies|   | Active Assignments|
-|         8         |   |         6         |   |         2         |   |        27         |
-+-------------------+   +-------------------+   +-------------------+   +-------------------+
++-------------------+   +-------------------+   +-------------------+
+|   Total Policies  |   |  Policies in Use  |   |Unassigned Policies|
+|        14         |   |         1         |   |        13         |
++-------------------+   +-------------------+   +-------------------+
 ```
 
 ### 13.1 KPI Calculation Specifications
 
-Metrics are derived strictly from cached `['managementPolicies']` (`OWPROV` `GET /api/v1/managementPolicy`) using each policy record's native `inUse` assignment reference array. The Policies module makes **no unparameterized calls** to `GET /api/v1/managementRole`:
+Metrics are derived strictly from cached `['managementPolicies']` (`OWPROV` `GET /api/v1/managementPolicy`) by counting response items and inspecting each record's native `inUse` array. Assignment and user metrics (such as active assignments and user rosters) are intentionally excluded from global headline cards and loaded on demand within each policy's Overview sub-tab (§16):
 
 | KPI Card | Calculation Formula | Source & Underlying Logic |
 | :--- | :--- | :--- |
-| **Total Policies** | `policies.length` | Total policy records returned by `OWPROV` `GET /api/v1/managementPolicy`. |
+| **Total Policies** | `policies.length` | Total policy records returned in the `managementPolicies` array from `OWPROV` `GET /api/v1/managementPolicy`. |
 | **Policies in Use** | `policies.filter(p => (p.inUse?.length ?? 0) > 0).length` | Count of policies currently bound to $\ge 1$ active Management Role Assignments (`inUse.length > 0`). |
 | **Unassigned Policies** | `policies.filter(p => (p.inUse?.length ?? 0) === 0).length` | Count of dormant policies with 0 active assignments, eligible for deletion by `root`. |
-| **Active Assignments** | `policies.reduce((sum, p) => sum + (p.inUse?.length ?? 0), 0)` | Total active scoped infrastructure assignments across all policies platform-wide. |
 
 ---
 
@@ -1040,31 +1039,20 @@ The left side of the split-view layout renders the master Policies Catalog table
 
 ### 14.2 Table Column Specifications
 
+The master catalog table focuses purely on policy definitions. All user assignment counts, property/venue distributions, and operator rosters are presented in the selected policy's Overview sub-tab (§16).
+
 | Column | Header | Data Source & Transformation | Display Behavior |
 | :--- | :--- | :--- | :--- |
 | **`Policy`** | `Policy` / `Name` | `policy.name` | Shield Icon + Policy Name (bold primary text). |
 | **`Entity`** | `Property` / `Entity` | `policy.entity` | Legacy schema field. Always empty (`""`) as policies are global templates independent of scope. Displays `"Global"` or `"—"`. |
 | **`Venue`** | `Venue` | `policy.venue` | Legacy schema field. Always empty (`""`) as policies are global templates independent of scope. Displays `"Global"` or `"—"`. |
 | **`Description`** | `Description` | `policy.description` | Truncated single-line summary with tooltip for full text. |
-| **`Used By`** | `Used By` | `policy.inUse?.length ?? 0` (see §14.2.1) | Formatted string: `"X assignments"` (e.g. `"6 assignments"`, or `"Unassigned"` if 0). |
 | **`Modified`** | `Modified` | `policy.modified` | Formatted relative or calendar date (e.g. `"1 Sep 2026"`). If `0`, render `"Never"`. |
 | **Selection** | Chevron (`>`) | `selectedPolicyId === policy.id` | Highlights active row loaded into right detail panel. |
 
 > [!NOTE]
 > **Scope Independence & Legacy Schema Preservation:**
 > While `entity` and `venue` columns are preserved in the table for interface parity with `owprov-ui`'s legacy schema, their values remain empty (`""`) across all policies. Policies define platform permission sets, whereas physical scoping (`entity` and `venue`) is applied dynamically when assigning policies to users via Management Role Assignments (MRAs).
-
-#### 14.2.1 Assignment Indicator vs. Overview Roster Breakdown
-In the catalog table, the **`Used By`** column renders the immediate assignment count derived from `policy.inUse.length`:
-
-```typescript
-const assignmentCount = policy.inUse?.length ?? 0;
-const displayLabel = assignmentCount > 0 
-  ? `${assignmentCount} ${assignmentCount === 1 ? 'assignment' : 'assignments'}` 
-  : "Unassigned";
-```
-
-Detailed operator usage metrics—including distinct user counts, physical property and venue distributions, and the interactive "Users with this policy" roster table—are loaded on demand when an operator selects a policy row via the composite Overview endpoint (`GET /api/v1/policy/{id}/overview` from `mango-mdu-service`, as detailed in §16). This design eliminates any requirement for the client to retrieve raw, unparameterized `GET /api/v1/managementRole` records.
 
 ### 14.3 Pagination & Row Actions
 - Controlled pagination matching `DataTable` (default 5 or 10 rows per page, page numbers `< 1 2 >`, item count indicator).
@@ -1564,7 +1552,7 @@ export interface PolicyOverviewSummary {
 ### 21.1 Catalog Listing & Search
 - **TC-POL-001 (Catalog Ingestion):** Verify `GET /api/v1/managementPolicy` populates the catalog table with all returned policies.
 - **TC-POL-002 (Search Filtering):** Enter search text matching policy name or description. Verify debounced real-time table filtering.
-- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies`, `Policies in Use`, `Unassigned Policies`, and `Active Assignments` accurately calculate from `GET /api/v1/managementPolicy` records and `policy.inUse` without executing unparameterized `GET /api/v1/managementRole`.
+- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies`, `Policies in Use`, and `Unassigned Policies` accurately calculate directly from `GET /api/v1/managementPolicy` response items and `policy.inUse`.
 
 ### 21.2 Overview Aggregation Integration
 - **TC-POL-004 (Overview Aggregation Query):** Select policy row. Verify `GET /api/v1/policy/{id}/overview` loads summary mini-cards and the "Users with this policy" roster table.
