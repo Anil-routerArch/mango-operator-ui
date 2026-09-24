@@ -13,7 +13,6 @@
 | **Downstream Microservices** | `OWSEC` (Port 9002) & `OWPROV` (Port 9005 / V1 & V2) |
 | **Target Audience** | Frontend Engineers, QA Automation Engineers, Backend Integration Engineers |
 | **Status** | Authoritative Normative Specification |
-| **UI Design Authority** | Approved Figma Workspace (`media_1790061771415.png`, `media_1790063724718.png`, `media_1790064164851.png`) |
 
 ---
 
@@ -28,10 +27,7 @@
 > 2. **Policies Tab:** Management policy catalog, headline policy KPIs, resource permissions visualizer, overview aggregation API, and root-only policy lifecycle administration.
 >
 > **Scope of this Document:**  
-> This specification covers both tabs of the Users & Access module: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab, its resource permissions matrix, and aggregation integrations.
->
-> **Visual Styling & Dimensions:**  
-> Explicit pixel dimensions, color hex codes, and typography scales are intentionally decoupled from this document. Frontend developers must reference the official Figma design files for layout geometry, spacing, and styling tokens. This specification provides the normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
+> This specification covers both tabs of the Users & Access module: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab, its resource permissions matrix, and aggregation integrations. This specification provides the authoritative normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
 
 ---
 
