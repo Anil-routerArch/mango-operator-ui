@@ -27,7 +27,7 @@
 > 2. **Policies Tab:** Management policy catalog, headline policy KPIs, resource permissions visualizer, overview aggregation API, and root-only policy lifecycle administration.
 >
 > **Scope of this Document:**  
-> This specification covers both tabs of the Users & Access module: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab, its resource permissions matrix, and aggregation integrations. This specification provides the authoritative normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
+> This specification covers both tabs of the Users & Access module: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab, its resource permissions configuration, and aggregation integrations. This specification provides the authoritative normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
 
 ---
 
@@ -1163,7 +1163,7 @@ Selecting a policy row loads the policy details split panel on the right. If no 
 ### 15.1 Header & Administrative Context Menu (`...`)
 - **Panel Header:** Policy Icon, Policy Name, Description subtitle, and Context Menu button (`...`).
 - **Context Actions Menu (`...`):**
-  - **`Edit Policy`:** Activates policy edit mode on the Permissions sub-tab (visible only to `root`). Switches the sub-tab to edit mode, exposing editable fields for **Policy Name**, **Description**, **Policy Preset**, and the **Resource Permissions Matrix**, with `[ Cancel ]` and `[ Save policy ]` controls.
+  - **`Edit Policy`:** Activates policy edit mode on the Permissions sub-tab (visible only to `root`). Switches the sub-tab to edit mode, exposing editable fields for **Policy Name**, **Description**, **Policy Preset**, and the **Resource Permissions configuration**, with `[ Cancel ]` and `[ Save policy ]` controls.
   - **`Delete Policy`:** Initiates policy deletion (visible only to `root`).
     - **In-Use Guard:** If the policy is bound to $\ge 1$ active assignments (verified via policy overview `totalScopedAssignments > 0`), the delete button is disabled with tooltip:
       > *"Cannot delete policy: Currently assigned to one or more active management roles."*
@@ -1196,6 +1196,7 @@ The aggregation service joins `OWPROV` MRAs, applies `OWSEC` caller visibility, 
 |  +-------------+  +-------------+  +-------------+  +-----------+ |
 |                                                                   |
 |  POLICY DETAILS                                                   |
+|  ID: policy-uuid-5678              Scope: Entity-wide             |
 |  ID: policy-uuid-5678              Scope: Global (Reusable)       |
 |  Status: In Use                    Modified: 1 Sep 2026           |
 |  Description: Monitor devices and manage network configuration.   |
@@ -1218,6 +1219,7 @@ The aggregation service joins `OWPROV` MRAs, applies `OWSEC` caller visibility, 
    - **Properties:** Distinct count of organizational entities bound to this policy.
    - **Venues:** Distinct count of physical venues bound to this policy.
 2. **Policy Details Section:**
+   - Identifier, Scope classification (`Entity-wide` vs. property-specific), Status badge (`In Use` [Green] vs. `Unassigned` [Gray]), Last modified timestamp, and Description.
    - Identifier, Scope classification (`Global`), Status badge (`In Use` [Green] vs. `Unassigned` [Gray]), Last modified timestamp, and Description.
    - *(Note: In accordance with §12.1, all policies are global, reusable blueprints; physical infrastructure scope—entity-wide or venue-specific—belongs strictly to the individual assignment rows in the roster below).*
 3. **"Users with this policy" Roster Table:**
@@ -1230,7 +1232,7 @@ The aggregation service joins `OWPROV` MRAs, applies `OWSEC` caller visibility, 
 
 ---
 
-## 17. Permissions Sub-Tab (Resource Permissions Matrix)
+## 17. Permissions Sub-Tab (Resource Permissions Configuration)
 
 The **Permissions** sub-tab provides visual inspection and root-only editing of the policy's operational rules across all system resources.
 
@@ -1246,18 +1248,18 @@ The **Permissions** sub-tab provides visual inspection and root-only editing of 
 |  Policy preset                                                    |
 |  [ Custom                                                   v ]   |
 |                                                                   |
-|  Resource permissions                                             |
+|  Resource Permissions                                             |
 |  +-------------------------------------------------------------+  |
-|  | Resource        |  READ   |  CREATE  |  MODIFY  |  DELETE   |  |
-|  |-----------------+---------+----------+----------+-----------|  |
-|  | Entity          |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
-|  | Venue           |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
-|  | Configuration   |   [x]   |   [x]    |   [x]    |    [ ]    |  |
-|  | Inventory       |   [x]   |   [ ]    |   [x]    |    [ ]    |  |
-|  | Operator        |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
-|  | Subscriber      |   [ ]   |   [ ]    |   [ ]    |    [ ]    |  |
-|  | Contact         |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
-|  | Location        |   [x]   |   [ ]    |   [ ]    |    [ ]    |  |
+|  | Resource        | Assigned Permissions (Actions)            |  |
+|  |-----------------+-------------------------------------------|  |
+|  | Entity          | [ READ x ]                                |  |
+|  | Venue           | [ READ x ]                                |  |
+|  | Configuration   | [ READ x ] [ CREATE x ] [ MODIFY x ]      |  |
+|  | Inventory       | [ READ x ] [ MODIFY x ]                   |  |
+|  | Operator        | [ READ x ]                                |  |
+|  | Subscriber      | (No permissions selected)                 |  |
+|  | Contact         | [ READ x ]                                |  |
+|  | Location        | [ READ x ]                                |  |
 |  +-------------------------------------------------------------+  |
 |                                                                   |
 |  (i) Policy impact: 9 users across 14 scoped assignments will be  |
@@ -1277,10 +1279,10 @@ When edit mode is triggered by a `root` operator (via the `...` context menu `Ed
    - Multi-line textarea, initialized with `policy.description || ''`.
    - Maximum 256 characters.
 
-In standard **View Mode** (for non-root operators or prior to entering edit mode), Policy Name and Description are rendered statically in the split panel header and Overview tab, while the Permissions tab displays the read-only permissions matrix without form input controls or action buttons.
+In standard **View Mode** (for non-root operators or prior to entering edit mode), Policy Name and Description are rendered statically in the split panel header and Overview tab, while the Permissions tab displays the read-only permissions list without form input controls or action buttons.
 
 ### 17.2 Canonical 8 System Resources
-The matrix maps strictly across the canonical 8 OpenWifi resources defined in `owprov-ui` (`CreatePolicyModal.tsx`):
+The permissions map strictly across the canonical 8 OpenWifi resources defined in `owprov-ui` (`CreatePolicyModal.tsx`):
 1. **`Entity` (`entity`):** Customer properties and organizational roots.
 2. **`Venue` (`venue`):** Physical subdivisions and venues.
 3. **`Configuration` (`configuration`):** Device and network configurations. *(Note: Configuration profile handling is managed in the Configuration module; this row represents all configuration management).*
@@ -1290,8 +1292,10 @@ The matrix maps strictly across the canonical 8 OpenWifi resources defined in `o
 7. **`Contact` (`contact`):** Administrative and technical contacts.
 8. **`Location` (`location`):** Physical addresses and geo-coordinates.
 
-### 17.3 Backend-Authoritative Policy Requests
-The frontend implements no client-side permission logic, permission semantics, or authorization rules. The UI treats `entries` strictly as a structured data payload (`resources` and `access` action strings), dispatching creation and update requests directly to `OWPROV`. The backend daemon is authoritatively responsible for validating, parsing, and enforcing all permission semantics and operational checks.
+### 17.3 Backend-Authoritative Policy Requests & Action Token Alignment
+The frontend implements no client-side permission logic, permission semantics, or authorization rules. The UI treats `entries` strictly as a structured data payload (`resources` and `access` action strings), dispatching creation and update requests directly to `OWPROV`.
+- **Direct Action Token Mapping:** Matching `ra-wlan-cloud-owprov-ui` (`ResourcePermissionInput`), each resource allows selecting operational action tokens: `['READ', 'CREATE', 'MODIFY', 'DELETE', 'FULL']`.
+- **No Client-Side Permission Semantics or Normalization:** The UI does not evaluate, normalize, or simulate effective privileges (e.g. interpreting whether `MODIFY` covers `READ` or `CREATE`, or restricting `FULL` to a separate mode). Actions are passed directly in the payload as selected, and the `OWPROV` daemon is authoritatively responsible for parsing, validating, normalizing, and enforcing all permission semantics.
 
 ### 17.4 Preset Base Dropdown
 The dropdown offers standard starting configurations:
@@ -1302,9 +1306,9 @@ The dropdown offers standard starting configurations:
 ### 17.5 Policy Impact Banner & Root Mutation Flow
 - **Impact Callout:** Displays real-time assignment impact:
   > *"Policy impact: [X] users across [Y] scoped assignments will be affected by permission changes."*
-- **Authorization Guard:** For non-root users, metadata fields are non-editable, matrix checkboxes are disabled (`readOnly: true`), and footer action buttons are hidden.
+- **Authorization Guard:** For non-root users, metadata fields are non-editable, action tag controls are disabled (`readOnly: true`), and footer action buttons are hidden.
 - **Root Mutation Flow:**
-  - `root` operators can edit `name`, `description`, select presets, and toggle individual resource permissions.
+  - `root` operators can edit `name`, `description`, select presets, and select/remove action tags per resource.
   - Clicking **`Cancel`** reverts all form fields (`name`, `description`, `entries`) back to their cached `policy` values and exits edit mode.
   - Clicking **`Save policy`** validates fields and dispatches `PUT /api/v1/managementPolicy/{id}` to `OWPROV` with:
     ```json
@@ -1340,8 +1344,8 @@ The top-level `+ Create policy` button in the application header provides direct
    - Textarea describing operational boundaries.
 3. **`Preset Selector`:**
    - Dropdown options: `Custom` (default), `Full Access`, `Read Only`.
-4. **`Resource Permissions Matrix`:**
-   - Interactive 8x4 checkbox grid initialized according to selected preset.
+4. **`Resource Permissions Configuration`:**
+   - Multi-action tag selector across canonical 8 resources, supporting action tags (`READ`, `CREATE`, `MODIFY`, `DELETE`, `FULL`) matching `owprov-ui` (`ResourcePermissionInput.tsx`), initialized according to selected preset.
 
 ### 18.3 Submission Endpoint & Payload
 - **Target Endpoint:** `POST /api/v1/managementPolicy/0`
@@ -1635,11 +1639,11 @@ export interface PolicyOverviewSummary {
 - **TC-POL-004 (Overview Aggregation Query):** Select policy row. Verify `GET /api/v1/policy/{id}/overview` loads summary mini-cards and the "Users with this policy" roster table.
 - **TC-POL-005 (Roster Scope Badges):** Verify each user in the overview roster renders their assigned property and venue badges correctly.
 
-### 21.3 Permissions Matrix & Lifecycle
-- **TC-POL-006 (Matrix Rendering):** Open Permissions sub-tab. Verify 8 canonical resources render matching backend `entries`.
-- **TC-POL-007 (Root Mutation Enforcement):** Log in as non-root operator. Verify `+ Create policy` button is hidden and matrix edit controls are disabled.
+### 21.3 Permissions Configuration & Lifecycle
+- **TC-POL-006 (Permissions Rendering):** Open Permissions sub-tab. Verify 8 canonical resources render matching backend `entries` with their assigned action tags.
+- **TC-POL-007 (Root Mutation Enforcement):** Log in as non-root operator. Verify `+ Create policy` button is hidden and permission edit controls are disabled.
 - **TC-POL-008 (In-Use Policy Deletion Guard):** Attempt to delete a policy with active assignments. Verify delete button is disabled with tooltip, and backend rejects with `400 Bad Request` (`StillInUse`).
 - **TC-POL-009 (Create Policy Success):** Log in as `root`. Open `+ Create policy`, fill name and permissions, submit. Verify `POST /api/v1/managementPolicy/0` executes and adds policy to catalog.
-- **TC-POL-010 (Edit Policy Metadata & Permissions):** Log in as `root`. From the `...` context menu, select `Edit Policy`. Modify Policy Name and Description, toggle permissions in the matrix, and click `Save policy`. Verify `PUT /api/v1/managementPolicy/{id}` dispatches updated `name`, `description`, and `entries`, updates split panel header text and catalog table rows, and returns to view mode.
+- **TC-POL-010 (Edit Policy Metadata & Permissions):** Log in as `root`. From the `...` context menu, select `Edit Policy`. Modify Policy Name and Description, update resource action tags, and click `Save policy`. Verify `PUT /api/v1/managementPolicy/{id}` dispatches updated `name`, `description`, and `entries`, updates split panel header text and catalog table rows, and returns to view mode.
 
 
