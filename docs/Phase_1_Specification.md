@@ -1224,18 +1224,17 @@ The matrix maps strictly across the canonical 8 OpenWifi resources defined in `o
 
 | UI Column | Backend Access Verb | Serialization Rule | Deserialization Rule |
 | :--- | :--- | :--- | :--- |
-| **`Read`** | `READ` | If checked, serialize `'READ'`. | Checked if array contains `'READ'` or `'LIST'`. |
-| **`Create`** | `CREATE` | If checked, serialize `'CREATE'`. | Checked if array contains `'CREATE'`. |
-| **`Update`** | `MODIFY` | **Must serialize strictly to `'MODIFY'`.** | Checked if array contains `'MODIFY'` or `'UPDATE'`. |
-| **`Delete`** | `DELETE` | If checked, serialize `'DELETE'`. | Checked if array contains `'DELETE'`. |
-| **All 4 Checked** | `FULL` | Compacted to `['FULL']`. | All 4 checkboxes rendered checked. |
-| **None Checked** | `NOACCESS` | Entry omitted from `entries` array. | All 4 checkboxes rendered unchecked. |
 | **`Read`** | `READ` | If checked, serialize `'READ'`. | Checked if `access` array contains `'READ'` or `'FULL'`. |
 | **`Create`** | `CREATE` | If checked, serialize `'CREATE'`. | Checked if `access` array contains `'CREATE'` or `'FULL'`. |
 | **`Update`** | `MODIFY` | If checked, serialize `'MODIFY'`. | Checked if `access` array contains `'MODIFY'` or `'FULL'`. |
 | **`Delete`** | `DELETE` | If checked, serialize `'DELETE'`. | Checked if `access` array contains `'DELETE'` or `'FULL'`. |
 | **All 4 Checked** | `FULL` | Compacted to `['FULL']`. | All 4 checkboxes rendered checked if `access` contains `'FULL'`. |
 | **None Checked** | `NOACCESS` | Entry omitted from `entries` array. | All 4 checkboxes rendered unchecked if resource entry is omitted or empty. |
+
+> [!NOTE]
+> **Raw Token Mapping & Backend Authority:**
+> The UI maintains a straightforward 1:1 raw representation with canonical backend access verbs (`READ`, `CREATE`, `MODIFY`, `DELETE`, and `FULL`). The UI does not perform client-side permission inference or simulate backend authorization hierarchies. The backend daemon (`OWPROV`) serves as the authoritative decision-maker for all access checks and operation permissions.
+
 
 ### 17.4 Preset Base Dropdown
 The dropdown offers standard starting configurations:
@@ -1577,7 +1576,6 @@ export interface PolicyOverviewSummary {
 
 ### 21.3 Permissions Matrix & Serialization
 - **TC-POL-006 (Matrix Rendering):** Open Permissions sub-tab. Verify 8 canonical resources render with appropriate checkmarks matching backend `entries`.
-- **TC-POL-007 (UPDATE to MODIFY Serialization):** In edit mode, check `Update` column, save policy. Verify request payload maps to `MODIFY` in the `access` array.
 - **TC-POL-007 (UI Update Column to MODIFY Serialization):** In edit mode, check `Update` column, save policy. Verify request payload maps to `MODIFY` in the `access` array.
 - **TC-POL-008 (Root Mutation Enforcement):** Log in as non-root operator. Verify `+ Create policy` button is hidden and matrix edit controls are disabled.
 - **TC-POL-009 (In-Use Policy Deletion Guard):** Attempt to delete a policy with active assignments. Verify delete button is disabled with tooltip, and backend rejects with `400 Bad Request` (`StillInUse`).
