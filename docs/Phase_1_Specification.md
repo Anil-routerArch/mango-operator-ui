@@ -371,15 +371,53 @@ The **Scoped Access** sub-tab is the core infrastructure permissions interface. 
 +-------------------------------------------------------------------+
 ```
 
-### 6.1 Data Fetching (`OWPROV`)
+### 6.1 Data Fetching & Complete Metadata Ingestion (`OWPROV`)
 Scoped access records are fetched directly using:
 ```typescript
 GET /api/v1/managementRole?userId={selectedUserId}
 ```
-The UI loads associated metadata in parallel:
-- Properties (`Entities`): `GET /api/v1/entity` (resolves `role.entity` $\rightarrow$ Property Name).
-- Venues: `GET /api/v1/venue` (resolves `role.venue` $\rightarrow$ Venue Name).
-- Policies: `GET /api/v1/managementPolicy` (resolves `role.managementPolicy` $\rightarrow$ Policy Name).
+The UI loads associated metadata in parallel. Upstream `OWPROV` defaults `limit = 100` on generic listing endpoints (`src/framework/RESTAPI_Handler.h`). To guarantee that deployments with > 100 properties, venues, or policies do not silently truncate valid options in the Scoped Access interface, the query hooks implement batch ingestion loops matching `ra-wlan-cloud-owprov-ui` (`Entity.ts` and `Venues.ts`):
+- **Properties (`Entities`):** Resolved via `getAllEntities()` using batch size 500:
+  ```typescript
+  const getEntitiesBatch = async (limit: number, offset: number) =>
+    axiosProv
+      .get(`entity?withExtendedInfo=true&offset=${offset}&limit=${limit}`)
+      .then(({ data }: { data: { entities: Entity[] } }) => data.entities);
+
+  const getAllEntities = async () => {
+    const limit = 500;
+    let offset = 0;
+    let data: Entity[] = [];
+    let lastResponse: Entity[] = [];
+    do {
+      lastResponse = await getEntitiesBatch(limit, offset);
+      data = data.concat(lastResponse);
+      offset += limit;
+    } while (lastResponse.length === limit);
+    return data;
+  };
+  ```
+- **Venues:** Resolved via `getAllVenues()` using batch size 500:
+  ```typescript
+  const getVenuesBatch = async (limit: number, offset: number) =>
+    axiosProv
+      .get(`venue?withExtendedInfo=true&offset=${offset}&limit=${limit}`)
+      .then(({ data }) => data.venues as VenueApiResponse[]);
+
+  const getAllVenues = async () => {
+    const limit = 500;
+    let offset = 0;
+    let data: VenueApiResponse[] = [];
+    let lastResponse: VenueApiResponse[] = [];
+    do {
+      lastResponse = await getVenuesBatch(limit, offset);
+      data = data.concat(lastResponse);
+      offset += limit;
+    } while (lastResponse.length === limit);
+    return data;
+  };
+  ```
+- **Policies:** Resolved via `getAllPolicies()` (detailed in §14.1) using batch size 500 to resolve `role.managementPolicy` $\rightarrow$ Policy Name.
 
 ### 6.2 1:1 Backend MRA Card Representation
 Each `managementRole` returned by `OWPROV` is rendered as an independent card:
@@ -410,15 +448,15 @@ When the operator clicks the edit icon on an existing assignment card:
 Clicking the dashed `+ Assign access` button expands an inline scoping form:
 
 1. **`Entity *` (Property Dropdown, Required):**
-   - Populated via `GET /api/v1/entity`.
-   - Displays all properties accessible to the operator.
+   - Populated via `getAllEntities()` (`GET /api/v1/entity?withExtendedInfo=true&offset={offset}&limit=500`).
+   - Displays all properties accessible to the operator without 100-record truncation.
 2. **`Venues` (Venue Multi-Select Dropdown, Optional):**
-   - Populated via `GET /api/v1/venue` and dynamically filtered to venues where `venue.entity === selectedEntityId`.
+   - Populated via `getAllVenues()` (`GET /api/v1/venue?withExtendedInfo=true&offset={offset}&limit=500`) and dynamically filtered to venues where `venue.entity === selectedEntityId`.
    - **Property-Wide Selection:** Leaving this field empty assigns the role to the entire property (`"All venues"`).
    - **Multi-Venue Batch Selection:** Selecting one or more venues configures a batch assignment (`venueIds: [id1, id2, ...]`).
 3. **`Policy *` (Management Policy Dropdown, Required):**
-   - Populated via `GET /api/v1/managementPolicy`.
-   - Displays all active policies with their descriptions.
+   - Populated via `getAllPolicies()` (`GET /api/v1/managementPolicy?offset={offset}&limit=500`).
+   - Displays all active policies with their descriptions without truncation.
 4. **Submission Execution (`OWPROV` V2 API):**
    - Endpoint: `POST /api/v2/managementRole/0`
    - Payload format:
@@ -931,6 +969,7 @@ export const CreateScopedAccessValidationSchema = Yup.object().shape({
 - **TC-SCA-004 (Single-Item Revocation):** Click trash icon on card, confirm prompt. Verify `DELETE /api/v2/managementRole/{id}` removes the assignment card.
 - **TC-SCA-005 (Assign Property-Wide Access):** In inline form, select Entity, leave Venues empty, select Policy, submit. Verify `POST /api/v2/managementRole/0` creates property-wide MRA (`venue: ""`).
 - **TC-SCA-006 (Assign Multi-Venue Batch Access):** In inline form, select Entity, select 2 Venues, select Policy, submit. Verify V2 backend returns normalized `{ "roles": [...] }` envelope and 2 distinct cards render.
+- **TC-SCA-007 (Metadata Ingestion Completeness):** Verify Entity and Venue selection dropdowns execute batch ingestion loops (`limit=500`), guaranteeing that deployments with > 100 properties or venues load 100% of choices without silent truncation at `OWPROV`'s default 100-item boundary.
 
 ---
 
@@ -1022,12 +1061,32 @@ The metric is derived directly from cached `['managementPolicies']` (`OWPROV` `G
 The left side of the split-view layout renders the master Policies Catalog table, aligning with `ra-wlan-cloud-owprov-ui` (`PoliciesPage/Table.tsx`).
 
 ### 14.1 Ingestion Contract & Filter Controls
-- **Single-Request Catalog Ingestion (No Pagination Loop):**
-  Policies are global, reusable permission templates independent of physical scope or individual users. Because the total number of policies across a deployment is bounded and small (typically 5 to 20 blueprints), the client retrieves the complete policy catalog via a single standard query:
-  ```http
-  GET /api/v1/managementPolicy
+- **Batch Ingestion Flow (`getAllPolicies`) & Complete Catalog Guarantee:**
+  Policies are global, reusable permission templates independent of physical scope or individual users. In upstream `OWPROV`, `GET /api/v1/managementPolicy` inherits the shared request handler's default `limit = 100` (`src/framework/RESTAPI_Handler.h`). To guarantee that deployments with > 100 policies are not silently truncated at 100, the data query hook (`useGetManagementPolicies`) implements an automated batch ingestion loop matching the completeness guarantees established for users and entities:
+  ```typescript
+  const getPoliciesBatch = async (limit: number, offset: number) =>
+    axiosProv
+      .get(`managementPolicy?offset=${offset}&limit=${limit}`)
+      .then(({ data }) => data.managementPolicies as ManagementPolicy[]);
+
+  const getAllPolicies = async () => {
+    const limit = 500;
+    let offset = 0;
+    let policies: ManagementPolicy[] = [];
+    let lastResponseLength = 0;
+
+    do {
+      const batch = await getPoliciesBatch(limit, offset);
+      policies = [...policies, ...batch];
+      offset += limit;
+      lastResponseLength = batch.length;
+    } while (lastResponseLength === limit);
+
+    return policies;
+  };
   ```
-  Following the reference implementation in `ra-wlan-cloud-owprov-ui` (`useGetManagementPolicies`), this request intentionally omits `limit` parameters and client-side batching loops. In contrast to user-scoped roles (`GET /api/v1/managementRole?userId={userId}`) where pagination applies per user, the policy catalog requires no client-side pagination ingestion loop.
+  - **Single-Request Fast Path:** For typical deployments ($\le 500$ policies), the query completes in a single HTTP round-trip (`limit=500`), retrieving the complete catalog immediately without truncation.
+  - **Complete Catalog Guarantee:** For large deployments with $> 500$ policies, the loop deterministically aggregates 100% of the catalog before caching.
 - **Search Policies Input (`Search policies...`):**
   - Debounced by **300ms**.
   - Matches `name` and `description` (case-insensitive substring).
@@ -1297,10 +1356,14 @@ The top-level `+ Create policy` button in the application header provides direct
 
 #### 19.1.1 Get All Management Policies
 ```http
-GET /api/v1/managementPolicy HTTP/1.1
+GET /api/v1/managementPolicy?offset={offset}&limit={limit} HTTP/1.1
 Host: <owprov-host>:9005
 Authorization: Bearer <jwt-token>
 ```
+
+> [!NOTE]
+> `OWPROV` defaults `limit = 100` if omitted. Client data hooks pass `limit=500` (via batch ingestion loop `getAllPolicies()`) to ensure complete, non-truncated retrieval.
+
 **Response (`200 OK`):**
 ```json
 {
@@ -1535,9 +1598,9 @@ export interface PolicyOverviewSummary {
 ## 21. Acceptance Criteria & QA Test Scenarios (Policies Tab)
 
 ### 21.1 Catalog Listing & Search
-- **TC-POL-001 (Catalog Ingestion):** Verify `GET /api/v1/managementPolicy` populates the catalog table with all returned policies.
+- **TC-POL-001 (Catalog Ingestion & Completeness):** Verify data fetching executes with `limit=500` (via batch ingestion loop `getAllPolicies`), ingesting 100% of policies without silent truncation at `OWPROV`'s default 100-record boundary.
 - **TC-POL-002 (Search Filtering):** Enter search text matching policy name or description. Verify debounced real-time table filtering.
-- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies` accurately calculates directly from the count of items in the `GET /api/v1/managementPolicy` response array.
+- **TC-POL-003 (KPI Metrics Calculation):** Verify `Total Policies` accurately calculates directly from the count of items in the `managementPolicies` array.
 
 ### 21.2 Overview Aggregation Integration
 - **TC-POL-004 (Overview Aggregation Query):** Select policy row. Verify `GET /api/v1/policy/{id}/overview` loads summary mini-cards and the "Users with this policy" roster table.
