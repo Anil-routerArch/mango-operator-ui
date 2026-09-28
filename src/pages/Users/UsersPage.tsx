@@ -15,6 +15,7 @@ import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useGetUsers, useCreateUser, useUpdateUser, useSuspendUser } from '@/api';
+import { useAuthStore } from '@/stores/authStore';
 import { UserScopedAccessTab } from './UserScopedAccessTab';
 import type { User } from '@/types/user';
 
@@ -817,6 +818,7 @@ export const UsersPage: React.FC = () => {
             });
           }}
           isLoading={createUserMutation.isPending}
+          onOpenPasswordPolicy={() => setIsPasswordPolicyOpen(true)}
         />
       )}
 
@@ -839,6 +841,20 @@ const UserProfileForm: React.FC<{
   isSaving: boolean;
   onOpenPasswordPolicy: () => void;
 }> = ({ user, onSave, isSaving, onOpenPasswordPolicy }) => {
+  const currentUser = useAuthStore((s) => s.user);
+  const isCurrentUserRoot = currentUser?.userRole?.toLowerCase() === 'root';
+
+  const availableRoles = [
+    ...(isCurrentUserRoot || user.userRole?.toLowerCase() === 'root'
+      ? [{ label: 'Root', value: 'root' }]
+      : []),
+    { label: 'Admin', value: 'admin' },
+    { label: 'Installer', value: 'installer' },
+    { label: 'CSR', value: 'csr' },
+    { label: 'NOC', value: 'noc' },
+    { label: 'Accounting', value: 'accounting' },
+  ];
+
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user.name || '');
   const [email, setEmail] = useState(user.email || '');
@@ -976,8 +992,8 @@ const UserProfileForm: React.FC<{
         </Text>
         <SelectDropdown
           value={role}
-          onChange={(val) => setRole(val)}
-          options={['root', 'admin', 'installer', 'csr', 'noc', 'accounting']}
+          onChange={(val) => setRole(val as any)}
+          options={availableRoles}
           w="100%"
           h="36px"
           borderColor={themeColors.input.border}
@@ -1212,14 +1228,28 @@ const CreateUserModal: React.FC<{
     changePassword?: boolean;
   }) => void;
   isLoading: boolean;
-}> = ({ onClose, onCreate, isLoading }) => {
+  onOpenPasswordPolicy?: () => void;
+}> = ({ onClose, onCreate, isLoading, onOpenPasswordPolicy }) => {
+  const currentUser = useAuthStore((s) => s.user);
+  const isCurrentUserRoot = currentUser?.userRole?.toLowerCase() === 'root';
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [userRole, setUserRole] = useState('admin');
-  const [password, setPassword] = useState('InitialPass123!');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [description, setDescription] = useState('');
   const [changePassword, setChangePassword] = useState(true);
   const [emailValidation, setEmailValidation] = useState(false);
+
+  const roleOptions = [
+    { label: 'Admin', value: 'admin' },
+    { label: 'Installer', value: 'installer' },
+    { label: 'CSR', value: 'csr' },
+    { label: 'NOC', value: 'noc' },
+    { label: 'Accounting', value: 'accounting' },
+    ...(isCurrentUserRoot ? [{ label: 'Root', value: 'root' }] : []),
+  ];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1314,8 +1344,8 @@ const CreateUserModal: React.FC<{
               </Text>
               <SelectDropdown
                 value={userRole}
-                onChange={(val) => setUserRole(val)}
-                options={['admin', 'installer', 'csr', 'noc', 'accounting']}
+                onChange={(val) => setUserRole(String(val))}
+                options={roleOptions}
                 w="100%"
                 h="36px"
               />
@@ -1324,14 +1354,60 @@ const CreateUserModal: React.FC<{
               <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
                 Password <Box as="span" color={themeColors.text.required}>*</Box>
               </Text>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                size="sm"
-                borderRadius="4px"
-                required
-              />
+              <Flex position="relative" align="center">
+                <Input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  size="sm"
+                  borderRadius="4px"
+                  pr="75px"
+                  letterSpacing={!showPassword && password ? '2px' : 'normal'}
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="plain"
+                  position="absolute"
+                  right="6px"
+                  h="26px"
+                  px={2}
+                  fontSize="11px"
+                  color={themeColors.text.secondary}
+                  onClick={() => setShowPassword(!showPassword)}
+                  cursor="pointer"
+                  _hover={{ color: themeColors.text.primary }}
+                >
+                  <HStack gap={1}>
+                    <Icon name={showPassword ? 'eyeOff' : 'eye'} size={14} />
+                    <Text>{showPassword ? 'Hide' : 'Show'}</Text>
+                  </HStack>
+                </Button>
+              </Flex>
+              <Flex justify="space-between" align="center" mt={1}>
+                <Text fontSize="11px" color={themeColors.text.muted}>
+                  Min 8 chars, uppercase, number & symbol
+                </Text>
+                {onOpenPasswordPolicy && (
+                  <Button
+                    type="button"
+                    variant="plain"
+                    p={0}
+                    h="auto"
+                    fontSize="11px"
+                    color={themeColors.brand.accent}
+                    _hover={{ textDecoration: 'underline' }}
+                    onClick={onOpenPasswordPolicy}
+                    cursor="pointer"
+                  >
+                    <HStack gap={1}>
+                      <Text>Password policy</Text>
+                      <Icon name="external" size={11} />
+                    </HStack>
+                  </Button>
+                )}
+              </Flex>
             </Box>
           </Flex>
 
