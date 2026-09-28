@@ -389,11 +389,10 @@ export const UsersPage: React.FC = () => {
                 fontWeight="600"
                 color={themeColors.text.secondary}
               >
-                <Box flex="1.7">User</Box>
-                <Box flex="1.15">System Role</Box>
-                <Box flex="1.1">Scoped Access</Box>
-                <Box flex="0.75">Status</Box>
-                <Box flex="0.85">Last Login</Box>
+                <Box flex="2">User</Box>
+                <Box flex="1.2">System Role</Box>
+                <Box flex="0.8">Status</Box>
+                <Box flex="1">Last Login</Box>
                 <Box w="20px" />
               </Flex>
 
@@ -433,7 +432,7 @@ export const UsersPage: React.FC = () => {
                       transition="background 0.15s ease"
                     >
                       {/* Identity */}
-                      <HStack flex="1.7" gap={3} minW={0} pr={2}>
+                      <HStack flex="2" gap={3} minW={0} pr={2}>
                         {u.avatar && u.avatar.startsWith('data:') ? (
                           <Box
                             w="32px"
@@ -488,17 +487,12 @@ export const UsersPage: React.FC = () => {
                       </HStack>
 
                       {/* System Role */}
-                      <Box flex="1.15" color={themeColors.text.primary} textTransform="capitalize">
+                      <Box flex="1.2" color={themeColors.text.primary} textTransform="capitalize">
                         {u.userRole}
                       </Box>
 
-                      {/* Scoped Access */}
-                      <Box flex="1.1" color={themeColors.text.secondary}>
-                        {u.location || 'All properties'}
-                      </Box>
-
                       {/* Status */}
-                      <Box flex="0.75">
+                      <Box flex="0.8">
                         <Box
                           as="span"
                           display="inline-block"
@@ -518,7 +512,7 @@ export const UsersPage: React.FC = () => {
                       </Box>
 
                       {/* Last Login */}
-                      <Box flex="0.85" color={themeColors.text.secondary}>
+                      <Box flex="1" color={themeColors.text.secondary}>
                         {formatLastLogin(u.lastLogin)}
                       </Box>
 
