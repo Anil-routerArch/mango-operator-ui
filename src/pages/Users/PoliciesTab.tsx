@@ -329,9 +329,6 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
   // KPI Calculations
   const totalPoliciesCount = policies.length;
-  const builtInCount = policies.filter((p) => p.type === 'Built-in').length;
-  const customCount = policies.filter((p) => p.type === 'Custom').length;
-  const totalActiveAssignments = policies.reduce((acc, p) => acc + p.scopedAssignmentsCount, 0);
 
   // Handle Save Policy action
   const handleSavePolicy = () => {
@@ -340,140 +337,39 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
   return (
     <VStack gap={4} align="stretch" w="100%">
-      {/* KPI Cards Grid */}
-      <SimpleGrid columns={{ base: 1, sm: 2, md: 4 }} gap={4}>
-        {/* Card 1: Total Policies */}
+      {/* Total Policies KPI Card */}
+      <Flex
+        w={{ base: '100%', sm: '260px' }}
+        bg="#ffffff"
+        border="1px solid"
+        borderColor={themeColors.panel.border}
+        borderRadius="6px"
+        p="16px"
+        align="center"
+        gap={3.5}
+      >
         <Flex
-          bg="#ffffff"
-          border="1px solid"
-          borderColor={themeColors.panel.border}
-          borderRadius="6px"
-          p="16px"
+          w="40px"
+          h="40px"
+          borderRadius="8px"
+          bg="#eff6ff"
+          border="1px solid #bfdbfe"
+          color="#2563eb"
           align="center"
-          gap={3.5}
+          justify="center"
+          flexShrink={0}
         >
-          <Flex
-            w="40px"
-            h="40px"
-            borderRadius="8px"
-            bg="#eff6ff"
-            border="1px solid #bfdbfe"
-            color="#2563eb"
-            align="center"
-            justify="center"
-            flexShrink={0}
-          >
-            <Icon name="shield" size={20} />
-          </Flex>
-          <Box>
-            <Text fontSize="12px" fontWeight="500" color="#64748b">
-              Total Policies
-            </Text>
-            <Text fontSize="22px" fontWeight="700" color="#0f172a" lineHeight="1.2">
-              {totalPoliciesCount}
-            </Text>
-          </Box>
+          <Icon name="shield" size={20} />
         </Flex>
-
-        {/* Card 2: Built-in */}
-        <Flex
-          bg="#ffffff"
-          border="1px solid"
-          borderColor={themeColors.panel.border}
-          borderRadius="6px"
-          p="16px"
-          align="center"
-          gap={3.5}
-        >
-          <Flex
-            w="40px"
-            h="40px"
-            borderRadius="8px"
-            bg="#f0fdf4"
-            border="1px solid #bbf7d0"
-            color="#16a34a"
-            align="center"
-            justify="center"
-            flexShrink={0}
-          >
-            <Icon name="check" size={20} />
-          </Flex>
-          <Box>
-            <Text fontSize="12px" fontWeight="500" color="#64748b">
-              Built-in
-            </Text>
-            <Text fontSize="22px" fontWeight="700" color="#0f172a" lineHeight="1.2">
-              {builtInCount}
-            </Text>
-          </Box>
-        </Flex>
-
-        {/* Card 3: Custom */}
-        <Flex
-          bg="#ffffff"
-          border="1px solid"
-          borderColor={themeColors.panel.border}
-          borderRadius="6px"
-          p="16px"
-          align="center"
-          gap={3.5}
-        >
-          <Flex
-            w="40px"
-            h="40px"
-            borderRadius="8px"
-            bg="#fff7ed"
-            border="1px solid #fed7aa"
-            color="#ea580c"
-            align="center"
-            justify="center"
-            flexShrink={0}
-          >
-            <Icon name="edit" size={20} />
-          </Flex>
-          <Box>
-            <Text fontSize="12px" fontWeight="500" color="#64748b">
-              Custom
-            </Text>
-            <Text fontSize="22px" fontWeight="700" color="#0f172a" lineHeight="1.2">
-              {customCount}
-            </Text>
-          </Box>
-        </Flex>
-
-        {/* Card 4: Active Assignments */}
-        <Flex
-          bg="#ffffff"
-          border="1px solid"
-          borderColor={themeColors.panel.border}
-          borderRadius="6px"
-          p="16px"
-          align="center"
-          gap={3.5}
-        >
-          <Flex
-            w="40px"
-            h="40px"
-            borderRadius="8px"
-            bg="#faf5ff"
-            border="1px solid #e9d8fd"
-            color="#7c3aed"
-            align="center"
-            justify="center"
-            flexShrink={0}
-          >
-            <Icon name="users" size={20} />
-          </Flex>
-          <Box>
-            <Text fontSize="12px" fontWeight="500" color="#64748b">
-              Active Assignments
-            </Text>
-            <Text fontSize="22px" fontWeight="700" color="#0f172a" lineHeight="1.2">
-              {totalActiveAssignments}
-            </Text>
-          </Box>
-        </Flex>
-      </SimpleGrid>
+        <Box>
+          <Text fontSize="12px" fontWeight="500" color="#64748b">
+            Total Policies
+          </Text>
+          <Text fontSize="22px" fontWeight="700" color="#0f172a" lineHeight="1.2">
+            {totalPoliciesCount}
+          </Text>
+        </Box>
+      </Flex>
 
       {/* 3. Split Panel: Policies Table (Left) + Policy Details (Right) */}
       <Flex gap={5} align="flex-start" direction={{ base: 'column', lg: 'row' }}>
