@@ -17,6 +17,7 @@ import { themeColors } from '@/theme';
 import { useGetUsers, useCreateUser, useUpdateUser, useSuspendUser } from '@/api';
 import { useAuthStore } from '@/stores/authStore';
 import { UserScopedAccessTab } from './UserScopedAccessTab';
+import { PoliciesTab } from './PoliciesTab';
 import type { User } from '@/types/user';
 
 // Helper: Format unix timestamp to human readable relative time
@@ -70,12 +71,14 @@ export const UsersPage: React.FC = () => {
   const suspendUserMutation = useSuspendUser();
 
   // Selection & UI State
+  const [mainTab, setMainTab] = useState<'users' | 'policies'>('users');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<'profile' | 'scoped_access'>('profile');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCreatePolicyOpen, setIsCreatePolicyOpen] = useState(false);
   const [isPasswordPolicyOpen, setIsPasswordPolicyOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(() => {
@@ -156,13 +159,85 @@ export const UsersPage: React.FC = () => {
         title="Users & Access"
         subtitle="Manage users, system roles, and scoped permissions."
         onRefresh={() => refetch()}
-        primaryAction={{
-          label: 'Create user',
-          onClick: () => setIsCreateModalOpen(true),
-        }}
+        primaryAction={
+          mainTab === 'users'
+            ? {
+                label: 'Create user',
+                onClick: () => setIsCreateModalOpen(true),
+              }
+            : {
+                label: 'Create policy',
+                onClick: () => setIsCreatePolicyOpen(true),
+              }
+        }
       />
 
-      {/* Info Banner Architecture Visualizer */}
+      {/* Main Top Navigation Subtabs: Users & Policies */}
+      <Flex borderBottom="1px solid" borderColor={themeColors.panel.divider} gap={6} mb={4} mt={1}>
+        <Button
+          variant="plain"
+          onClick={() => setMainTab('users')}
+          px={1}
+          pb={2}
+          pt={1}
+          fontSize="14px"
+          fontWeight={mainTab === 'users' ? '600' : '500'}
+          color={mainTab === 'users' ? themeColors.text.title : themeColors.text.secondary}
+          position="relative"
+          cursor="pointer"
+          _after={
+            mainTab === 'users'
+              ? {
+                  content: '""',
+                  position: 'absolute',
+                  bottom: '-1px',
+                  left: 0,
+                  right: 0,
+                  height: '2px',
+                  bg: themeColors.brand.accent,
+                }
+              : undefined
+          }
+        >
+          Users
+        </Button>
+        <Button
+          variant="plain"
+          onClick={() => setMainTab('policies')}
+          px={1}
+          pb={2}
+          pt={1}
+          fontSize="14px"
+          fontWeight={mainTab === 'policies' ? '600' : '500'}
+          color={mainTab === 'policies' ? themeColors.text.title : themeColors.text.secondary}
+          position="relative"
+          cursor="pointer"
+          _after={
+            mainTab === 'policies'
+              ? {
+                  content: '""',
+                  position: 'absolute',
+                  bottom: '-1px',
+                  left: 0,
+                  right: 0,
+                  height: '2px',
+                  bg: themeColors.brand.accent,
+                }
+              : undefined
+          }
+        >
+          Policies
+        </Button>
+      </Flex>
+
+      {mainTab === 'policies' ? (
+        <PoliciesTab
+          isCreatePolicyOpen={isCreatePolicyOpen}
+          onCloseCreatePolicy={() => setIsCreatePolicyOpen(false)}
+        />
+      ) : (
+        <>
+          {/* Info Banner Architecture Visualizer */}
       <Flex
         minH="77px"
         border="1px solid"
@@ -807,6 +882,8 @@ export const UsersPage: React.FC = () => {
           )}
         </Box>
       </Flex>
+        </>
+      )}
 
       {/* Create User Modal */}
       {isCreateModalOpen && (
