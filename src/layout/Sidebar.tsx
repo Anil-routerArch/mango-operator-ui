@@ -102,7 +102,7 @@ export const Sidebar: React.FC = () => {
               {group.items.map((item) => {
                 const isActive =
                   location.pathname === item.path ||
-                  (item.path === '/users' && location.pathname === '/');
+                  (item.path === '/dashboard' && (location.pathname === '/' || location.pathname === ''));
 
                 return (
                   <NavLink key={item.label} to={item.path} style={{ textDecoration: 'none' }}>

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -14,7 +15,9 @@ import { useAuthStore } from '@/stores/authStore';
 import { themeColors } from '@/theme';
 
 export const LoginPage: React.FC = () => {
-  const { login, submitMfa, isLoading, error, mfaChallenge, clearError } = useAuthStore();
+  const { isAuthenticated, login, submitMfa, isLoading, error, mfaChallenge, clearError } = useAuthStore();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
@@ -22,16 +25,32 @@ export const LoginPage: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [mfaCode, setMfaCode] = useState('');
 
+  // If already authenticated, redirect immediately to dashboard
+  useEffect(() => {
+    if (isAuthenticated) {
+      const returnUrl = (location.state as any)?.from?.pathname || '/dashboard';
+      navigate(returnUrl, { replace: true });
+    }
+  }, [isAuthenticated, navigate, location]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
 
     if (mfaChallenge) {
-      await submitMfa(mfaCode, rememberMe).catch(() => {});
+      const ok = await submitMfa(mfaCode, rememberMe).catch(() => false);
+      if (ok) {
+        const returnUrl = (location.state as any)?.from?.pathname || '/dashboard';
+        navigate(returnUrl, { replace: true });
+      }
       return;
     }
 
-    await login({ userId, password }, rememberMe).catch(() => {});
+    const ok = await login({ userId, password }, rememberMe).catch(() => false);
+    if (ok) {
+      const returnUrl = (location.state as any)?.from?.pathname || '/dashboard';
+      navigate(returnUrl, { replace: true });
+    }
   };
 
   return (
