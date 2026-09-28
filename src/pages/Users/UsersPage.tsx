@@ -76,7 +76,29 @@ export const UsersPage: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isPasswordPolicyOpen, setIsPasswordPolicyOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('users_page_size');
+      if (saved) {
+        const parsed = Number(saved);
+        if ([5, 10, 20, 50].includes(parsed)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // LocalStorage access fallback
+    }
+    return 5;
+  });
+
+  // Persist pageSize to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('users_page_size', String(pageSize));
+    } catch {
+      // LocalStorage access fallback
+    }
+  }, [pageSize]);
 
   // Auto-select first user when users list loads
   useEffect(() => {
