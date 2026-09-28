@@ -74,6 +74,9 @@ export const UsersPage: React.FC = () => {
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isPasswordPolicyOpen, setIsPasswordPolicyOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 5;
 
   // Auto-select first user when users list loads
   useEffect(() => {
@@ -102,6 +105,19 @@ export const UsersPage: React.FC = () => {
       return matchesSearch && matchesRole && matchesStatus;
     });
   }, [users, search, roleFilter, statusFilter]);
+
+  // Reset pagination to first page when search or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, roleFilter, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+
+  // Paginated Users for Table Display (5 users per page)
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredUsers.slice(startIndex, startIndex + pageSize);
+  }, [filteredUsers, currentPage, pageSize]);
 
   // Derived KPI Counts
   const totalUsersCount = users.length;
@@ -393,7 +409,7 @@ export const UsersPage: React.FC = () => {
                   <Text fontSize="13px">No users found</Text>
                 </Flex>
               ) : (
-                filteredUsers.map((u) => {
+                paginatedUsers.map((u) => {
                   const isSelected = selectedUser?.id === u.id;
                   const initials = getInitials(u.name, u.email);
                   const avatarColor = getAvatarColor(u.userRole);
@@ -519,7 +535,83 @@ export const UsersPage: React.FC = () => {
 
           {/* Pagination bar */}
           <Flex justify="space-between" align="center" mt={4} fontSize="12px" color={themeColors.text.secondary}>
-            <Text>Showing 1–{filteredUsers.length} of {users.length}</Text>
+            <Text>
+              Showing {filteredUsers.length === 0 ? '0' : `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredUsers.length)}`} of {filteredUsers.length}
+            </Text>
+
+            <HStack gap={1}>
+              {/* Previous Page */}
+              <Button
+                size="xs"
+                w="28px"
+                h="28px"
+                minW="28px"
+                p={0}
+                variant="outline"
+                borderColor={themeColors.panel.border}
+                color={themeColors.text.secondary}
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                cursor={currentPage <= 1 ? 'not-allowed' : 'pointer'}
+                borderRadius="4px"
+                bg="#ffffff"
+                _hover={{ borderColor: themeColors.brand.accent }}
+                aria-label="Previous page"
+              >
+                <Icon name="chevronLeft" size={14} />
+              </Button>
+
+              {/* Numbered Page Buttons */}
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                const isActive = pageNum === currentPage;
+                return (
+                  <Button
+                    key={pageNum}
+                    size="xs"
+                    w="28px"
+                    h="28px"
+                    minW="28px"
+                    p={0}
+                    fontSize="12px"
+                    fontWeight={isActive ? '700' : '400'}
+                    bg="#ffffff"
+                    color={isActive ? themeColors.brand.accent : themeColors.text.secondary}
+                    border="1px solid"
+                    borderColor={isActive ? themeColors.brand.accent : themeColors.panel.border}
+                    borderRadius="4px"
+                    onClick={() => setCurrentPage(pageNum)}
+                    cursor="pointer"
+                    _hover={{
+                      borderColor: themeColors.brand.accent,
+                      color: themeColors.brand.accent,
+                    }}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+
+              {/* Next Page */}
+              <Button
+                size="xs"
+                w="28px"
+                h="28px"
+                minW="28px"
+                p={0}
+                variant="outline"
+                borderColor={themeColors.panel.border}
+                color={themeColors.text.secondary}
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                cursor={currentPage >= totalPages ? 'not-allowed' : 'pointer'}
+                borderRadius="4px"
+                bg="#ffffff"
+                _hover={{ borderColor: themeColors.brand.accent }}
+                aria-label="Next page"
+              >
+                <Icon name="chevronRight" size={14} />
+              </Button>
+            </HStack>
           </Flex>
         </Box>
 
@@ -651,6 +743,7 @@ export const UsersPage: React.FC = () => {
                   user={selectedUser}
                   onSave={(payload) => updateUserMutation.mutate(payload)}
                   isSaving={updateUserMutation.isPending}
+                  onOpenPasswordPolicy={() => setIsPasswordPolicyOpen(true)}
                 />
               ) : (
                 <UserScopedAccessTab user={selectedUser} />
@@ -676,6 +769,12 @@ export const UsersPage: React.FC = () => {
           isLoading={createUserMutation.isPending}
         />
       )}
+
+      {/* Password Policy Modal */}
+      <PasswordPolicyModal
+        isOpen={isPasswordPolicyOpen}
+        onClose={() => setIsPasswordPolicyOpen(false)}
+      />
     </Box>
   );
 };
@@ -683,20 +782,48 @@ export const UsersPage: React.FC = () => {
 // Sub-component: User Profile Form
 const UserProfileForm: React.FC<{
   user: User;
-  onSave: (payload: { id: string; name: string; email: string; userRole: string; description: string }) => void;
+  onSave: (payload: { id: string; name: string; email: string; userRole: string; description: string; currentPassword?: string }) => void;
   isSaving: boolean;
-}> = ({ user, onSave, isSaving }) => {
+  onOpenPasswordPolicy: () => void;
+}> = ({ user, onSave, isSaving, onOpenPasswordPolicy }) => {
   const [name, setName] = useState(user.name || '');
   const [email, setEmail] = useState(user.email || '');
   const [role, setRole] = useState(user.userRole || 'admin');
   const [description, setDescription] = useState(user.description || '');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     setName(user.name || '');
     setEmail(user.email || '');
     setRole(user.userRole || 'admin');
     setDescription(user.description || '');
+    setPassword('');
+    setShowPassword(false);
   }, [user]);
+
+  const handleCancel = () => {
+    setName(user.name || '');
+    setEmail(user.email || '');
+    setRole(user.userRole || 'admin');
+    setDescription(user.description || '');
+    setPassword('');
+    setShowPassword(false);
+  };
+
+  const handleSave = () => {
+    const payload: { id: string; name: string; email: string; userRole: string; description: string; currentPassword?: string } = {
+      id: user.id,
+      name,
+      email,
+      userRole: role,
+      description,
+    };
+    if (password.trim()) {
+      payload.currentPassword = password.trim();
+    }
+    onSave(payload);
+  };
 
   return (
     <VStack gap={4} align="stretch">
@@ -704,27 +831,50 @@ const UserProfileForm: React.FC<{
         Profile information
       </Text>
 
+      {/* Email & Name */}
       <Flex gap={3}>
         <Box flex="1">
           <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
             Email <Box as="span" color={themeColors.text.required}>*</Box>
           </Text>
-          <Input value={email} onChange={(e) => setEmail(e.target.value)} size="sm" borderRadius="4px" />
+          <Input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            size="sm"
+            borderRadius="4px"
+            borderColor={themeColors.input.border}
+            bg={themeColors.input.bg}
+          />
         </Box>
         <Box flex="1">
           <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
             Name <Box as="span" color={themeColors.text.required}>*</Box>
           </Text>
-          <Input value={name} onChange={(e) => setName(e.target.value)} size="sm" borderRadius="4px" />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            size="sm"
+            borderRadius="4px"
+            borderColor={themeColors.input.border}
+            bg={themeColors.input.bg}
+          />
         </Box>
       </Flex>
 
+      {/* System Role */}
       <Box>
         <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
           System Role <Box as="span" color={themeColors.text.required}>*</Box>
         </Text>
         <NativeSelect.Root>
-          <NativeSelect.Field value={role} onChange={(e) => setRole(e.target.value as any)} h="36px" fontSize="13px">
+          <NativeSelect.Field
+            value={role}
+            onChange={(e) => setRole(e.target.value as any)}
+            h="36px"
+            fontSize="13px"
+            borderColor={themeColors.input.border}
+            bg={themeColors.input.bg}
+          >
             <option value="root">root</option>
             <option value="admin">admin</option>
             <option value="installer">installer</option>
@@ -738,6 +888,49 @@ const UserProfileForm: React.FC<{
         </Text>
       </Box>
 
+      {/* Password Field */}
+      <Box>
+        <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
+          Password
+        </Text>
+        <Flex position="relative" align="center">
+          <Input
+            type={showPassword ? 'text' : 'password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••••••"
+            size="sm"
+            borderRadius="4px"
+            pr="75px"
+            borderColor={themeColors.input.border}
+            bg={themeColors.input.bg}
+            letterSpacing={!showPassword && password ? '2px' : 'normal'}
+          />
+          <Button
+            type="button"
+            variant="plain"
+            position="absolute"
+            right="6px"
+            h="26px"
+            px={2}
+            fontSize="11px"
+            color={themeColors.text.secondary}
+            onClick={() => setShowPassword(!showPassword)}
+            cursor="pointer"
+            _hover={{ color: themeColors.text.primary }}
+          >
+            <HStack gap={1}>
+              <Icon name={showPassword ? 'eyeOff' : 'eye'} size={14} />
+              <Text>{showPassword ? 'Hide' : 'Show'}</Text>
+            </HStack>
+          </Button>
+        </Flex>
+        <Text fontSize="11px" color={themeColors.text.muted} mt={1}>
+          Leave unchanged to keep the current password.
+        </Text>
+      </Box>
+
+      {/* Description */}
       <Box>
         <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
           Description
@@ -747,31 +940,151 @@ const UserProfileForm: React.FC<{
           onChange={(e) => setDescription(e.target.value)}
           size="sm"
           borderRadius="4px"
-          minH="54px"
+          minH="60px"
+          borderColor={themeColors.input.border}
+          bg={themeColors.input.bg}
+          placeholder="Network operations across assigned properties and venues."
         />
       </Box>
 
-      <Flex justify="space-between" borderTop="1px solid" borderColor={themeColors.panel.divider} pt={4} mt={2}>
-        <Button variant="outline" size="sm" minW="120px" onClick={() => {
-          setName(user.name || '');
-          setEmail(user.email || '');
-          setDescription(user.description || '');
-        }}>
-          Reset
+      {/* View Password Policy Link */}
+      <Box mt={1}>
+        <Button
+          variant="plain"
+          p={0}
+          h="auto"
+          fontSize="12px"
+          color={themeColors.brand.accent}
+          _hover={{ textDecoration: 'underline' }}
+          onClick={onOpenPasswordPolicy}
+          cursor="pointer"
+        >
+          <HStack gap={1}>
+            <Text>View password policy</Text>
+            <Icon name="external" size={13} />
+          </HStack>
+        </Button>
+      </Box>
+
+      {/* Form Action Buttons */}
+      <Flex justify="space-between" align="center" pt={4} mt={2}>
+        <Button
+          variant="outline"
+          size="sm"
+          minW="90px"
+          borderColor={themeColors.panel.border}
+          color={themeColors.text.primary}
+          onClick={handleCancel}
+          _hover={{ bg: themeColors.canvas.bg }}
+        >
+          Cancel
         </Button>
         <Button
           bg={themeColors.brand.primary}
           color="#ffffff"
           _hover={{ bg: themeColors.brand.primaryHover }}
+          _active={{ bg: themeColors.brand.primaryActive }}
           size="sm"
           minW="120px"
           disabled={isSaving}
-          onClick={() => onSave({ id: user.id, name, email, userRole: role, description })}
+          onClick={handleSave}
+          fontWeight="600"
         >
           {isSaving ? 'Saving...' : 'Save profile'}
         </Button>
       </Flex>
     </VStack>
+  );
+};
+
+// Sub-component: Password Policy Modal
+const PasswordPolicyModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+}> = ({ isOpen, onClose }) => {
+  if (!isOpen) return null;
+
+  return (
+    <Box
+      position="fixed"
+      inset="0"
+      bg="rgba(5, 12, 23, 0.54)"
+      display="grid"
+      placeItems="center"
+      zIndex="1100"
+      p={4}
+    >
+      <Box
+        w="min(480px, 95vw)"
+        bg="#ffffff"
+        borderRadius="8px"
+        boxShadow="0 20px 50px rgba(0,0,0,0.3)"
+        p={6}
+      >
+        <Flex justify="space-between" align="center" mb={4}>
+          <HStack gap={2}>
+            <Icon name="shield" size={20} color={themeColors.brand.primary} />
+            <Text fontSize="16px" fontWeight="700" color={themeColors.text.title}>
+              Password Policy
+            </Text>
+          </HStack>
+          <Button
+            variant="plain"
+            onClick={onClose}
+            p={1}
+            minW="auto"
+            h="auto"
+            color={themeColors.text.secondary}
+          >
+            <Icon name="x" size={18} />
+          </Button>
+        </Flex>
+
+        <Text fontSize="13px" color={themeColors.text.secondary} mb={4}>
+          To maintain security compliance across OpenWiFi and Mango Cloud services, your password must meet the following complexity requirements:
+        </Text>
+
+        <VStack gap={2} align="stretch" mb={6} fontSize="13px" color={themeColors.text.primary}>
+          <HStack gap={2} align="flex-start">
+            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
+            <Text>Minimum length of <strong>8 characters</strong></Text>
+          </HStack>
+          <HStack gap={2} align="flex-start">
+            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
+            <Text>At least one <strong>uppercase letter (A–Z)</strong></Text>
+          </HStack>
+          <HStack gap={2} align="flex-start">
+            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
+            <Text>At least one <strong>lowercase letter (a–z)</strong></Text>
+          </HStack>
+          <HStack gap={2} align="flex-start">
+            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
+            <Text>At least one <strong>number (0–9)</strong></Text>
+          </HStack>
+          <HStack gap={2} align="flex-start">
+            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
+            <Text>At least one <strong>special character</strong> (e.g. !@#$%^&*)</Text>
+          </HStack>
+          <HStack gap={2} align="flex-start">
+            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
+            <Text>Must not match user's name or email</Text>
+          </HStack>
+        </VStack>
+
+        <Flex justify="flex-end">
+          <Button
+            bg={themeColors.brand.primary}
+            color="#ffffff"
+            _hover={{ bg: themeColors.brand.primaryHover }}
+            size="sm"
+            px={5}
+            onClick={onClose}
+          >
+            Got it
+          </Button>
+        </Flex>
+      </Box>
+    </Box>
   );
 };
 
