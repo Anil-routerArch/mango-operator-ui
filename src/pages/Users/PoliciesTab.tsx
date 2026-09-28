@@ -50,6 +50,32 @@ export interface PolicyItem {
   assignedUsers: PolicyAssignedUser[];
 }
 
+export const ALL_POLICY_RESOURCES = [
+  'Entity',
+  'Venue',
+  'Configuration',
+  'Inventory',
+  'Operator',
+  'Subscriber',
+  'Contact',
+  'Location',
+];
+
+const buildInitialPermissions = (
+  granted: Record<string, { read?: boolean; create?: boolean; update?: boolean; delete?: boolean }>
+): ResourcePermission[] => {
+  return ALL_POLICY_RESOURCES.map((res) => {
+    const perm = granted[res] || {};
+    return {
+      resource: res,
+      read: !!perm.read,
+      create: !!perm.create,
+      update: !!perm.update,
+      delete: !!perm.delete,
+    };
+  });
+};
+
 // Initial dummy policies matching the exact layout and data
 const INITIAL_POLICIES: PolicyItem[] = [
   {
@@ -65,12 +91,16 @@ const INITIAL_POLICIES: PolicyItem[] = [
     venuesCount: 8,
     modified: '1 Sep 2026',
     description: 'Full administrative access across all resources and operations.',
-    permissions: [
-      { resource: 'Property', read: true, create: true, update: true, delete: true },
-      { resource: 'Venue', read: true, create: true, update: true, delete: true },
-      { resource: 'Device', read: true, create: true, update: true, delete: true },
-      { resource: 'Configuration', read: true, create: true, update: true, delete: true },
-    ],
+    permissions: buildInitialPermissions({
+      Entity: { read: true, create: true, update: true, delete: true },
+      Venue: { read: true, create: true, update: true, delete: true },
+      Configuration: { read: true, create: true, update: true, delete: true },
+      Inventory: { read: true, create: true, update: true, delete: true },
+      Operator: { read: true, create: true, update: true, delete: true },
+      Subscriber: { read: true, create: true, update: true, delete: true },
+      Contact: { read: true, create: true, update: true, delete: true },
+      Location: { read: true, create: true, update: true, delete: true },
+    }),
     assignedUsers: [
       { name: 'Marcus Vance', initials: 'MV', avatarBg: '#1e3a8a', property: 'All Properties', venueScope: 'Global' },
       { name: 'Sarah Chen', initials: 'SC', avatarBg: '#059669', property: 'Sunset Heights', venueScope: 'All venues' },
@@ -90,12 +120,16 @@ const INITIAL_POLICIES: PolicyItem[] = [
     venuesCount: 8,
     modified: '2 Sep 2026',
     description: 'Monitor devices and manage network configuration.',
-    permissions: [
-      { resource: 'Property', read: true, create: false, update: false, delete: false },
-      { resource: 'Venue', read: true, create: false, update: false, delete: false },
-      { resource: 'Device', read: true, create: false, update: true, delete: false },
-      { resource: 'Configuration', read: true, create: true, update: true, delete: false },
-    ],
+    permissions: buildInitialPermissions({
+      Entity: { read: true },
+      Venue: { read: true },
+      Configuration: { read: true, create: true, update: true },
+      Inventory: { read: true, update: true },
+      Operator: { read: true },
+      Subscriber: { read: true },
+      Contact: { read: true },
+      Location: { read: true },
+    }),
     assignedUsers: [
       { name: 'Anita Sharma', initials: 'AS', avatarBg: '#1e3a8a', property: 'Sunrise Apartments', venueScope: 'All venues' },
       { name: 'David Okafor', initials: 'DO', avatarBg: '#581c87', property: 'Oakwood Housing', venueScope: 'Building A' },
@@ -115,12 +149,13 @@ const INITIAL_POLICIES: PolicyItem[] = [
     venuesCount: 6,
     modified: '28 Aug 2026',
     description: 'Device onboarding, inventory provisioning and local venue testing.',
-    permissions: [
-      { resource: 'Property', read: true, create: false, update: false, delete: false },
-      { resource: 'Venue', read: true, create: false, update: false, delete: false },
-      { resource: 'Device', read: true, create: true, update: true, delete: false },
-      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-    ],
+    permissions: buildInitialPermissions({
+      Venue: { read: true },
+      Configuration: { read: true },
+      Inventory: { read: true, update: true },
+      Contact: { read: true },
+      Location: { read: true },
+    }),
     assignedUsers: [
       { name: 'Lucas Scott', initials: 'LS', avatarBg: '#0284c7', property: 'Sunrise Apartments', venueScope: 'Tower 1' },
       { name: 'Elena Rostova', initials: 'ER', avatarBg: '#d97706', property: 'Lakeview Residences', venueScope: 'North Wing' },
@@ -139,12 +174,14 @@ const INITIAL_POLICIES: PolicyItem[] = [
     venuesCount: 4,
     modified: '28 Aug 2026',
     description: 'Customer service support, monitoring and end-user assistance.',
-    permissions: [
-      { resource: 'Property', read: true, create: false, update: false, delete: false },
-      { resource: 'Venue', read: true, create: false, update: false, delete: false },
-      { resource: 'Device', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-    ],
+    permissions: buildInitialPermissions({
+      Entity: { read: true },
+      Venue: { read: true },
+      Configuration: { read: true },
+      Inventory: { read: true },
+      Subscriber: { read: true, update: true },
+      Contact: { read: true },
+    }),
     assignedUsers: [
       { name: 'Priya Patel', initials: 'PP', avatarBg: '#db2777', property: 'Oakwood Housing', venueScope: 'All venues' },
     ],
@@ -162,12 +199,16 @@ const INITIAL_POLICIES: PolicyItem[] = [
     venuesCount: 7,
     modified: '28 Aug 2026',
     description: 'Audit and reporting view-only access across properties.',
-    permissions: [
-      { resource: 'Property', read: true, create: false, update: false, delete: false },
-      { resource: 'Venue', read: true, create: false, update: false, delete: false },
-      { resource: 'Device', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-    ],
+    permissions: buildInitialPermissions({
+      Entity: { read: true },
+      Venue: { read: true },
+      Configuration: { read: true },
+      Inventory: { read: true },
+      Operator: { read: true },
+      Subscriber: { read: true },
+      Contact: { read: true },
+      Location: { read: true },
+    }),
     assignedUsers: [
       { name: 'Tom Bradley', initials: 'TB', avatarBg: '#475569', property: 'Grand Avenue Complex', venueScope: 'All venues' },
     ],
@@ -185,12 +226,11 @@ const INITIAL_POLICIES: PolicyItem[] = [
     venuesCount: 3,
     modified: '25 Aug 2026',
     description: 'Dedicated firmware upgrade and scheduled rollout management.',
-    permissions: [
-      { resource: 'Property', read: true, create: false, update: false, delete: false },
-      { resource: 'Venue', read: true, create: false, update: false, delete: false },
-      { resource: 'Device', read: true, create: false, update: true, delete: false },
-      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-    ],
+    permissions: buildInitialPermissions({
+      Venue: { read: true },
+      Configuration: { read: true },
+      Inventory: { read: true, update: true },
+    }),
     assignedUsers: [
       { name: 'David Okafor', initials: 'DO', avatarBg: '#581c87', property: 'Oakwood Housing', venueScope: 'Building A' },
     ],
@@ -208,12 +248,12 @@ const INITIAL_POLICIES: PolicyItem[] = [
     venuesCount: 2,
     modified: '20 Aug 2026',
     description: 'Property and venue configuration boundary management.',
-    permissions: [
-      { resource: 'Property', read: true, create: false, update: true, delete: false },
-      { resource: 'Venue', read: true, create: true, update: true, delete: false },
-      { resource: 'Device', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-    ],
+    permissions: buildInitialPermissions({
+      Entity: { read: true, update: true },
+      Venue: { read: true, create: true, update: true },
+      Configuration: { read: true },
+      Inventory: { read: true },
+    }),
     assignedUsers: [
       { name: 'Anita Sharma', initials: 'AS', avatarBg: '#1e3a8a', property: 'Sunrise Apartments', venueScope: 'All venues' },
     ],
@@ -231,12 +271,16 @@ const INITIAL_POLICIES: PolicyItem[] = [
     venuesCount: 0,
     modified: '15 Aug 2026',
     description: 'Compliance inspection and security policy review.',
-    permissions: [
-      { resource: 'Property', read: true, create: false, update: false, delete: false },
-      { resource: 'Venue', read: true, create: false, update: false, delete: false },
-      { resource: 'Device', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-    ],
+    permissions: buildInitialPermissions({
+      Entity: { read: true },
+      Venue: { read: true },
+      Configuration: { read: true },
+      Inventory: { read: true },
+      Operator: { read: true },
+      Subscriber: { read: true },
+      Contact: { read: true },
+      Location: { read: true },
+    }),
     assignedUsers: [],
   },
 ];
@@ -259,14 +303,16 @@ const formatPolicyDate = (timestamp?: number): string => {
 };
 
 const RESOURCE_LABEL_MAP: Record<string, string> = {
-  entity: 'Property',
+  entity: 'Entity',
+  property: 'Entity',
   venue: 'Venue',
-  inventory: 'Device',
+  inventory: 'Inventory',
+  device: 'Inventory',
   configuration: 'Configuration',
-  contact: 'Contact',
-  location: 'Location',
   operator: 'Operator',
   subscriber: 'Subscriber',
+  contact: 'Contact',
+  location: 'Location',
 };
 
 const normalizeResourceName = (raw: string): string => {
@@ -277,17 +323,11 @@ const normalizeResourceName = (raw: string): string => {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 };
 
-const STANDARD_RESOURCES = [
-  'Property',
-  'Venue',
-  'Device',
-  'Configuration',
-];
-
 const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourcePermission[] => {
   const permMap = new Map<string, ResourcePermission>();
 
-  for (const res of STANDARD_RESOURCES) {
+  // Always initialize ALL 8 resources in exact order
+  for (const res of ALL_POLICY_RESOURCES) {
     permMap.set(res, {
       resource: res,
       read: false,
@@ -331,14 +371,15 @@ const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourceP
     }
   }
 
+  // Always return all 8 resources in the exact specified order
   const result: ResourcePermission[] = [];
-  for (const res of STANDARD_RESOURCES) {
+  for (const res of ALL_POLICY_RESOURCES) {
     if (permMap.has(res)) {
       result.push(permMap.get(res)!);
     }
   }
   for (const [resName, perm] of permMap.entries()) {
-    if (!STANDARD_RESOURCES.includes(resName)) {
+    if (!ALL_POLICY_RESOURCES.includes(resName)) {
       result.push(perm);
     }
   }
@@ -355,13 +396,8 @@ const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
 
   const formattedDate = formatPolicyDate(p.modified || p.created);
 
-  // Parse permissions directly from real API entries
-  const perms =
-    p.entries && p.entries.length > 0
-      ? parseEntriesToPermissions(p.entries)
-      : mockMatch
-      ? mockMatch.permissions
-      : parseEntriesToPermissions([]);
+  // Always parse all 8 resources from entries for every policy
+  const perms = parseEntriesToPermissions(p.entries);
 
   if (mockMatch) {
     return {
@@ -1518,12 +1554,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     venuesCount: 0,
                     modified: 'Just now',
                     description: newPolicyDesc.trim() || 'Custom operator policy.',
-                    permissions: [
-                      { resource: 'Property', read: true, create: false, update: false, delete: false },
-                      { resource: 'Venue', read: true, create: false, update: false, delete: false },
-                      { resource: 'Device', read: true, create: false, update: true, delete: false },
-                      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-                    ],
+                    permissions: parseEntriesToPermissions([]),
                     assignedUsers: [],
                   };
                   setPolicies((prev) => [newPol, ...prev]);
