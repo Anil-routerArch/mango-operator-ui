@@ -183,8 +183,14 @@ export const useCreateManagementRole = () => {
 
   return useMutation({
     mutationFn: async (payload: CreateManagementRolePayload) => {
-      const { data } = await axiosProvV2.post<{ roles: ManagementRole[] }>('managementRole/0', payload);
-      return data?.roles || [];
+      const { data } = await axiosProvV2.post<any>('managementRole/0', payload);
+      if (Array.isArray(data?.roles)) {
+        return data.roles as ManagementRole[];
+      }
+      if (Array.isArray(data)) {
+        return data as ManagementRole[];
+      }
+      return data ? [data as ManagementRole] : [];
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
