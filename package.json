@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "[ -d \"$HOME/.nvm/versions/node/v20.20.2/bin\" ] && PATH=\"$HOME/.nvm/versions/node/v20.20.2/bin:$PATH\"; vite",
-    "build": "[ -d \"$HOME/.nvm/versions/node/v20.20.2/bin\" ] && PATH=\"$HOME/.nvm/versions/node/v20.20.2/bin:$PATH\"; tsc -b && vite build",
-    "lint": "[ -d \"$HOME/.nvm/versions/node/v20.20.2/bin\" ] && PATH=\"$HOME/.nvm/versions/node/v20.20.2/bin:$PATH\"; eslint .",
-    "preview": "[ -d \"$HOME/.nvm/versions/node/v20.20.2/bin\" ] && PATH=\"$HOME/.nvm/versions/node/v20.20.2/bin:$PATH\"; vite preview"
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.37.0",

@@ -10,14 +10,11 @@ import {
   HStack,
   Spinner,
 } from '@chakra-ui/react';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { themeColors } from '@/theme';
 
 export const LoginPage: React.FC = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { isAuthenticated, login, submitMfa, isLoading, error, mfaChallenge, clearError } = useAuthStore();
+  const { login, submitMfa, isLoading, error, mfaChallenge, clearError } = useAuthStore();
 
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
@@ -25,30 +22,16 @@ export const LoginPage: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [mfaCode, setMfaCode] = useState('');
 
-  const from = (location.state as { from?: { pathname?: string } })?.from?.pathname || '/users';
-
-  React.useEffect(() => {
-    if (isAuthenticated) {
-      navigate(from, { replace: true });
-    }
-  }, [isAuthenticated, navigate, from]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
 
     if (mfaChallenge) {
-      const success = await submitMfa(mfaCode, rememberMe).catch(() => false);
-      if (success) {
-        navigate(from, { replace: true });
-      }
+      await submitMfa(mfaCode, rememberMe).catch(() => {});
       return;
     }
 
-    const success = await login({ userId, password }, rememberMe).catch(() => false);
-    if (success) {
-      navigate(from, { replace: true });
-    }
+    await login({ userId, password }, rememberMe).catch(() => {});
   };
 
   return (
