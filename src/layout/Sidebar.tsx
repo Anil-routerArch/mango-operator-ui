@@ -55,33 +55,53 @@ export const Sidebar: React.FC = () => {
     >
       {/* Brand Header */}
       {!isCollapsed ? (
-        <Flex align="center" justify="space-between" px={1} pb={6} h="48px">
+        <Flex
+          align="center"
+          justify="center"
+          pb={5}
+          pt={1}
+          minH="54px"
+          w="100%"
+          position="relative"
+        >
           <Link
             to="/dashboard"
-            style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textDecoration: 'none',
+              width: '100%',
+            }}
             title="Go to Dashboard"
           >
             <Image
               src={mduLogo}
               alt="MDU Logo"
-              maxH="38px"
-              maxW="145px"
+              maxH="46px"
+              maxW="180px"
+              w="auto"
+              h="auto"
               objectFit="contain"
               cursor="pointer"
               transition="transform 0.15s ease, opacity 0.15s ease"
-              _hover={{ opacity: 0.9, transform: 'scale(1.02)' }}
+              _hover={{ opacity: 0.92, transform: 'scale(1.03)' }}
             />
           </Link>
           <Flex
             as="button"
+            position="absolute"
+            right="-4px"
+            top="50%"
+            transform="translateY(-50%)"
             align="center"
             justify="center"
-            w="28px"
-            h="28px"
+            w="24px"
+            h="24px"
             bg="transparent"
             border="0"
             color="#ffffff"
-            opacity={0.7}
+            opacity={0.6}
             _hover={{ opacity: 1, bg: 'rgba(255, 255, 255, 0.12)' }}
             borderRadius="4px"
             cursor="pointer"
@@ -89,21 +109,21 @@ export const Sidebar: React.FC = () => {
             title="Collapse sidebar"
             aria-label="Collapse sidebar"
           >
-            <Icon name="chevronLeft" size={18} />
+            <Icon name="chevronLeft" size={16} />
           </Flex>
         </Flex>
       ) : (
-        <Flex align="center" justify="center" pb={6} h="48px">
+        <Flex align="center" justify="center" pb={5} pt={1} minH="54px">
           <Flex
             as="button"
             align="center"
             justify="center"
-            w="38px"
-            h="38px"
+            w="40px"
+            h="40px"
             bg="transparent"
             border="0"
             color="#ffffff"
-            opacity={0.85}
+            opacity={0.9}
             _hover={{ opacity: 1, bg: 'rgba(255, 255, 255, 0.14)' }}
             borderRadius="6px"
             cursor="pointer"
@@ -112,7 +132,7 @@ export const Sidebar: React.FC = () => {
             aria-label="Open sidebar"
             transition="all 0.15s ease"
           >
-            <Icon name="menu" size={22} />
+            <Icon name="menu" size={24} />
           </Flex>
         </Flex>
       )}
