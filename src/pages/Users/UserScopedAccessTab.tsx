@@ -286,29 +286,6 @@ export const UserScopedAccessTab: React.FC<{ user: User }> = ({ user }) => {
         )}
       </Flex>
 
-      {/* Root/Admin Platform Capabilities Banner */}
-      {(user.userRole === 'root' || user.userRole === 'admin') && (
-        <Flex
-          p={3}
-          borderRadius="6px"
-          bg="#f0f7ff"
-          border="1px solid #c2dcff"
-          align="flex-start"
-          gap={2.5}
-        >
-          <Box color={themeColors.brand.accent} mt="1px">
-            <Icon name="shield" size={16} />
-          </Box>
-          <Box fontSize="12px">
-            <Text fontWeight="600" color={themeColors.brand.accent}>
-              Platform-Level {user.userRole.toUpperCase()} Access
-            </Text>
-            <Text color={themeColors.text.secondary} mt={0.5}>
-              This user possesses platform-wide {user.userRole} credentials. Additional scoped roles below apply explicit policy limits when operating in tenant entity or venue contexts.
-            </Text>
-          </Box>
-        </Flex>
-      )}
 
       {/* Assign New Scope Form */}
       {showAddForm && (
