@@ -15,7 +15,7 @@ import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useUsersUiStore } from '@/stores/usersUiStore';
 import { useGetManagementPolicies } from '@/api';
-import type { ManagementPolicy } from '@/types/managementRole';
+import type { ManagementPolicy, ManagementPolicyEntry } from '@/types/managementRole';
 
 export interface ResourcePermission {
   resource: string;
@@ -266,6 +266,93 @@ const formatPolicyDate = (timestamp?: number): string => {
   }
 };
 
+const RESOURCE_LABEL_MAP: Record<string, string> = {
+  entity: 'Property',
+  venue: 'Venue',
+  inventory: 'Device',
+  configuration: 'Configuration',
+  configurationprofile: 'Configuration Profile',
+  'configuration profile': 'Configuration Profile',
+  contact: 'Contact',
+  location: 'Location',
+  operator: 'Operator',
+  subscriber: 'Subscriber',
+};
+
+const normalizeResourceName = (raw: string): string => {
+  const lower = raw.trim().toLowerCase();
+  if (RESOURCE_LABEL_MAP[lower]) {
+    return RESOURCE_LABEL_MAP[lower];
+  }
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+const STANDARD_RESOURCES = [
+  'Property',
+  'Venue',
+  'Device',
+  'Configuration',
+  'Configuration Profile',
+];
+
+const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourcePermission[] => {
+  const permMap = new Map<string, ResourcePermission>();
+
+  for (const res of STANDARD_RESOURCES) {
+    permMap.set(res, {
+      resource: res,
+      read: false,
+      create: false,
+      update: false,
+      delete: false,
+    });
+  }
+
+  if (entries && Array.isArray(entries)) {
+    for (const entry of entries) {
+      const accessList = (entry.access || []).map((a) => a.toUpperCase());
+      const isFull = accessList.includes('FULL') || accessList.includes('*');
+      const canRead = isFull || accessList.includes('READ');
+      const canCreate = isFull || accessList.includes('CREATE');
+      const canUpdate = isFull || accessList.includes('UPDATE') || accessList.includes('MODIFY');
+      const canDelete = isFull || accessList.includes('DELETE');
+
+      for (const rawRes of entry.resources || []) {
+        const resName = normalizeResourceName(rawRes);
+        const existing = permMap.get(resName) || {
+          resource: resName,
+          read: false,
+          create: false,
+          update: false,
+          delete: false,
+        };
+
+        permMap.set(resName, {
+          resource: resName,
+          read: existing.read || canRead,
+          create: existing.create || canCreate,
+          update: existing.update || canUpdate,
+          delete: existing.delete || canDelete,
+        });
+      }
+    }
+  }
+
+  const result: ResourcePermission[] = [];
+  for (const res of STANDARD_RESOURCES) {
+    if (permMap.has(res)) {
+      result.push(permMap.get(res)!);
+    }
+  }
+  for (const [resName, perm] of permMap.entries()) {
+    if (!STANDARD_RESOURCES.includes(resName)) {
+      result.push(perm);
+    }
+  }
+
+  return result;
+};
+
 const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
   const mockMatch = INITIAL_POLICIES.find(
     (m) =>
@@ -275,6 +362,14 @@ const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
 
   const formattedDate = formatPolicyDate(p.modified || p.created);
 
+  // Parse permissions directly from real API entries
+  const perms =
+    p.entries && p.entries.length > 0
+      ? parseEntriesToPermissions(p.entries)
+      : mockMatch
+      ? mockMatch.permissions
+      : parseEntriesToPermissions([]);
+
   if (mockMatch) {
     return {
       ...mockMatch,
@@ -283,43 +378,8 @@ const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
       description: p.description || mockMatch.description,
       type: p.entity ? 'Custom' : mockMatch.type,
       modified: formattedDate !== '—' ? formattedDate : mockMatch.modified,
+      permissions: perms,
     };
-  }
-
-  // Parse permissions from entries if available
-  const perms: ResourcePermission[] = [];
-  if (p.entries && p.entries.length > 0) {
-    const resAccess = new Map<string, Set<string>>();
-    for (const entry of p.entries) {
-      for (const res of entry.resources || []) {
-        const formattedRes = res.charAt(0).toUpperCase() + res.slice(1);
-        if (!resAccess.has(formattedRes)) {
-          resAccess.set(formattedRes, new Set());
-        }
-        for (const acc of entry.access || []) {
-          resAccess.get(formattedRes)!.add(acc.toUpperCase());
-        }
-      }
-    }
-    for (const [res, accSet] of resAccess.entries()) {
-      perms.push({
-        resource: res,
-        read: accSet.has('READ'),
-        create: accSet.has('CREATE'),
-        update: accSet.has('UPDATE'),
-        delete: accSet.has('DELETE'),
-      });
-    }
-  }
-
-  if (perms.length === 0) {
-    perms.push(
-      { resource: 'Property', read: true, create: false, update: false, delete: false },
-      { resource: 'Venue', read: true, create: false, update: false, delete: false },
-      { resource: 'Device', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false }
-    );
   }
 
   return {
