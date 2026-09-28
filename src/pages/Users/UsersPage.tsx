@@ -360,6 +360,7 @@ export const UsersPage: React.FC = () => {
                 <option value="noc">noc</option>
                 <option value="accounting">accounting</option>
               </NativeSelect.Field>
+              <NativeSelect.Indicator />
             </NativeSelect.Root>
 
             <NativeSelect.Root w="130px">
@@ -374,6 +375,7 @@ export const UsersPage: React.FC = () => {
                 <option value="Active">Active</option>
                 <option value="Suspended">Suspended</option>
               </NativeSelect.Field>
+              <NativeSelect.Indicator />
             </NativeSelect.Root>
           </Flex>
 
@@ -564,6 +566,7 @@ export const UsersPage: React.FC = () => {
                     <option value={20}>20</option>
                     <option value={50}>50</option>
                   </NativeSelect.Field>
+                  <NativeSelect.Indicator />
                 </NativeSelect.Root>
               </HStack>
             </HStack>
@@ -927,6 +930,7 @@ const UserProfileForm: React.FC<{
             <option value="noc">noc</option>
             <option value="accounting">accounting</option>
           </NativeSelect.Field>
+          <NativeSelect.Indicator />
         </NativeSelect.Root>
         <Text fontSize="11px" color={themeColors.text.muted} mt={1}>
           Controls platform capabilities.
@@ -1356,6 +1360,7 @@ const CreateUserModal: React.FC<{
                   <option value="noc">noc</option>
                   <option value="accounting">accounting</option>
                 </NativeSelect.Field>
+                <NativeSelect.Indicator />
               </NativeSelect.Root>
             </Box>
             <Box flex="1">
