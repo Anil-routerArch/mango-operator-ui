@@ -18,6 +18,7 @@ import { useGetUsers, useCreateUser, useUpdateUser, useSuspendUser } from '@/api
 import { useAuthStore } from '@/stores/authStore';
 import { UserScopedAccessTab } from './UserScopedAccessTab';
 import { PoliciesTab } from './PoliciesTab';
+import { useUsersUiStore } from '@/stores/usersUiStore';
 import type { User } from '@/types/user';
 
 // Helper: Format unix timestamp to human readable relative time
@@ -70,10 +71,14 @@ export const UsersPage: React.FC = () => {
   const updateUserMutation = useUpdateUser();
   const suspendUserMutation = useSuspendUser();
 
-  // Selection & UI State
-  const [mainTab, setMainTab] = useState<'users' | 'policies'>('users');
+  // Selection & UI State (persisted via Zustand)
+  const {
+    mainTab,
+    setMainTab,
+    userSubTab: activeDetailTab,
+    setUserSubTab: setActiveDetailTab,
+  } = useUsersUiStore();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<'profile' | 'scoped_access'>('profile');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [statusFilter, setStatusFilter] = useState('All Status');

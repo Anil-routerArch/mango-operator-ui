@@ -13,6 +13,7 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
+import { useUsersUiStore } from '@/stores/usersUiStore';
 
 export interface ResourcePermission {
   resource: string;
@@ -258,9 +259,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   onNavigateToUsers,
 }) => {
   const [policies, setPolicies] = useState<PolicyItem[]>(INITIAL_POLICIES);
-  const [selectedPolicyId, setSelectedPolicyId] = useState<string>('pol-net-op');
+  const {
+    selectedPolicyId,
+    setSelectedPolicyId,
+    policySubTab: activeDetailTab,
+    setPolicySubTab: setActiveDetailTab,
+  } = useUsersUiStore();
   const [search, setSearch] = useState('');
-  const [activeDetailTab, setActiveDetailTab] = useState<'overview' | 'permissions'>('overview');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(() => {
     try {
