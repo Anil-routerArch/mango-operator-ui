@@ -768,7 +768,13 @@ export const UsersPage: React.FC = () => {
               {detailTab === 'profile' ? (
                 <UserProfileForm
                   user={selectedUser}
-                  onSave={(payload) => updateUserMutation.mutate(payload)}
+                  onSave={(payload, onSuccess) =>
+                    updateUserMutation.mutate(payload, {
+                      onSuccess: () => {
+                        onSuccess?.();
+                      },
+                    })
+                  }
                   isSaving={updateUserMutation.isPending}
                   onOpenPasswordPolicy={() => setIsPasswordPolicyOpen(true)}
                 />
@@ -809,10 +815,14 @@ export const UsersPage: React.FC = () => {
 // Sub-component: User Profile Form
 const UserProfileForm: React.FC<{
   user: User;
-  onSave: (payload: { id: string; name: string; email: string; userRole: string; description: string; currentPassword?: string }) => void;
+  onSave: (
+    payload: { id: string; name: string; email: string; userRole: string; description: string; currentPassword?: string },
+    onSuccess?: () => void
+  ) => void;
   isSaving: boolean;
   onOpenPasswordPolicy: () => void;
 }> = ({ user, onSave, isSaving, onOpenPasswordPolicy }) => {
+  const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user.name || '');
   const [email, setEmail] = useState(user.email || '');
   const [role, setRole] = useState(user.userRole || 'admin');
@@ -827,6 +837,7 @@ const UserProfileForm: React.FC<{
     setDescription(user.description || '');
     setPassword('');
     setShowPassword(false);
+    setIsEditing(false);
   }, [user]);
 
   const handleCancel = () => {
@@ -836,6 +847,7 @@ const UserProfileForm: React.FC<{
     setDescription(user.description || '');
     setPassword('');
     setShowPassword(false);
+    setIsEditing(false);
   };
 
   const handleSave = () => {
@@ -849,20 +861,66 @@ const UserProfileForm: React.FC<{
     if (password.trim()) {
       payload.currentPassword = password.trim();
     }
-    onSave(payload);
+    onSave(payload, () => {
+      setIsEditing(false);
+    });
   };
 
   return (
     <VStack gap={4} align="stretch">
-      <Text fontSize="14px" fontWeight="600" color={themeColors.text.title}>
-        Profile information
-      </Text>
+      {/* Header with Title, Mode Badge, and Edit Icon Button */}
+      <Flex justify="space-between" align="center">
+        <HStack gap={2}>
+          <Text fontSize="14px" fontWeight="600" color={themeColors.text.title}>
+            Profile information
+          </Text>
+          <Box
+            as="span"
+            fontSize="10px"
+            fontWeight="600"
+            px={2}
+            py="2px"
+            borderRadius="4px"
+            bg={isEditing ? themeColors.brand.accentLight : '#f1f5f9'}
+            color={isEditing ? themeColors.brand.accent : themeColors.text.muted}
+            border="1px solid"
+            borderColor={isEditing ? themeColors.brand.accent : themeColors.panel.border}
+          >
+            {isEditing ? 'Editing' : 'Read-only'}
+          </Box>
+        </HStack>
+
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() => {
+            if (isEditing) {
+              handleCancel();
+            } else {
+              setIsEditing(true);
+            }
+          }}
+          borderColor={isEditing ? themeColors.panel.border : themeColors.brand.accent}
+          color={isEditing ? themeColors.text.secondary : themeColors.brand.accent}
+          _hover={{ bg: isEditing ? themeColors.canvas.bg : themeColors.brand.accentLight }}
+          cursor="pointer"
+          h="28px"
+          px={2.5}
+        >
+          <HStack gap={1.5}>
+            <Icon name={isEditing ? 'x' : 'edit'} size={13} />
+            <Text fontSize="12px" fontWeight="600">
+              {isEditing ? 'Cancel Edit' : 'Edit'}
+            </Text>
+          </HStack>
+        </Button>
+      </Flex>
 
       {/* Email & Name */}
       <Flex gap={3}>
         <Box flex="1">
           <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-            Email <Box as="span" color={themeColors.text.required}>*</Box>
+            Email {isEditing && <Box as="span" color={themeColors.text.required}>*</Box>}
           </Text>
           <Input
             value={email}
@@ -870,12 +928,15 @@ const UserProfileForm: React.FC<{
             size="sm"
             borderRadius="4px"
             borderColor={themeColors.input.border}
-            bg={themeColors.input.bg}
+            bg={isEditing ? '#ffffff' : themeColors.input.bg}
+            readOnly={!isEditing}
+            disabled={!isEditing}
+            cursor={!isEditing ? 'default' : 'text'}
           />
         </Box>
         <Box flex="1">
           <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-            Name <Box as="span" color={themeColors.text.required}>*</Box>
+            Name {isEditing && <Box as="span" color={themeColors.text.required}>*</Box>}
           </Text>
           <Input
             value={name}
@@ -883,7 +944,10 @@ const UserProfileForm: React.FC<{
             size="sm"
             borderRadius="4px"
             borderColor={themeColors.input.border}
-            bg={themeColors.input.bg}
+            bg={isEditing ? '#ffffff' : themeColors.input.bg}
+            readOnly={!isEditing}
+            disabled={!isEditing}
+            cursor={!isEditing ? 'default' : 'text'}
           />
         </Box>
       </Flex>
@@ -891,7 +955,7 @@ const UserProfileForm: React.FC<{
       {/* System Role */}
       <Box>
         <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-          System Role <Box as="span" color={themeColors.text.required}>*</Box>
+          System Role {isEditing && <Box as="span" color={themeColors.text.required}>*</Box>}
         </Text>
         <SelectDropdown
           value={role}
@@ -900,6 +964,8 @@ const UserProfileForm: React.FC<{
           w="100%"
           h="36px"
           borderColor={themeColors.input.border}
+          disabled={!isEditing}
+          bg={isEditing ? '#ffffff' : themeColors.input.bg}
         />
         <Text fontSize="11px" color={themeColors.text.muted} mt={1}>
           Controls platform capabilities.
@@ -916,35 +982,40 @@ const UserProfileForm: React.FC<{
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••••••"
+            placeholder={isEditing ? 'Enter new password to change' : '••••••••••••'}
             size="sm"
             borderRadius="4px"
-            pr="75px"
+            pr={isEditing ? '75px' : '12px'}
             borderColor={themeColors.input.border}
-            bg={themeColors.input.bg}
+            bg={isEditing ? '#ffffff' : themeColors.input.bg}
             letterSpacing={!showPassword && password ? '2px' : 'normal'}
+            readOnly={!isEditing}
+            disabled={!isEditing}
+            cursor={!isEditing ? 'default' : 'text'}
           />
-          <Button
-            type="button"
-            variant="plain"
-            position="absolute"
-            right="6px"
-            h="26px"
-            px={2}
-            fontSize="11px"
-            color={themeColors.text.secondary}
-            onClick={() => setShowPassword(!showPassword)}
-            cursor="pointer"
-            _hover={{ color: themeColors.text.primary }}
-          >
-            <HStack gap={1}>
-              <Icon name={showPassword ? 'eyeOff' : 'eye'} size={14} />
-              <Text>{showPassword ? 'Hide' : 'Show'}</Text>
-            </HStack>
-          </Button>
+          {isEditing && (
+            <Button
+              type="button"
+              variant="plain"
+              position="absolute"
+              right="6px"
+              h="26px"
+              px={2}
+              fontSize="11px"
+              color={themeColors.text.secondary}
+              onClick={() => setShowPassword(!showPassword)}
+              cursor="pointer"
+              _hover={{ color: themeColors.text.primary }}
+            >
+              <HStack gap={1}>
+                <Icon name={showPassword ? 'eyeOff' : 'eye'} size={14} />
+                <Text>{showPassword ? 'Hide' : 'Show'}</Text>
+              </HStack>
+            </Button>
+          )}
         </Flex>
         <Text fontSize="11px" color={themeColors.text.muted} mt={1}>
-          Leave unchanged to keep the current password.
+          {isEditing ? 'Leave blank to keep the current password.' : 'Password is encrypted and protected.'}
         </Text>
       </Box>
 
@@ -960,8 +1031,11 @@ const UserProfileForm: React.FC<{
           borderRadius="4px"
           minH="60px"
           borderColor={themeColors.input.border}
-          bg={themeColors.input.bg}
-          placeholder="Network operations across assigned properties and venues."
+          bg={isEditing ? '#ffffff' : themeColors.input.bg}
+          placeholder={isEditing ? 'Describe user responsibility' : 'No description provided.'}
+          readOnly={!isEditing}
+          disabled={!isEditing}
+          cursor={!isEditing ? 'default' : 'text'}
         />
       </Box>
 
@@ -984,33 +1058,35 @@ const UserProfileForm: React.FC<{
         </Button>
       </Box>
 
-      {/* Form Action Buttons */}
-      <Flex justify="space-between" align="center" pt={4} mt={2}>
-        <Button
-          variant="outline"
-          size="sm"
-          minW="90px"
-          borderColor={themeColors.panel.border}
-          color={themeColors.text.primary}
-          onClick={handleCancel}
-          _hover={{ bg: themeColors.canvas.bg }}
-        >
-          Cancel
-        </Button>
-        <Button
-          bg={themeColors.brand.primary}
-          color="#ffffff"
-          _hover={{ bg: themeColors.brand.primaryHover }}
-          _active={{ bg: themeColors.brand.primaryActive }}
-          size="sm"
-          minW="120px"
-          disabled={isSaving}
-          onClick={handleSave}
-          fontWeight="600"
-        >
-          {isSaving ? 'Saving...' : 'Save profile'}
-        </Button>
-      </Flex>
+      {/* Form Action Buttons - Only visible when editing */}
+      {isEditing && (
+        <Flex justify="flex-end" align="center" gap={3} pt={4} mt={2} borderTop="1px solid" borderColor={themeColors.panel.divider}>
+          <Button
+            variant="outline"
+            size="sm"
+            minW="90px"
+            borderColor={themeColors.panel.border}
+            color={themeColors.text.primary}
+            onClick={handleCancel}
+            _hover={{ bg: themeColors.canvas.bg }}
+          >
+            Cancel
+          </Button>
+          <Button
+            bg={themeColors.brand.primary}
+            color="#ffffff"
+            _hover={{ bg: themeColors.brand.primaryHover }}
+            _active={{ bg: themeColors.brand.primaryActive }}
+            size="sm"
+            minW="120px"
+            disabled={isSaving}
+            onClick={handleSave}
+            fontWeight="600"
+          >
+            {isSaving ? 'Saving...' : 'Save changes'}
+          </Button>
+        </Flex>
+      )}
     </VStack>
   );
 };
