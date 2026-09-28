@@ -17,6 +17,7 @@ import { useUsersUiStore } from '@/stores/usersUiStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useGetManagementPolicies, useUpdateManagementPolicy } from '@/api';
 import type { ManagementPolicy, ManagementPolicyEntry } from '@/types/managementRole';
+import { toaster } from '@/components/ui/toaster';
 
 export interface ResourcePermission {
   resource: string;
@@ -580,11 +581,17 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   // Handle Save Policy action
   const handleSavePolicy = async () => {
     if (!isRoot) {
-      alert('Only root administrators can edit management policies.');
+      toaster.error({
+        title: 'Access Restricted',
+        description: 'Only root administrators can edit management policies.',
+      });
       return;
     }
     if (!editName.trim()) {
-      alert('Policy name cannot be empty.');
+      toaster.warning({
+        title: 'Validation Error',
+        description: 'Policy name cannot be empty.',
+      });
       return;
     }
 
@@ -633,10 +640,20 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
         })
       );
       setIsEditing(false);
-      alert(`Policy "${editName}" changes saved successfully.`);
+      toaster.success({
+        title: 'Policy Updated',
+        description: `Policy "${editName}" changes saved successfully.`,
+      });
     } catch (err: any) {
       console.error('Failed to update policy:', err);
-      alert('Failed to update policy. Check permissions or network.');
+      const errorMsg =
+        err?.response?.data?.ErrorDescription ||
+        err?.message ||
+        'Failed to update policy. Check permissions or network.';
+      toaster.error({
+        title: 'Update Failed',
+        description: errorMsg,
+      });
     }
   };
 

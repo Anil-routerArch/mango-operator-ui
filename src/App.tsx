@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { AppRoutes } from '@/router';
+import { Toaster } from '@/components/ui/toaster';
 
 // QueryClient configuration matching OpenWiFi standards
 const queryClient = new QueryClient({
@@ -27,6 +28,7 @@ export const App: React.FC = () => {
     <QueryClientProvider client={queryClient}>
       <HashRouter>
         <AppRoutes />
+        <Toaster />
       </HashRouter>
     </QueryClientProvider>
   );
