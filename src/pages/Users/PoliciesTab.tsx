@@ -22,15 +22,29 @@ export interface ResourcePermission {
   delete: boolean;
 }
 
+export interface PolicyAssignedUser {
+  name: string;
+  initials: string;
+  avatarBg: string;
+  property: string;
+  venueScope: string;
+}
+
 export interface PolicyItem {
   id: string;
   name: string;
   type: 'Built-in' | 'Custom';
+  preset?: string;
+  status: string;
+  createdBy: string;
   usedByUsers: number;
   scopedAssignmentsCount: number;
+  propertiesCount: number;
+  venuesCount: number;
   modified: string;
   description: string;
   permissions: ResourcePermission[];
+  assignedUsers: PolicyAssignedUser[];
 }
 
 // Initial dummy policies matching the exact layout and data
@@ -39,8 +53,13 @@ const INITIAL_POLICIES: PolicyItem[] = [
     id: 'pol-admin',
     name: 'Administrator',
     type: 'Built-in',
+    preset: 'Administrator',
+    status: 'Active',
+    createdBy: 'System',
     usedByUsers: 6,
     scopedAssignmentsCount: 8,
+    propertiesCount: 4,
+    venuesCount: 8,
     modified: '1 Sep 2026',
     description: 'Full administrative access across all resources and operations.',
     permissions: [
@@ -50,13 +69,23 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Configuration', read: true, create: true, update: true, delete: true },
       { resource: 'Configuration Profile', read: true, create: true, update: true, delete: true },
     ],
+    assignedUsers: [
+      { name: 'Marcus Vance', initials: 'MV', avatarBg: '#1e3a8a', property: 'All Properties', venueScope: 'Global' },
+      { name: 'Sarah Chen', initials: 'SC', avatarBg: '#059669', property: 'Sunset Heights', venueScope: 'All venues' },
+      { name: 'Alex Rivera', initials: 'AR', avatarBg: '#7c3aed', property: 'Oakwood Housing', venueScope: 'Building B' },
+    ],
   },
   {
     id: 'pol-net-op',
     name: 'Network Operator',
     type: 'Built-in',
+    preset: 'Network Operator',
+    status: 'Active',
+    createdBy: 'System',
     usedByUsers: 9,
     scopedAssignmentsCount: 14,
+    propertiesCount: 6,
+    venuesCount: 8,
     modified: '2 Sep 2026',
     description: 'Monitor devices and manage network configuration.',
     permissions: [
@@ -66,13 +95,23 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Configuration', read: true, create: true, update: true, delete: false },
       { resource: 'Configuration Profile', read: true, create: true, update: true, delete: false },
     ],
+    assignedUsers: [
+      { name: 'Anita Sharma', initials: 'AS', avatarBg: '#1e3a8a', property: 'Sunrise Apartments', venueScope: 'All venues' },
+      { name: 'David Okafor', initials: 'DO', avatarBg: '#581c87', property: 'Oakwood Housing', venueScope: 'Building A' },
+      { name: 'Meera Joshi', initials: 'MJ', avatarBg: '#d97706', property: 'Lakeview Residences', venueScope: '2 venues' },
+    ],
   },
   {
     id: 'pol-installer',
     name: 'Installer',
     type: 'Built-in',
+    preset: 'Installer',
+    status: 'Active',
+    createdBy: 'System',
     usedByUsers: 4,
     scopedAssignmentsCount: 6,
+    propertiesCount: 3,
+    venuesCount: 6,
     modified: '28 Aug 2026',
     description: 'Device onboarding, inventory provisioning and local venue testing.',
     permissions: [
@@ -82,13 +121,22 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
+    assignedUsers: [
+      { name: 'Lucas Scott', initials: 'LS', avatarBg: '#0284c7', property: 'Sunrise Apartments', venueScope: 'Tower 1' },
+      { name: 'Elena Rostova', initials: 'ER', avatarBg: '#d97706', property: 'Lakeview Residences', venueScope: 'North Wing' },
+    ],
   },
   {
     id: 'pol-csr',
     name: 'CSR',
     type: 'Built-in',
+    preset: 'CSR',
+    status: 'Active',
+    createdBy: 'System',
     usedByUsers: 3,
     scopedAssignmentsCount: 4,
+    propertiesCount: 2,
+    venuesCount: 4,
     modified: '28 Aug 2026',
     description: 'Customer service support, monitoring and end-user assistance.',
     permissions: [
@@ -98,13 +146,21 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
+    assignedUsers: [
+      { name: 'Priya Patel', initials: 'PP', avatarBg: '#db2777', property: 'Oakwood Housing', venueScope: 'All venues' },
+    ],
   },
   {
     id: 'pol-readonly',
     name: 'Read Only',
     type: 'Built-in',
+    preset: 'Read Only',
+    status: 'Active',
+    createdBy: 'System',
     usedByUsers: 5,
     scopedAssignmentsCount: 7,
+    propertiesCount: 5,
+    venuesCount: 7,
     modified: '28 Aug 2026',
     description: 'Audit and reporting view-only access across properties.',
     permissions: [
@@ -114,13 +170,21 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
+    assignedUsers: [
+      { name: 'Tom Bradley', initials: 'TB', avatarBg: '#475569', property: 'Grand Avenue Complex', venueScope: 'All venues' },
+    ],
   },
   {
     id: 'pol-firmware',
     name: 'Firmware Operator',
     type: 'Custom',
+    preset: 'Network Operator',
+    status: 'Active',
+    createdBy: 'Marcus Vance',
     usedByUsers: 2,
     scopedAssignmentsCount: 3,
+    propertiesCount: 2,
+    venuesCount: 3,
     modified: '25 Aug 2026',
     description: 'Dedicated firmware upgrade and scheduled rollout management.',
     permissions: [
@@ -130,13 +194,21 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
+    assignedUsers: [
+      { name: 'David Okafor', initials: 'DO', avatarBg: '#581c87', property: 'Oakwood Housing', venueScope: 'Building A' },
+    ],
   },
   {
     id: 'pol-prop-mgr',
     name: 'Property Manager',
     type: 'Custom',
+    preset: 'Network Operator',
+    status: 'Active',
+    createdBy: 'Sarah Chen',
     usedByUsers: 1,
     scopedAssignmentsCount: 2,
+    propertiesCount: 1,
+    venuesCount: 2,
     modified: '20 Aug 2026',
     description: 'Property and venue configuration boundary management.',
     permissions: [
@@ -146,13 +218,21 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
+    assignedUsers: [
+      { name: 'Anita Sharma', initials: 'AS', avatarBg: '#1e3a8a', property: 'Sunrise Apartments', venueScope: 'All venues' },
+    ],
   },
   {
     id: 'pol-auditor',
     name: 'Auditor',
     type: 'Custom',
+    preset: 'Read Only',
+    status: 'Active',
+    createdBy: 'System',
     usedByUsers: 0,
     scopedAssignmentsCount: 0,
+    propertiesCount: 0,
+    venuesCount: 0,
     modified: '15 Aug 2026',
     description: 'Compliance inspection and security policy review.',
     permissions: [
@@ -162,23 +242,26 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
+    assignedUsers: [],
   },
 ];
 
 interface PoliciesTabProps {
   isCreatePolicyOpen?: boolean;
   onCloseCreatePolicy?: () => void;
+  onNavigateToUsers?: () => void;
 }
 
 export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   isCreatePolicyOpen = false,
   onCloseCreatePolicy,
+  onNavigateToUsers,
 }) => {
   const [policies, setPolicies] = useState<PolicyItem[]>(INITIAL_POLICIES);
   const [selectedPolicyId, setSelectedPolicyId] = useState<string>('pol-net-op');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('All Types');
-  const [activeDetailTab, setActiveDetailTab] = useState<'overview' | 'permissions'>('permissions');
+  const [activeDetailTab, setActiveDetailTab] = useState<'overview' | 'permissions'>('overview');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 5;
 
@@ -951,40 +1034,322 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
             </VStack>
           ) : (
             /* Overview Subtab */
-            <VStack gap={4} align="stretch" fontSize="13px">
-              <Box p={3} bg="#f8fafc" border="1px solid" borderColor={themeColors.panel.border} borderRadius="6px">
-                <Text fontWeight="700" color="#0f172a" mb={1}>Policy Summary</Text>
-                <Text color="#64748b" fontSize="12px">
-                  {selectedPolicy.description}
+            <VStack gap={4} align="stretch">
+              {/* Section 1: Usage summary */}
+              <Box>
+                <Text fontSize="12px" fontWeight="700" color="#0f172a" mb={2}>
+                  Usage summary
                 </Text>
+                <SimpleGrid columns={{ base: 2, sm: 4 }} gap={2.5}>
+                  {/* Users */}
+                  <Flex
+                    bg="#ffffff"
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    p="10px 12px"
+                    align="center"
+                    gap={2.5}
+                  >
+                    <Box color="#2563eb" flexShrink={0}>
+                      <Icon name="users" size={18} />
+                    </Box>
+                    <Box minW={0}>
+                      <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
+                        Users
+                      </Text>
+                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
+                        {selectedPolicy.usedByUsers}
+                      </Text>
+                    </Box>
+                  </Flex>
+
+                  {/* Scoped assignments */}
+                  <Flex
+                    bg="#ffffff"
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    p="10px 12px"
+                    align="center"
+                    gap={2.5}
+                  >
+                    <Box color="#7c3aed" flexShrink={0}>
+                      <Icon name="link" size={18} />
+                    </Box>
+                    <Box minW={0}>
+                      <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
+                        Scoped assignments
+                      </Text>
+                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
+                        {selectedPolicy.scopedAssignmentsCount}
+                      </Text>
+                    </Box>
+                  </Flex>
+
+                  {/* Properties */}
+                  <Flex
+                    bg="#ffffff"
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    p="10px 12px"
+                    align="center"
+                    gap={2.5}
+                  >
+                    <Box color="#16a34a" flexShrink={0}>
+                      <Icon name="building" size={18} />
+                    </Box>
+                    <Box minW={0}>
+                      <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
+                        Properties
+                      </Text>
+                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
+                        {selectedPolicy.propertiesCount}
+                      </Text>
+                    </Box>
+                  </Flex>
+
+                  {/* Venues */}
+                  <Flex
+                    bg="#ffffff"
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    p="10px 12px"
+                    align="center"
+                    gap={2.5}
+                  >
+                    <Box color="#ea580c" flexShrink={0}>
+                      <Icon name="landmark" size={18} />
+                    </Box>
+                    <Box minW={0}>
+                      <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
+                        Venues
+                      </Text>
+                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
+                        {selectedPolicy.venuesCount}
+                      </Text>
+                    </Box>
+                  </Flex>
+                </SimpleGrid>
               </Box>
 
-              <SimpleGrid columns={2} gap={3}>
-                <Box p={3} border="1px solid" borderColor={themeColors.panel.border} borderRadius="6px">
-                  <Text fontSize="11px" color="#64748b" fontWeight="600">POLICY TYPE</Text>
-                  <Text fontSize="14px" fontWeight="700" color="#0f172a" mt={1}>
-                    {selectedPolicy.type}
-                  </Text>
+              {/* Section 2: Policy details */}
+              <Box>
+                <Text fontSize="12px" fontWeight="700" color="#0f172a" mb={2}>
+                  Policy details
+                </Text>
+                <Box
+                  bg="#ffffff"
+                  border="1px solid"
+                  borderColor={themeColors.panel.border}
+                  borderRadius="6px"
+                  p="14px 16px"
+                >
+                  <VStack gap={2.5} align="stretch" fontSize="12px">
+                    <Flex align="center">
+                      <Text w="140px" color="#64748b" flexShrink={0}>
+                        Type
+                      </Text>
+                      <Text color="#0f172a" fontWeight="500">
+                        {selectedPolicy.type}
+                      </Text>
+                    </Flex>
+
+                    <Flex align="center">
+                      <Text w="140px" color="#64748b" flexShrink={0}>
+                        Preset
+                      </Text>
+                      <Text color="#0f172a" fontWeight="500">
+                        {selectedPolicy.preset || selectedPolicy.name}
+                      </Text>
+                    </Flex>
+
+                    <Flex align="center">
+                      <Text w="140px" color="#64748b" flexShrink={0}>
+                        Status
+                      </Text>
+                      <Box>
+                        <Badge
+                          bg="#ecfdf5"
+                          color="#15803d"
+                          border="1px solid #bbf7d0"
+                          borderRadius="full"
+                          px={2.5}
+                          py="1px"
+                          fontSize="11px"
+                          fontWeight="600"
+                          textTransform="capitalize"
+                        >
+                          {selectedPolicy.status || 'Active'}
+                        </Badge>
+                      </Box>
+                    </Flex>
+
+                    <Flex align="center">
+                      <Text w="140px" color="#64748b" flexShrink={0}>
+                        Last modified
+                      </Text>
+                      <Text color="#0f172a">
+                        {selectedPolicy.modified}
+                      </Text>
+                    </Flex>
+
+                    <Flex align="center">
+                      <Text w="140px" color="#64748b" flexShrink={0}>
+                        Created by
+                      </Text>
+                      <Text color="#0f172a">
+                        {selectedPolicy.createdBy || 'System'}
+                      </Text>
+                    </Flex>
+
+                    <Flex align="flex-start">
+                      <Text w="140px" color="#64748b" flexShrink={0}>
+                        Description
+                      </Text>
+                      <Text color="#0f172a">
+                        {selectedPolicy.description}
+                      </Text>
+                    </Flex>
+
+                    <HStack gap={1.5} pt={2} color="#64748b" fontSize="11px" align="center">
+                      <Icon name="lock" size={13} color="#64748b" />
+                      <Text color="#64748b">
+                        {selectedPolicy.type === 'Built-in'
+                          ? 'Built-in policies cannot be deleted.'
+                          : 'Custom policies can be edited and deleted.'}
+                      </Text>
+                    </HStack>
+                  </VStack>
                 </Box>
-                <Box p={3} border="1px solid" borderColor={themeColors.panel.border} borderRadius="6px">
-                  <Text fontSize="11px" color="#64748b" fontWeight="600">LAST MODIFIED</Text>
-                  <Text fontSize="14px" fontWeight="700" color="#0f172a" mt={1}>
-                    {selectedPolicy.modified}
+              </Box>
+
+              {/* Section 3: Users with this policy */}
+              <Box>
+                <HStack gap={2} mb={2} align="center">
+                  <Text fontSize="12px" fontWeight="700" color="#0f172a">
+                    Users with this policy
                   </Text>
-                </Box>
-                <Box p={3} border="1px solid" borderColor={themeColors.panel.border} borderRadius="6px">
-                  <Text fontSize="11px" color="#64748b" fontWeight="600">ACTIVE USERS</Text>
-                  <Text fontSize="14px" fontWeight="700" color="#0869ff" mt={1}>
-                    {selectedPolicy.usedByUsers} Users
-                  </Text>
-                </Box>
-                <Box p={3} border="1px solid" borderColor={themeColors.panel.border} borderRadius="6px">
-                  <Text fontSize="11px" color="#64748b" fontWeight="600">SCOPED ASSIGNMENTS</Text>
-                  <Text fontSize="14px" fontWeight="700" color="#16a34a" mt={1}>
-                    {selectedPolicy.scopedAssignmentsCount} Venues / Entities
-                  </Text>
-                </Box>
-              </SimpleGrid>
+                  <Flex
+                    w="18px"
+                    h="18px"
+                    borderRadius="50%"
+                    bg="#f1f5f9"
+                    color="#64748b"
+                    align="center"
+                    justify="center"
+                    fontSize="11px"
+                    fontWeight="600"
+                  >
+                    {selectedPolicy.usedByUsers}
+                  </Flex>
+                </HStack>
+
+                {selectedPolicy.assignedUsers && selectedPolicy.assignedUsers.length > 0 ? (
+                  <Box
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    overflow="hidden"
+                    bg="#ffffff"
+                  >
+                    {selectedPolicy.assignedUsers.map((u, idx) => (
+                      <Flex
+                        key={u.name + idx}
+                        align="center"
+                        justify="space-between"
+                        py={2.5}
+                        px={3}
+                        borderBottom="1px solid"
+                        borderColor={themeColors.panel.divider}
+                        _last={{ borderBottom: 'none' }}
+                        fontSize="12px"
+                      >
+                        {/* User Avatar & Name */}
+                        <HStack gap={2.5} flex="1.4" minW={0} align="center">
+                          <Flex
+                            w="26px"
+                            h="26px"
+                            borderRadius="50%"
+                            bg={u.avatarBg}
+                            color="#ffffff"
+                            align="center"
+                            justify="center"
+                            fontSize="11px"
+                            fontWeight="700"
+                            flexShrink={0}
+                          >
+                            {u.initials}
+                          </Flex>
+                          <Text
+                            fontSize="12px"
+                            fontWeight="600"
+                            color="#0f172a"
+                            lineClamp={1}
+                          >
+                            {u.name}
+                          </Text>
+                        </HStack>
+
+                        {/* Property */}
+                        <Box flex="1.5" px={2}>
+                          <Text fontSize="12px" color="#64748b" lineClamp={1}>
+                            {u.property}
+                          </Text>
+                        </Box>
+
+                        {/* Venue Scope Badge */}
+                        <Box textAlign="right" flexShrink={0}>
+                          <Badge
+                            bg="#f1f5f9"
+                            color="#475569"
+                            border="1px solid #e2e8f0"
+                            borderRadius="full"
+                            px={2.5}
+                            py="2px"
+                            fontSize="11px"
+                            fontWeight="500"
+                            textTransform="none"
+                          >
+                            {u.venueScope}
+                          </Badge>
+                        </Box>
+                      </Flex>
+                    ))}
+                  </Box>
+                ) : (
+                  <Box
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    p={4}
+                    textAlign="center"
+                    bg="#ffffff"
+                  >
+                    <Text fontSize="12px" color="#94a3b8">
+                      No users currently assigned to this policy.
+                    </Text>
+                  </Box>
+                )}
+
+                {selectedPolicy.usedByUsers > 0 && (
+                  <Box mt={2}>
+                    <Text
+                      as="span"
+                      fontSize="12px"
+                      color="#0869ff"
+                      fontWeight="500"
+                      cursor="pointer"
+                      _hover={{ textDecoration: 'underline' }}
+                      onClick={onNavigateToUsers}
+                    >
+                      View all {selectedPolicy.usedByUsers} users
+                    </Text>
+                  </Box>
+                )}
+              </Box>
             </VStack>
           )}
         </Box>
@@ -1095,8 +1460,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     id: `pol-${Date.now()}`,
                     name: newPolicyName.trim(),
                     type: 'Custom',
+                    preset: newPolicyPreset,
+                    status: 'Active',
+                    createdBy: 'Current User',
                     usedByUsers: 0,
                     scopedAssignmentsCount: 0,
+                    propertiesCount: 0,
+                    venuesCount: 0,
                     modified: 'Just now',
                     description: newPolicyDesc.trim() || 'Custom operator policy.',
                     permissions: [
@@ -1106,6 +1476,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
                       { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
                     ],
+                    assignedUsers: [],
                   };
                   setPolicies((prev) => [newPol, ...prev]);
                   setSelectedPolicyId(newPol.id);

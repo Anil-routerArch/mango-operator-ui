@@ -234,6 +234,7 @@ export const UsersPage: React.FC = () => {
         <PoliciesTab
           isCreatePolicyOpen={isCreatePolicyOpen}
           onCloseCreatePolicy={() => setIsCreatePolicyOpen(false)}
+          onNavigateToUsers={() => setMainTab('users')}
         />
       ) : (
         <>
