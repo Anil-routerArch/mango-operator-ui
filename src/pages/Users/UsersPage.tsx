@@ -15,6 +15,7 @@ import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useGetUsers, useCreateUser, useUpdateUser, useSuspendUser } from '@/api';
+import { UserScopedAccessTab } from './UserScopedAccessTab';
 import type { User } from '@/types/user';
 
 // Helper: Format unix timestamp to human readable relative time
@@ -69,6 +70,7 @@ export const UsersPage: React.FC = () => {
 
   // Selection & UI State
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState<'profile' | 'scoped_access'>('profile');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [statusFilter, setStatusFilter] = useState('All Status');
@@ -726,7 +728,61 @@ export const UsersPage: React.FC = () => {
                 </Button>
               </Flex>
 
-              <Box mt={4} pt={2} borderTop="1px solid" borderColor={themeColors.panel.divider}>
+              {/* Subtabs: Profile & Scoped Access */}
+              <Flex borderBottom="1px solid" borderColor={themeColors.panel.divider} h="38px" gap={4} mb={4} mt={2}>
+                <Button
+                  variant="plain"
+                  onClick={() => setActiveDetailTab('profile')}
+                  px={2}
+                  h="100%"
+                  fontSize="13px"
+                  fontWeight={activeDetailTab === 'profile' ? '600' : '400'}
+                  color={activeDetailTab === 'profile' ? themeColors.text.primary : themeColors.text.secondary}
+                  position="relative"
+                  _after={
+                    activeDetailTab === 'profile'
+                      ? {
+                          content: '""',
+                          position: 'absolute',
+                          bottom: '-1px',
+                          left: 0,
+                          right: 0,
+                          height: '2px',
+                          bg: themeColors.brand.accent,
+                        }
+                      : undefined
+                  }
+                >
+                  Profile
+                </Button>
+                <Button
+                  variant="plain"
+                  onClick={() => setActiveDetailTab('scoped_access')}
+                  px={2}
+                  h="100%"
+                  fontSize="13px"
+                  fontWeight={activeDetailTab === 'scoped_access' ? '600' : '400'}
+                  color={activeDetailTab === 'scoped_access' ? themeColors.text.primary : themeColors.text.secondary}
+                  position="relative"
+                  _after={
+                    activeDetailTab === 'scoped_access'
+                      ? {
+                          content: '""',
+                          position: 'absolute',
+                          bottom: '-1px',
+                          left: 0,
+                          right: 0,
+                          height: '2px',
+                          bg: themeColors.brand.accent,
+                        }
+                      : undefined
+                  }
+                >
+                  Scoped Access
+                </Button>
+              </Flex>
+
+              {activeDetailTab === 'profile' ? (
                 <UserProfileForm
                   user={selectedUser}
                   onSave={(payload, onSuccess) =>
@@ -739,7 +795,9 @@ export const UsersPage: React.FC = () => {
                   isSaving={updateUserMutation.isPending}
                   onOpenPasswordPolicy={() => setIsPasswordPolicyOpen(true)}
                 />
-              </Box>
+              ) : (
+                <UserScopedAccessTab user={selectedUser} />
+              )}
             </>
           ) : (
             <Flex justify="center" align="center" minH="200px" color={themeColors.text.secondary}>

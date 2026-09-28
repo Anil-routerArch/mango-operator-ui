@@ -1,5 +1,20 @@
 import type { Note } from './user';
 
+export interface EntityInfo {
+  id: string;
+  name: string;
+  description?: string;
+  parent?: string;
+  venues?: string[];
+}
+
+export interface VenueInfo {
+  id: string;
+  name: string;
+  entity: string;
+  description?: string;
+}
+
 export interface ManagementRole {
   id: string;
   name: string;
@@ -40,6 +55,15 @@ export interface CreateManagementRolePayload {
   entity: string;
   venueIds?: string[];
   notes?: Note[];
+}
+
+export interface UpdateManagementRolePayload {
+  id: string;
+  name?: string;
+  description?: string;
+  managementPolicy?: string;
+  notes?: Note[];
+  tags?: string[];
 }
 
 export interface CreateManagementPolicyPayload {

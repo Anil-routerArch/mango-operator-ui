@@ -7,10 +7,20 @@ declare global {
   }
 }
 
-// 1. Resolve OWSEC Base URL from Runtime Environment (window._env_) or Build-time (.env)
+// 1. Resolve OWSEC & OWPROV Base URLs from Runtime Environment (window._env_) or Build-time (.env)
 export const getSecBaseUrl = (): string => {
   const raw = window._env_?.VITE_UCENTRALSEC_URL || import.meta.env.VITE_UCENTRALSEC_URL || 'https://openwifi.wlan.local:16001';
   return `${raw.replace(/\/+$/, '')}/api/v1`;
+};
+
+export const getProvBaseUrl = (): string => {
+  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
+  return `${raw.replace(/\/+$/, '')}/api/v1`;
+};
+
+export const getProvV2BaseUrl = (): string => {
+  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
+  return `${raw.replace(/\/+$/, '')}/api/v2`;
 };
 
 // 2. Base Configuration for all OpenWiFi & Mango Clients
@@ -32,12 +42,15 @@ export const axiosSec: AxiosInstance = axios.create({
 // Mango MDU client (discovered dynamically from OWSEC systemEndpoints - no VIP treatment)
 export const axiosMdu: AxiosInstance = axios.create(defaultClientConfig);
 
-// OWPROV API v1 and v2 clients (dynamically updated upon endpoint discovery)
+// OWPROV API v1 and v2 clients (dynamically updated upon endpoint discovery or defaulting to 16005)
 export const axiosProv: AxiosInstance = axios.create({
   ...defaultClientConfig,
-  baseURL: getSecBaseUrl(), // Default fallback until discovery runs
+  baseURL: getProvBaseUrl(),
 });
-export const axiosProvV2: AxiosInstance = axios.create(defaultClientConfig);
+export const axiosProvV2: AxiosInstance = axios.create({
+  ...defaultClientConfig,
+  baseURL: getProvV2BaseUrl(),
+});
 
 // Additional OpenWiFi Services (all sharing the same uniform configuration)
 export const axiosGw: AxiosInstance = axios.create(defaultClientConfig);

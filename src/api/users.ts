@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { axiosSec, axiosProv, axiosProvV2 } from './client';
 import type { User, CreateUserPayload, UpdateUserPayload } from '@/types/user';
-import type { ManagementRole, ManagementPolicy, CreateManagementRolePayload, CreateManagementPolicyPayload } from '@/types/managementRole';
+import type {
+  ManagementRole,
+  ManagementPolicy,
+  CreateManagementRolePayload,
+  UpdateManagementRolePayload,
+  CreateManagementPolicyPayload,
+  EntityInfo,
+  VenueInfo,
+} from '@/types/managementRole';
 
 // ==========================================
 // 1. AVATAR FETCHING & CONVERSION
@@ -184,8 +192,63 @@ export const useCreateManagementRole = () => {
   });
 };
 
+export const useUpdateManagementRole = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...payload }: UpdateManagementRolePayload) => {
+      const { data } = await axiosProvV2.put<ManagementRole>(`managementRole/${id}`, payload);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+    },
+  });
+};
+
+export const useDeleteManagementRole = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (roleId: string) => {
+      const { data } = await axiosProvV2.delete(`managementRole/${roleId}`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+    },
+  });
+};
+
 // ==========================================
-// 5. MANAGEMENT POLICIES (OWPROV Port 16005)
+// 5. ENTITIES & VENUES (OWPROV Port 16005)
+// ==========================================
+export const useGetEntities = () => {
+  return useQuery({
+    queryKey: ['entities'],
+    queryFn: async () => {
+      const { data } = await axiosProv.get<{ entities: EntityInfo[] }>('entity');
+      return data?.entities || [];
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+};
+
+export const useGetVenues = () => {
+  return useQuery({
+    queryKey: ['venues'],
+    queryFn: async () => {
+      const { data } = await axiosProv.get<{ venues: VenueInfo[] }>('venue');
+      return data?.venues || [];
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+};
+
+// ==========================================
+// 6. MANAGEMENT POLICIES (OWPROV Port 16005)
 // ==========================================
 export const useGetManagementPolicies = () => {
   return useQuery({
