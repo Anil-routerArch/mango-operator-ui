@@ -27,7 +27,8 @@ export type IconName =
   | 'logout'
   | 'x'
   | 'eye'
-  | 'eyeOff';
+  | 'eyeOff'
+  | 'menu';
 
 interface IconProps {
   name: IconName;
@@ -163,6 +164,13 @@ export const Icon: React.FC<IconProps> = ({ name, size = 20, className, color = 
         <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
         <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
         <line x1="2" x2="22" y1="2" y2="22" />
+      </>
+    ),
+    menu: (
+      <>
+        <line x1="3" y1="12" x2="21" y2="12" />
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <line x1="3" y1="18" x2="21" y2="18" />
       </>
     ),
   };

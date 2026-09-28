@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Box, Flex, Text, VStack } from '@chakra-ui/react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { Box, Flex, Text, VStack, Image } from '@chakra-ui/react';
+import { NavLink, useLocation, Link } from 'react-router-dom';
 import { Icon, type IconName } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
+import mduLogo from '@/assets/mdu-logo.png';
 
 interface NavItem {
   icon: IconName;
@@ -53,34 +54,68 @@ export const Sidebar: React.FC = () => {
       userSelect="none"
     >
       {/* Brand Header */}
-      <Flex align="center" gap={3} px={2} pb={6}>
-        <Box
-          w="28px"
-          h="34px"
-          bg={`linear-gradient(145deg, ${themeColors.brand.mangoGradientStart}, ${themeColors.brand.mangoGradientEnd})`}
-          borderRadius="70% 40% 65% 55%"
-          display="inline-block"
-          transform="rotate(15deg)"
-          position="relative"
-          flexShrink={0}
-        >
-          <Box
-            w="17px"
-            h="7px"
-            position="absolute"
-            bg={themeColors.brand.mangoLeaf}
-            borderRadius="100% 0"
-            top="-5px"
-            right="-7px"
-            transform="rotate(-25deg)"
-          />
-        </Box>
-        {!isCollapsed && (
-          <Text fontSize="18px" fontWeight="700" color="#ffffff" whiteSpace="nowrap">
-            Mango Cloud
-          </Text>
-        )}
-      </Flex>
+      {!isCollapsed ? (
+        <Flex align="center" justify="space-between" px={1} pb={6} h="48px">
+          <Link
+            to="/dashboard"
+            style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}
+            title="Go to Dashboard"
+          >
+            <Image
+              src={mduLogo}
+              alt="MDU Logo"
+              maxH="38px"
+              maxW="145px"
+              objectFit="contain"
+              cursor="pointer"
+              transition="transform 0.15s ease, opacity 0.15s ease"
+              _hover={{ opacity: 0.9, transform: 'scale(1.02)' }}
+            />
+          </Link>
+          <Flex
+            as="button"
+            align="center"
+            justify="center"
+            w="28px"
+            h="28px"
+            bg="transparent"
+            border="0"
+            color="#ffffff"
+            opacity={0.7}
+            _hover={{ opacity: 1, bg: 'rgba(255, 255, 255, 0.12)' }}
+            borderRadius="4px"
+            cursor="pointer"
+            onClick={() => setIsCollapsed(true)}
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+          >
+            <Icon name="chevronLeft" size={18} />
+          </Flex>
+        </Flex>
+      ) : (
+        <Flex align="center" justify="center" pb={6} h="48px">
+          <Flex
+            as="button"
+            align="center"
+            justify="center"
+            w="38px"
+            h="38px"
+            bg="transparent"
+            border="0"
+            color="#ffffff"
+            opacity={0.85}
+            _hover={{ opacity: 1, bg: 'rgba(255, 255, 255, 0.14)' }}
+            borderRadius="6px"
+            cursor="pointer"
+            onClick={() => setIsCollapsed(false)}
+            title="Open sidebar"
+            aria-label="Open sidebar"
+            transition="all 0.15s ease"
+          >
+            <Icon name="menu" size={22} />
+          </Flex>
+        </Flex>
+      )}
 
       {/* Nav Groups */}
       <VStack gap={5} align="stretch">
