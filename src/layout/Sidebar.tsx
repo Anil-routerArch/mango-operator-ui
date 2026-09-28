@@ -88,29 +88,6 @@ export const Sidebar: React.FC = () => {
               _hover={{ opacity: 0.92, transform: 'scale(1.03)' }}
             />
           </Link>
-          <Flex
-            as="button"
-            position="absolute"
-            right="-4px"
-            top="50%"
-            transform="translateY(-50%)"
-            align="center"
-            justify="center"
-            w="24px"
-            h="24px"
-            bg="transparent"
-            border="0"
-            color="#ffffff"
-            opacity={0.6}
-            _hover={{ opacity: 1, bg: 'rgba(255, 255, 255, 0.12)' }}
-            borderRadius="4px"
-            cursor="pointer"
-            onClick={() => setIsCollapsed(true)}
-            title="Collapse sidebar"
-            aria-label="Collapse sidebar"
-          >
-            <Icon name="chevronLeft" size={16} />
-          </Flex>
         </Flex>
       ) : (
         <Flex align="center" justify="center" pb={5} pt={1} minH="54px">
