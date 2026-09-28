@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Box, Flex, Text } from '@chakra-ui/react';
-import { Icon } from '@/components/icons/Icon';
+import React, { useMemo } from 'react';
+import { Select, createListCollection, Portal } from '@chakra-ui/react';
 import { themeColors } from '@/theme';
 
 export interface SelectOption {
@@ -22,8 +21,14 @@ export interface SelectDropdownProps {
   borderColor?: string;
   borderRadius?: string;
   ariaLabel?: string;
+  size?: 'sm' | 'md' | 'lg';
 }
 
+/**
+ * SelectDropdown implemented using official Chakra UI v3 Select component:
+ * import { Select, createListCollection, Portal } from '@chakra-ui/react'
+ * with animated chevron indicator on open/close.
+ */
 export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   value,
   onChange,
@@ -38,178 +43,88 @@ export const SelectDropdown: React.FC<SelectDropdownProps> = ({
   borderColor = themeColors.panel.border,
   borderRadius = '4px',
   ariaLabel,
+  size = 'sm',
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Normalize options to { value, label }
-  const normalizedOptions: SelectOption[] = options.map((opt) => {
-    if (typeof opt === 'object' && opt !== null && 'value' in opt) {
-      return opt as SelectOption;
-    }
-    return { value: opt, label: String(opt) };
-  });
-
-  const selectedOption = normalizedOptions.find((opt) => String(opt.value) === String(value));
-  const displayLabel = selectedOption ? selectedOption.label : placeholder;
-
-  // Close when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen]);
-
-  // Handle keyboard events (Escape to close)
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      setIsOpen(false);
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (!disabled) setIsOpen(!isOpen);
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (!isOpen) {
-        setIsOpen(true);
-      } else {
-        const currentIndex = normalizedOptions.findIndex((opt) => String(opt.value) === String(value));
-        const nextIndex = Math.min(normalizedOptions.length - 1, currentIndex + 1);
-        onChange(normalizedOptions[nextIndex].value);
-      }
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (!isOpen) {
-        setIsOpen(true);
-      } else {
-        const currentIndex = normalizedOptions.findIndex((opt) => String(opt.value) === String(value));
-        const prevIndex = Math.max(0, currentIndex - 1);
-        onChange(normalizedOptions[prevIndex].value);
-      }
-    }
-  };
+  const collection = useMemo(() => {
+    return createListCollection({
+      items: options.map((opt) => {
+        if (typeof opt === 'object' && opt !== null && 'value' in opt) {
+          return { label: opt.label, value: String(opt.value) };
+        }
+        return { label: String(opt), value: String(opt) };
+      }),
+    });
+  }, [options]);
 
   return (
-    <Box
-      ref={containerRef}
-      position="relative"
-      w={w}
-      minW={minW}
-      userSelect="none"
-      onKeyDown={handleKeyDown}
-      tabIndex={disabled ? -1 : 0}
-      outline="none"
-      _focus={{
-        '& > div': {
-          borderColor: themeColors.brand.accent,
-          boxShadow: `0 0 0 1px ${themeColors.brand.accent}`,
-        },
+    <Select.Root
+      collection={collection}
+      value={[String(value)]}
+      onValueChange={(e) => {
+        if (e.value && e.value.length > 0) {
+          onChange(e.value[0]);
+        }
       }}
+      size={size}
+      width={w}
+      minW={minW}
+      disabled={disabled}
+      aria-label={ariaLabel}
     >
-      {/* Trigger Button */}
-      <Flex
-        align="center"
-        justify="space-between"
-        h={h}
-        px={3}
-        bg={bg}
-        border="1px solid"
-        borderColor={isOpen ? themeColors.brand.accent : borderColor}
-        borderRadius={borderRadius}
-        cursor={disabled ? 'not-allowed' : 'pointer'}
-        opacity={disabled ? 0.6 : 1}
-        onClick={() => {
-          if (!disabled) setIsOpen(!isOpen);
-        }}
-        transition="border-color 0.15s ease, box-shadow 0.15s ease"
-        boxShadow={isOpen ? `0 0 0 1px ${themeColors.brand.accent}` : 'none'}
-        aria-label={ariaLabel}
-        aria-expanded={isOpen}
-      >
-        <Text
-          fontSize={fontSize}
-          color={selectedOption ? themeColors.text.primary : themeColors.text.muted}
-          whiteSpace="nowrap"
-          overflow="hidden"
-          textOverflow="ellipsis"
-          mr={2}
+      <Select.Control>
+        <Select.Trigger
+          bg={bg}
+          borderColor={borderColor}
+          borderRadius={borderRadius}
+          h={h}
+          minH={h}
+          px={3}
+          cursor={disabled ? 'not-allowed' : 'pointer'}
+          _focus={{
+            borderColor: themeColors.brand.accent,
+            boxShadow: `0 0 0 1px ${themeColors.brand.accent}`,
+          }}
         >
-          {displayLabel}
-        </Text>
-
-        {/* Animated Chevron Indicator */}
-        <Box
-          display="inline-flex"
-          alignItems="center"
-          justifyContent="center"
-          color={themeColors.text.secondary}
-          transform={isOpen ? 'rotate(180deg)' : 'rotate(0deg)'}
-          transition="transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
-          flexShrink={0}
-        >
-          <Icon name="chevronDown" size={14} />
-        </Box>
-      </Flex>
-
-      {/* Animated Dropdown Menu */}
-      {isOpen && (
-        <Box
-          position="absolute"
-          top="calc(100% + 4px)"
-          left="0"
-          minW="100%"
-          maxH="240px"
-          overflowY="auto"
-          bg="#ffffff"
-          border="1px solid"
-          borderColor={themeColors.panel.border}
-          borderRadius="6px"
-          boxShadow="0 8px 24px rgba(0, 0, 0, 0.12)"
-          py={1}
-          zIndex={1000}
-        >
-          {normalizedOptions.map((opt) => {
-            const isSelected = String(opt.value) === String(value);
-            return (
-              <Flex
-                key={String(opt.value)}
-                align="center"
-                justify="space-between"
-                px={3}
-                py="7px"
-                fontSize={fontSize}
+          <Select.ValueText placeholder={placeholder} fontSize={fontSize} />
+          <Select.Context>
+            {(select) => (
+              <Select.Indicator
+                transform={select.open ? 'rotate(180deg)' : 'rotate(0deg)'}
+                transition="transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)"
+              />
+            )}
+          </Select.Context>
+        </Select.Trigger>
+      </Select.Control>
+      <Portal>
+        <Select.Positioner zIndex={2000}>
+          <Select.Content
+            bg="#ffffff"
+            borderColor={themeColors.panel.border}
+            borderRadius="6px"
+            boxShadow="0 8px 24px rgba(0, 0, 0, 0.12)"
+            py={1}
+            minW="120px"
+          >
+            {collection.items.map((item) => (
+              <Select.Item
+                item={item}
+                key={item.value}
                 cursor="pointer"
-                bg={isSelected ? themeColors.brand.accentLight : 'transparent'}
-                color={isSelected ? themeColors.brand.accent : themeColors.text.primary}
-                fontWeight={isSelected ? '600' : '400'}
-                _hover={{
-                  bg: isSelected ? themeColors.brand.accentLight : '#f1f5f9',
-                }}
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                }}
+                fontSize={fontSize}
+                px={3}
+                py="6px"
+                _hover={{ bg: themeColors.brand.accentLight }}
+                _highlighted={{ bg: themeColors.brand.accentLight }}
               >
-                <Text whiteSpace="nowrap">{opt.label}</Text>
-                {isSelected && (
-                  <Box color={themeColors.brand.accent} ml={2}>
-                    <Icon name="check" size={13} />
-                  </Box>
-                )}
-              </Flex>
-            );
-          })}
-        </Box>
-      )}
-    </Box>
+                {item.label}
+                <Select.ItemIndicator color={themeColors.brand.accent} />
+              </Select.Item>
+            ))}
+          </Select.Content>
+        </Select.Positioner>
+      </Portal>
+    </Select.Root>
   );
 };
 

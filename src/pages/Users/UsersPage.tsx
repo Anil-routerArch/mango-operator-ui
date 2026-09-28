@@ -346,7 +346,10 @@ export const UsersPage: React.FC = () => {
 
             <SelectDropdown
               value={roleFilter}
-              onChange={(val) => setRoleFilter(val)}
+              onChange={(val) => {
+                setRoleFilter(val);
+                setCurrentPage(1);
+              }}
               options={['All Roles', 'root', 'admin', 'installer', 'csr', 'noc', 'accounting']}
               w="150px"
               h="38px"
@@ -355,7 +358,10 @@ export const UsersPage: React.FC = () => {
 
             <SelectDropdown
               value={statusFilter}
-              onChange={(val) => setStatusFilter(val)}
+              onChange={(val) => {
+                setStatusFilter(val);
+                setCurrentPage(1);
+              }}
               options={['All Status', 'Active', 'Suspended']}
               w="130px"
               h="38px"
