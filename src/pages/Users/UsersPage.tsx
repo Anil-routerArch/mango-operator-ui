@@ -76,7 +76,7 @@ export const UsersPage: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isPasswordPolicyOpen, setIsPasswordPolicyOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 5;
+  const [pageSize, setPageSize] = useState(5);
 
   // Auto-select first user when users list loads
   useEffect(() => {
@@ -535,9 +535,38 @@ export const UsersPage: React.FC = () => {
 
           {/* Pagination bar */}
           <Flex justify="space-between" align="center" mt={4} fontSize="12px" color={themeColors.text.secondary}>
-            <Text>
-              Showing {filteredUsers.length === 0 ? '0' : `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredUsers.length)}`} of {filteredUsers.length}
-            </Text>
+            <HStack gap={3} align="center">
+              <Text>
+                Showing {filteredUsers.length === 0 ? '0' : `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredUsers.length)}`} of {filteredUsers.length}
+              </Text>
+
+              {/* Rows Per Page Selector */}
+              <HStack gap={1} align="center">
+                <Text fontSize="11px" color={themeColors.text.muted}>Rows:</Text>
+                <NativeSelect.Root w="64px" size="xs">
+                  <NativeSelect.Field
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    h="26px"
+                    fontSize="11px"
+                    borderColor={themeColors.panel.border}
+                    bg="#ffffff"
+                    borderRadius="4px"
+                    cursor="pointer"
+                    px={2}
+                    py={0}
+                  >
+                    <option value={5}>5</option>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </NativeSelect.Field>
+                </NativeSelect.Root>
+              </HStack>
+            </HStack>
 
             <HStack gap={1}>
               {/* Previous Page */}
