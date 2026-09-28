@@ -8,11 +8,11 @@ import {
   VStack,
   Input,
   Textarea,
-  NativeSelect,
   Spinner,
 } from '@chakra-ui/react';
 import { Header } from '@/layout/Header';
 import { Icon } from '@/components/icons/Icon';
+import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useGetUsers, useCreateUser, useUpdateUser, useSuspendUser } from '@/api';
 import type { User } from '@/types/user';
@@ -344,39 +344,23 @@ export const UsersPage: React.FC = () => {
               />
             </Flex>
 
-            <NativeSelect.Root w="150px">
-              <NativeSelect.Field
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                h="38px"
-                fontSize="13px"
-                borderColor={themeColors.input.filterBorder}
-              >
-                <option value="All Roles">All Roles</option>
-                <option value="root">root</option>
-                <option value="admin">admin</option>
-                <option value="installer">installer</option>
-                <option value="csr">csr</option>
-                <option value="noc">noc</option>
-                <option value="accounting">accounting</option>
-              </NativeSelect.Field>
-              <NativeSelect.Indicator />
-            </NativeSelect.Root>
+            <SelectDropdown
+              value={roleFilter}
+              onChange={(val) => setRoleFilter(val)}
+              options={['All Roles', 'root', 'admin', 'installer', 'csr', 'noc', 'accounting']}
+              w="150px"
+              h="38px"
+              borderColor={themeColors.input.filterBorder}
+            />
 
-            <NativeSelect.Root w="130px">
-              <NativeSelect.Field
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                h="38px"
-                fontSize="13px"
-                borderColor={themeColors.input.filterBorder}
-              >
-                <option value="All Status">All Status</option>
-                <option value="Active">Active</option>
-                <option value="Suspended">Suspended</option>
-              </NativeSelect.Field>
-              <NativeSelect.Indicator />
-            </NativeSelect.Root>
+            <SelectDropdown
+              value={statusFilter}
+              onChange={(val) => setStatusFilter(val)}
+              options={['All Status', 'Active', 'Suspended']}
+              w="130px"
+              h="38px"
+              borderColor={themeColors.input.filterBorder}
+            />
           </Flex>
 
           {/* Table */}
@@ -545,29 +529,18 @@ export const UsersPage: React.FC = () => {
               {/* Rows Per Page Selector */}
               <HStack gap={1} align="center">
                 <Text fontSize="11px" color={themeColors.text.muted}>Rows:</Text>
-                <NativeSelect.Root w="64px" size="xs">
-                  <NativeSelect.Field
-                    value={pageSize}
-                    onChange={(e) => {
-                      setPageSize(Number(e.target.value));
-                      setCurrentPage(1);
-                    }}
-                    h="26px"
-                    fontSize="11px"
-                    borderColor={themeColors.panel.border}
-                    bg="#ffffff"
-                    borderRadius="4px"
-                    cursor="pointer"
-                    px={2}
-                    py={0}
-                  >
-                    <option value={5}>5</option>
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                  </NativeSelect.Field>
-                  <NativeSelect.Indicator />
-                </NativeSelect.Root>
+                <SelectDropdown
+                  value={pageSize}
+                  onChange={(val) => {
+                    setPageSize(Number(val));
+                    setCurrentPage(1);
+                  }}
+                  options={[5, 10, 20, 50]}
+                  w="66px"
+                  h="26px"
+                  fontSize="11px"
+                  borderColor={themeColors.panel.border}
+                />
               </HStack>
             </HStack>
 
@@ -914,24 +887,14 @@ const UserProfileForm: React.FC<{
         <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
           System Role <Box as="span" color={themeColors.text.required}>*</Box>
         </Text>
-        <NativeSelect.Root>
-          <NativeSelect.Field
-            value={role}
-            onChange={(e) => setRole(e.target.value as any)}
-            h="36px"
-            fontSize="13px"
-            borderColor={themeColors.input.border}
-            bg={themeColors.input.bg}
-          >
-            <option value="root">root</option>
-            <option value="admin">admin</option>
-            <option value="installer">installer</option>
-            <option value="csr">csr</option>
-            <option value="noc">noc</option>
-            <option value="accounting">accounting</option>
-          </NativeSelect.Field>
-          <NativeSelect.Indicator />
-        </NativeSelect.Root>
+        <SelectDropdown
+          value={role}
+          onChange={(val) => setRole(val)}
+          options={['root', 'admin', 'installer', 'csr', 'noc', 'accounting']}
+          w="100%"
+          h="36px"
+          borderColor={themeColors.input.border}
+        />
         <Text fontSize="11px" color={themeColors.text.muted} mt={1}>
           Controls platform capabilities.
         </Text>
@@ -1347,21 +1310,13 @@ const CreateUserModal: React.FC<{
               <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
                 System role <Box as="span" color={themeColors.text.required}>*</Box>
               </Text>
-              <NativeSelect.Root>
-                <NativeSelect.Field
-                  value={userRole}
-                  onChange={(e) => setUserRole(e.target.value)}
-                  h="36px"
-                  fontSize="13px"
-                >
-                  <option value="admin">admin</option>
-                  <option value="installer">installer</option>
-                  <option value="csr">csr</option>
-                  <option value="noc">noc</option>
-                  <option value="accounting">accounting</option>
-                </NativeSelect.Field>
-                <NativeSelect.Indicator />
-              </NativeSelect.Root>
+              <SelectDropdown
+                value={userRole}
+                onChange={(val) => setUserRole(val)}
+                options={['admin', 'installer', 'csr', 'noc', 'accounting']}
+                w="100%"
+                h="36px"
+              />
             </Box>
             <Box flex="1">
               <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
