@@ -69,7 +69,6 @@ export const UsersPage: React.FC = () => {
 
   // Selection & UI State
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'profile' | 'access'>('profile');
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [statusFilter, setStatusFilter] = useState('All Status');
@@ -403,11 +402,10 @@ export const UsersPage: React.FC = () => {
                 fontWeight="600"
                 color={themeColors.text.secondary}
               >
-                <Box flex="1.7">User</Box>
-                <Box flex="1.15">System Role</Box>
-                <Box flex="1.1">Scoped Access</Box>
-                <Box flex="0.75">Status</Box>
-                <Box flex="0.85">Last Login</Box>
+                <Box flex="2">User</Box>
+                <Box flex="1.2">System Role</Box>
+                <Box flex="0.8">Status</Box>
+                <Box flex="1">Last Login</Box>
                 <Box w="20px" />
               </Flex>
 
@@ -447,7 +445,7 @@ export const UsersPage: React.FC = () => {
                       transition="background 0.15s ease"
                     >
                       {/* Identity */}
-                      <HStack flex="1.7" gap={3} minW={0} pr={2}>
+                      <HStack flex="2" gap={3} minW={0} pr={2}>
                         {u.avatar && u.avatar.startsWith('data:') ? (
                           <Box
                             w="32px"
@@ -502,17 +500,12 @@ export const UsersPage: React.FC = () => {
                       </HStack>
 
                       {/* System Role */}
-                      <Box flex="1.15" color={themeColors.text.primary} textTransform="capitalize">
+                      <Box flex="1.2" color={themeColors.text.primary} textTransform="capitalize">
                         {u.userRole}
                       </Box>
 
-                      {/* Scoped Access */}
-                      <Box flex="1.1" color={themeColors.text.secondary}>
-                        {u.location || 'All properties'}
-                      </Box>
-
                       {/* Status */}
-                      <Box flex="0.75">
+                      <Box flex="0.8">
                         <Box
                           as="span"
                           display="inline-block"
@@ -532,7 +525,7 @@ export const UsersPage: React.FC = () => {
                       </Box>
 
                       {/* Last Login */}
-                      <Box flex="0.85" color={themeColors.text.secondary}>
+                      <Box flex="1" color={themeColors.text.secondary}>
                         {formatLastLogin(u.lastLogin)}
                       </Box>
 
@@ -733,61 +726,7 @@ export const UsersPage: React.FC = () => {
                 </Button>
               </Flex>
 
-              {/* Subtabs: Profile / Scoped Access */}
-              <Flex borderBottom="1px solid" borderColor={themeColors.panel.divider} h="38px" gap={4} mb={4}>
-                <Button
-                  variant="plain"
-                  onClick={() => setDetailTab('profile')}
-                  px={2}
-                  h="100%"
-                  fontSize="13px"
-                  fontWeight={detailTab === 'profile' ? '600' : '400'}
-                  color={detailTab === 'profile' ? themeColors.text.primary : themeColors.text.secondary}
-                  position="relative"
-                  _after={
-                    detailTab === 'profile'
-                      ? {
-                          content: '""',
-                          position: 'absolute',
-                          bottom: '-1px',
-                          left: 0,
-                          right: 0,
-                          height: '2px',
-                          bg: themeColors.brand.accent,
-                        }
-                      : undefined
-                  }
-                >
-                  Profile
-                </Button>
-                <Button
-                  variant="plain"
-                  onClick={() => setDetailTab('access')}
-                  px={2}
-                  h="100%"
-                  fontSize="13px"
-                  fontWeight={detailTab === 'access' ? '600' : '400'}
-                  color={detailTab === 'access' ? themeColors.text.primary : themeColors.text.secondary}
-                  position="relative"
-                  _after={
-                    detailTab === 'access'
-                      ? {
-                          content: '""',
-                          position: 'absolute',
-                          bottom: '-1px',
-                          left: 0,
-                          right: 0,
-                          height: '2px',
-                          bg: themeColors.brand.accent,
-                        }
-                      : undefined
-                  }
-                >
-                  Scoped Access
-                </Button>
-              </Flex>
-
-              {detailTab === 'profile' ? (
+              <Box mt={4} pt={2} borderTop="1px solid" borderColor={themeColors.panel.divider}>
                 <UserProfileForm
                   user={selectedUser}
                   onSave={(payload, onSuccess) =>
@@ -800,9 +739,7 @@ export const UsersPage: React.FC = () => {
                   isSaving={updateUserMutation.isPending}
                   onOpenPasswordPolicy={() => setIsPasswordPolicyOpen(true)}
                 />
-              ) : (
-                <UserScopedAccessTab user={selectedUser} />
-              )}
+              </Box>
             </>
           ) : (
             <Flex justify="center" align="center" minH="200px" color={themeColors.text.secondary}>
@@ -1201,103 +1138,6 @@ const PasswordPolicyModal: React.FC<{
         </Flex>
       </Box>
     </Box>
-  );
-};
-
-// Sub-component: User Scoped Access Tab
-const UserScopedAccessTab: React.FC<{ user: User }> = ({ user }) => {
-  return (
-    <VStack gap={4} align="stretch">
-      <Box>
-        <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-          Platform Role
-        </Text>
-        <Box
-          p={3}
-          border="1px solid"
-          borderColor={themeColors.input.border}
-          borderRadius="4px"
-          bg="#fafafa"
-        >
-          <HStack justify="space-between">
-            <Text fontSize="13px" fontWeight="700" textTransform="capitalize">
-              {user.userRole}
-            </Text>
-            <Box
-              fontSize="10px"
-              fontWeight="600"
-              bg="#edf2f7"
-              color={themeColors.text.secondary}
-              border="1px solid #d7dee8"
-              borderRadius="10px"
-              px={2}
-              py="1px"
-            >
-              System Wide
-            </Box>
-          </HStack>
-          <Text fontSize="11px" color={themeColors.text.secondary} mt={1}>
-            User has platform-level capabilities defined by their system role.
-          </Text>
-        </Box>
-      </Box>
-
-      <Box>
-        <HStack justify="space-between" mb={2}>
-          <Text fontSize="13px" fontWeight="700" color={themeColors.text.title}>
-            Assigned Scope
-          </Text>
-        </HStack>
-
-        <Flex
-          align="center"
-          h="48px"
-          border="1px solid"
-          borderColor={themeColors.input.border}
-          borderRadius="4px"
-          px={3}
-          gap={3}
-        >
-          <Icon name="building" size={18} color={themeColors.text.secondary} />
-          <Box flex="1">
-            <Text fontSize="12px" fontWeight="600" color={themeColors.text.title}>
-              {user.location || 'Global Entity'}
-            </Text>
-            <Text fontSize="10px" color={themeColors.text.subtle}>
-              All associated venues & access points
-            </Text>
-          </Box>
-          <Box
-            fontSize="10px"
-            border="1px solid #bcd2f8"
-            borderRadius="12px"
-            bg="#f3f7ff"
-            color={themeColors.brand.accent}
-            px="10px"
-            py="2px"
-          >
-            {user.userRole}
-          </Box>
-        </Flex>
-      </Box>
-
-      <Box
-        border="1px solid #7dafef"
-        bg="#f2f7ff"
-        p={3}
-        borderRadius="4px"
-        fontSize="11px"
-        color={themeColors.text.primary}
-      >
-        <HStack gap={2} mb={1}>
-          <Icon name="info" size={15} color={themeColors.brand.accent} />
-          <Text fontWeight="700">Effective access</Text>
-        </HStack>
-        <Text color={themeColors.text.secondary} pl={6}>
-          Direct {user.userRole} access granted across {user.location || 'all cloud tenant entities'}.
-        </Text>
-      </Box>
-    </VStack>
   );
 };
 
