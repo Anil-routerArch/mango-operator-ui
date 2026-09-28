@@ -70,7 +70,6 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Venue', read: true, create: true, update: true, delete: true },
       { resource: 'Device', read: true, create: true, update: true, delete: true },
       { resource: 'Configuration', read: true, create: true, update: true, delete: true },
-      { resource: 'Configuration Profile', read: true, create: true, update: true, delete: true },
     ],
     assignedUsers: [
       { name: 'Marcus Vance', initials: 'MV', avatarBg: '#1e3a8a', property: 'All Properties', venueScope: 'Global' },
@@ -96,7 +95,6 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Venue', read: true, create: false, update: false, delete: false },
       { resource: 'Device', read: true, create: false, update: true, delete: false },
       { resource: 'Configuration', read: true, create: true, update: true, delete: false },
-      { resource: 'Configuration Profile', read: true, create: true, update: true, delete: false },
     ],
     assignedUsers: [
       { name: 'Anita Sharma', initials: 'AS', avatarBg: '#1e3a8a', property: 'Sunrise Apartments', venueScope: 'All venues' },
@@ -122,7 +120,6 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Venue', read: true, create: false, update: false, delete: false },
       { resource: 'Device', read: true, create: true, update: true, delete: false },
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
     assignedUsers: [
       { name: 'Lucas Scott', initials: 'LS', avatarBg: '#0284c7', property: 'Sunrise Apartments', venueScope: 'Tower 1' },
@@ -147,7 +144,6 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Venue', read: true, create: false, update: false, delete: false },
       { resource: 'Device', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
     assignedUsers: [
       { name: 'Priya Patel', initials: 'PP', avatarBg: '#db2777', property: 'Oakwood Housing', venueScope: 'All venues' },
@@ -171,7 +167,6 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Venue', read: true, create: false, update: false, delete: false },
       { resource: 'Device', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
     assignedUsers: [
       { name: 'Tom Bradley', initials: 'TB', avatarBg: '#475569', property: 'Grand Avenue Complex', venueScope: 'All venues' },
@@ -195,7 +190,6 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Venue', read: true, create: false, update: false, delete: false },
       { resource: 'Device', read: true, create: false, update: true, delete: false },
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
     assignedUsers: [
       { name: 'David Okafor', initials: 'DO', avatarBg: '#581c87', property: 'Oakwood Housing', venueScope: 'Building A' },
@@ -219,7 +213,6 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Venue', read: true, create: true, update: true, delete: false },
       { resource: 'Device', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
     assignedUsers: [
       { name: 'Anita Sharma', initials: 'AS', avatarBg: '#1e3a8a', property: 'Sunrise Apartments', venueScope: 'All venues' },
@@ -243,7 +236,6 @@ const INITIAL_POLICIES: PolicyItem[] = [
       { resource: 'Venue', read: true, create: false, update: false, delete: false },
       { resource: 'Device', read: true, create: false, update: false, delete: false },
       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
     ],
     assignedUsers: [],
   },
@@ -271,8 +263,6 @@ const RESOURCE_LABEL_MAP: Record<string, string> = {
   venue: 'Venue',
   inventory: 'Device',
   configuration: 'Configuration',
-  configurationprofile: 'Configuration Profile',
-  'configuration profile': 'Configuration Profile',
   contact: 'Contact',
   location: 'Location',
   operator: 'Operator',
@@ -292,7 +282,6 @@ const STANDARD_RESOURCES = [
   'Venue',
   'Device',
   'Configuration',
-  'Configuration Profile',
 ];
 
 const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourcePermission[] => {
@@ -318,6 +307,10 @@ const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourceP
       const canDelete = isFull || accessList.includes('DELETE');
 
       for (const rawRes of entry.resources || []) {
+        const lowerRes = rawRes.trim().toLowerCase();
+        if (lowerRes === 'configurationprofile' || lowerRes === 'configuration profile') {
+          continue;
+        }
         const resName = normalizeResourceName(rawRes);
         const existing = permMap.get(resName) || {
           resource: resName,
@@ -1530,7 +1523,6 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       { resource: 'Venue', read: true, create: false, update: false, delete: false },
                       { resource: 'Device', read: true, create: false, update: true, delete: false },
                       { resource: 'Configuration', read: true, create: false, update: false, delete: false },
-                      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false },
                     ],
                     assignedUsers: [],
                   };
