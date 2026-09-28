@@ -279,8 +279,8 @@ export const useCreateManagementPolicy = () => {
 
   return useMutation({
     mutationFn: async (payload: CreateManagementPolicyPayload) => {
-      const id = payload.id || '0';
-      const { data } = await axiosProv.post(`managementPolicy/${id}`, payload);
+      const id = payload.id || `policy-${Date.now()}`;
+      const { data } = await axiosProv.post(`managementPolicy/${id}`, { ...payload, id });
       return data;
     },
     onSuccess: () => {
