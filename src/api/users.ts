@@ -260,8 +260,14 @@ export const useGetManagementPolicies = () => {
   return useQuery({
     queryKey: ['managementPolicies'],
     queryFn: async () => {
-      const { data } = await axiosProv.get<{ managementPolicies: ManagementPolicy[] }>('managementPolicy');
-      return data?.managementPolicies || [];
+      const { data } = await axiosProv.get<any>('managementPolicy');
+      if (Array.isArray(data?.managementPolicies)) {
+        return data.managementPolicies as ManagementPolicy[];
+      }
+      if (Array.isArray(data)) {
+        return data as ManagementPolicy[];
+      }
+      return [];
     },
     staleTime: 60 * 1000,
     retry: 1,

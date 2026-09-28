@@ -14,6 +14,8 @@ import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useUsersUiStore } from '@/stores/usersUiStore';
+import { useGetManagementPolicies } from '@/api';
+import type { ManagementPolicy } from '@/types/managementRole';
 
 export interface ResourcePermission {
   resource: string;
@@ -247,6 +249,97 @@ const INITIAL_POLICIES: PolicyItem[] = [
   },
 ];
 
+// Helpers for API data mapping
+const formatPolicyDate = (timestamp?: number): string => {
+  if (!timestamp) return '—';
+  try {
+    const ms = timestamp < 1e11 ? timestamp * 1000 : timestamp;
+    const date = new Date(ms);
+    if (isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
+};
+
+const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
+  const mockMatch = INITIAL_POLICIES.find(
+    (m) =>
+      m.id === p.id ||
+      m.name.trim().toLowerCase() === p.name.trim().toLowerCase()
+  );
+
+  const formattedDate = formatPolicyDate(p.modified || p.created);
+
+  if (mockMatch) {
+    return {
+      ...mockMatch,
+      id: p.id,
+      name: p.name,
+      description: p.description || mockMatch.description,
+      type: p.entity ? 'Custom' : mockMatch.type,
+      modified: formattedDate !== '—' ? formattedDate : mockMatch.modified,
+    };
+  }
+
+  // Parse permissions from entries if available
+  const perms: ResourcePermission[] = [];
+  if (p.entries && p.entries.length > 0) {
+    const resAccess = new Map<string, Set<string>>();
+    for (const entry of p.entries) {
+      for (const res of entry.resources || []) {
+        const formattedRes = res.charAt(0).toUpperCase() + res.slice(1);
+        if (!resAccess.has(formattedRes)) {
+          resAccess.set(formattedRes, new Set());
+        }
+        for (const acc of entry.access || []) {
+          resAccess.get(formattedRes)!.add(acc.toUpperCase());
+        }
+      }
+    }
+    for (const [res, accSet] of resAccess.entries()) {
+      perms.push({
+        resource: res,
+        read: accSet.has('READ'),
+        create: accSet.has('CREATE'),
+        update: accSet.has('UPDATE'),
+        delete: accSet.has('DELETE'),
+      });
+    }
+  }
+
+  if (perms.length === 0) {
+    perms.push(
+      { resource: 'Property', read: true, create: false, update: false, delete: false },
+      { resource: 'Venue', read: true, create: false, update: false, delete: false },
+      { resource: 'Device', read: true, create: false, update: false, delete: false },
+      { resource: 'Configuration', read: true, create: false, update: false, delete: false },
+      { resource: 'Configuration Profile', read: true, create: false, update: false, delete: false }
+    );
+  }
+
+  return {
+    id: p.id,
+    name: p.name,
+    type: p.entity ? 'Custom' : 'Built-in',
+    preset: p.name,
+    status: 'Active',
+    createdBy: p.entity ? 'Custom' : 'System',
+    usedByUsers: 0,
+    scopedAssignmentsCount: 0,
+    propertiesCount: 0,
+    venuesCount: 0,
+    modified: formattedDate,
+    description: p.description || '',
+    permissions: perms,
+    assignedUsers: [],
+  };
+};
+
 interface PoliciesTabProps {
   isCreatePolicyOpen?: boolean;
   onCloseCreatePolicy?: () => void;
@@ -258,7 +351,15 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   onCloseCreatePolicy,
   onNavigateToUsers,
 }) => {
+  const { data: apiPolicies = [], isLoading: isPoliciesLoading } = useGetManagementPolicies();
   const [policies, setPolicies] = useState<PolicyItem[]>(INITIAL_POLICIES);
+
+  // Sync real policies from API
+  useEffect(() => {
+    if (apiPolicies && apiPolicies.length > 0) {
+      setPolicies(apiPolicies.map(mapApiPolicyToItem));
+    }
+  }, [apiPolicies]);
   const {
     selectedPolicyId,
     setSelectedPolicyId,
@@ -311,12 +412,23 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
     });
   }, [policies, search]);
 
+  // Keep selectedPolicyId valid if list updates
+  useEffect(() => {
+    if (policies.length > 0) {
+      const exists = policies.some((p) => p.id === selectedPolicyId);
+      if (!exists && policies[0]) {
+        setSelectedPolicyId(policies[0].id);
+      }
+    }
+  }, [policies, selectedPolicyId, setSelectedPolicyId]);
+
   // Selected policy
   const selectedPolicy = useMemo(() => {
     return (
       policies.find((p) => p.id === selectedPolicyId) ||
       filteredPolicies[0] ||
-      policies[0]
+      policies[0] ||
+      INITIAL_POLICIES[0]
     );
   }, [policies, selectedPolicyId, filteredPolicies]);
 
@@ -475,9 +587,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
                 {/* Used By */}
                 <Box flex="1">
-                  <Text fontSize="12px" color="#64748b">
-                    {p.usedByUsers} users
-                  </Text>
+                  <Text fontSize="12px" color="#64748b" />
                 </Box>
 
                 {/* Modified */}
@@ -494,6 +604,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
               </Flex>
             );
           })}
+
+          {/* Empty / Loading State */}
+          {paginatedPolicies.length === 0 && (
+            <Flex py={8} justify="center" align="center" color="#64748b" fontSize="13px">
+              {isPoliciesLoading ? 'Loading policies...' : 'No policies found'}
+            </Flex>
+          )}
 
           {/* Pagination bar */}
           <Flex justify="space-between" align="center" mt={4} fontSize="12px" color={themeColors.text.secondary}>
