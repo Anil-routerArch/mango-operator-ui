@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -260,10 +260,36 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   const [policies, setPolicies] = useState<PolicyItem[]>(INITIAL_POLICIES);
   const [selectedPolicyId, setSelectedPolicyId] = useState<string>('pol-net-op');
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('All Types');
   const [activeDetailTab, setActiveDetailTab] = useState<'overview' | 'permissions'>('overview');
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 5;
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('policies_page_size');
+      if (saved) {
+        const parsed = Number(saved);
+        if ([5, 10, 20, 50].includes(parsed)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // LocalStorage access fallback
+    }
+    return 5;
+  });
+
+  // Persist pageSize to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('policies_page_size', String(pageSize));
+    } catch {
+      // LocalStorage access fallback
+    }
+  }, [pageSize]);
+
+  // Reset pagination to first page when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   // New policy modal state
   const [newPolicyName, setNewPolicyName] = useState('');
@@ -274,13 +300,11 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   const filteredPolicies = useMemo(() => {
     return policies.filter((p) => {
       const q = search.toLowerCase();
-      const matchesSearch =
-        p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q);
-      const matchesType =
-        typeFilter === 'All Types' || p.type.toLowerCase() === typeFilter.toLowerCase();
-      return matchesSearch && matchesType;
+      return (
+        p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
+      );
     });
-  }, [policies, search, typeFilter]);
+  }, [policies, search]);
 
   // Selected policy
   const selectedPolicy = useMemo(() => {
@@ -462,37 +486,21 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
             Policies
           </Text>
 
-          {/* Search & Filter Bar */}
-          <Flex gap={3} mb={4}>
-            <Box position="relative" flex="1">
-              <Box position="absolute" left="10px" top="10px" color="#94a3b8">
-                <Icon name="search" size={16} />
-              </Box>
-              <Input
-                placeholder="Search policies..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setCurrentPage(1);
-                }}
-                pl="34px"
-                h="36px"
-                fontSize="13px"
-                borderRadius="4px"
-              />
+          {/* Search Bar */}
+          <Box position="relative" mb={4}>
+            <Box position="absolute" left="10px" top="10px" color="#94a3b8">
+              <Icon name="search" size={16} />
             </Box>
-
-            <SelectDropdown
-              value={typeFilter}
-              onChange={(val) => {
-                setTypeFilter(String(val));
-                setCurrentPage(1);
-              }}
-              options={['All Types', 'Built-in', 'Custom']}
-              w="140px"
+            <Input
+              placeholder="Search policies..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              pl="34px"
               h="36px"
+              fontSize="13px"
+              borderRadius="4px"
             />
-          </Flex>
+          </Box>
 
           {/* Table Header */}
           <Flex
@@ -586,53 +594,100 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
             );
           })}
 
-          {/* Pagination Footer */}
-          <Flex justify="space-between" align="center" pt={4} mt={1}>
-            <Text fontSize="12px" color="#64748b">
-              Showing {Math.min(filteredPolicies.length, (currentPage - 1) * pageSize + 1)}–
-              {Math.min(filteredPolicies.length, currentPage * pageSize)} of{' '}
-              {filteredPolicies.length}
-            </Text>
+          {/* Pagination bar */}
+          <Flex justify="space-between" align="center" mt={4} fontSize="12px" color={themeColors.text.secondary}>
+            <HStack gap={3} align="center">
+              <Text>
+                Showing {filteredPolicies.length === 0 ? '0' : `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredPolicies.length)}`} of {filteredPolicies.length}
+              </Text>
+
+              {/* Rows Per Page Selector */}
+              <HStack gap={1} align="center">
+                <Text fontSize="11px" color={themeColors.text.muted}>Rows:</Text>
+                <SelectDropdown
+                  value={pageSize}
+                  onChange={(val) => {
+                    setPageSize(Number(val));
+                    setCurrentPage(1);
+                  }}
+                  options={[5, 10, 20, 50]}
+                  w="66px"
+                  h="26px"
+                  fontSize="11px"
+                  borderColor={themeColors.panel.border}
+                />
+              </HStack>
+            </HStack>
 
             <HStack gap={1}>
+              {/* Previous Page */}
               <Button
-                variant="outline"
                 size="xs"
-                h="28px"
                 w="28px"
+                h="28px"
+                minW="28px"
                 p={0}
+                variant="outline"
+                borderColor={themeColors.panel.border}
+                color={themeColors.text.secondary}
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                cursor={currentPage <= 1 ? 'not-allowed' : 'pointer'}
+                borderRadius="4px"
+                bg="#ffffff"
+                _hover={{ borderColor: themeColors.brand.accent }}
+                aria-label="Previous page"
               >
                 <Icon name="chevronLeft" size={14} />
               </Button>
 
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pg) => (
-                <Button
-                  key={pg}
-                  size="xs"
-                  h="28px"
-                  w="28px"
-                  p={0}
-                  bg={pg === currentPage ? '#ffffff' : 'transparent'}
-                  borderColor={pg === currentPage ? '#0869ff' : 'transparent'}
-                  border="1px solid"
-                  color={pg === currentPage ? '#0869ff' : '#64748b'}
-                  fontWeight={pg === currentPage ? '700' : '400'}
-                  onClick={() => setCurrentPage(pg)}
-                >
-                  {pg}
-                </Button>
-              ))}
+              {/* Numbered Page Buttons */}
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                const isActive = pageNum === currentPage;
+                return (
+                  <Button
+                    key={pageNum}
+                    size="xs"
+                    w="28px"
+                    h="28px"
+                    minW="28px"
+                    p={0}
+                    fontSize="12px"
+                    fontWeight={isActive ? '700' : '400'}
+                    bg="#ffffff"
+                    color={isActive ? themeColors.brand.accent : themeColors.text.secondary}
+                    border="1px solid"
+                    borderColor={isActive ? themeColors.brand.accent : themeColors.panel.border}
+                    borderRadius="4px"
+                    onClick={() => setCurrentPage(pageNum)}
+                    cursor="pointer"
+                    _hover={{
+                      borderColor: themeColors.brand.accent,
+                      color: themeColors.brand.accent,
+                    }}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
 
+              {/* Next Page */}
               <Button
-                variant="outline"
                 size="xs"
-                h="28px"
                 w="28px"
+                h="28px"
+                minW="28px"
                 p={0}
+                variant="outline"
+                borderColor={themeColors.panel.border}
+                color={themeColors.text.secondary}
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                cursor={currentPage >= totalPages ? 'not-allowed' : 'pointer'}
+                borderRadius="4px"
+                bg="#ffffff"
+                _hover={{ borderColor: themeColors.brand.accent }}
+                aria-label="Next page"
               >
                 <Icon name="chevronRight" size={14} />
               </Button>
