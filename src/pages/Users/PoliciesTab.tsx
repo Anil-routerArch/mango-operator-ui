@@ -14,7 +14,8 @@ import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useUsersUiStore } from '@/stores/usersUiStore';
-import { useGetManagementPolicies } from '@/api';
+import { useAuthStore } from '@/stores/authStore';
+import { useGetManagementPolicies, useUpdateManagementPolicy } from '@/api';
 import type { ManagementPolicy, ManagementPolicyEntry } from '@/types/managementRole';
 
 export interface ResourcePermission {
@@ -315,6 +316,17 @@ const RESOURCE_LABEL_MAP: Record<string, string> = {
   location: 'Location',
 };
 
+const UI_LABEL_TO_RESOURCE_KEY: Record<string, string> = {
+  Entity: 'entity',
+  Venue: 'venue',
+  Configuration: 'configuration',
+  Inventory: 'inventory',
+  Operator: 'operator',
+  Subscriber: 'subscriber',
+  Contact: 'contact',
+  Location: 'location',
+};
+
 const normalizeResourceName = (raw: string): string => {
   const lower = raw.trim().toLowerCase();
   if (RESOURCE_LABEL_MAP[lower]) {
@@ -440,8 +452,17 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   onCloseCreatePolicy,
   onNavigateToUsers,
 }) => {
+  const currentUser = useAuthStore((s) => s.user);
+  const isRoot = currentUser?.userRole?.toLowerCase() === 'root';
   const { data: apiPolicies = [], isLoading: isPoliciesLoading } = useGetManagementPolicies();
+  const updatePolicyMutation = useUpdateManagementPolicy();
   const [policies, setPolicies] = useState<PolicyItem[]>(INITIAL_POLICIES);
+
+  // Edit policy state (only root can toggle)
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editPermissions, setEditPermissions] = useState<ResourcePermission[]>([]);
 
   // Sync real policies from API
   useEffect(() => {
@@ -521,6 +542,31 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
     );
   }, [policies, selectedPolicyId, filteredPolicies]);
 
+  // Sync edit state with selectedPolicy
+  useEffect(() => {
+    if (selectedPolicy) {
+      setEditName(selectedPolicy.name);
+      setEditDescription(selectedPolicy.description || '');
+      setEditPermissions(selectedPolicy.permissions.map((p) => ({ ...p })));
+      setIsEditing(false);
+    }
+  }, [selectedPolicy.id]);
+
+  const handleTogglePermission = (resource: string, action: 'read' | 'create' | 'update' | 'delete') => {
+    if (!isEditing || !isRoot) return;
+    setEditPermissions((prev) =>
+      prev.map((p) => {
+        if (p.resource === resource) {
+          return {
+            ...p,
+            [action]: !p[action],
+          };
+        }
+        return p;
+      })
+    );
+  };
+
   // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredPolicies.length / pageSize));
   const paginatedPolicies = useMemo(() => {
@@ -532,8 +578,66 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   const totalPoliciesCount = policies.length;
 
   // Handle Save Policy action
-  const handleSavePolicy = () => {
-    alert(`Policy "${selectedPolicy.name}" changes saved successfully.`);
+  const handleSavePolicy = async () => {
+    if (!isRoot) {
+      alert('Only root administrators can edit management policies.');
+      return;
+    }
+    if (!editName.trim()) {
+      alert('Policy name cannot be empty.');
+      return;
+    }
+
+    const accessGroups: Record<string, string[]> = {};
+    editPermissions.forEach((perm) => {
+      const access: string[] = [];
+      if (perm.read) access.push('READ');
+      if (perm.create) access.push('CREATE');
+      if (perm.update) access.push('UPDATE');
+      if (perm.delete) access.push('DELETE');
+
+      if (access.length > 0) {
+        const key = [...access].sort().join(',');
+        if (!accessGroups[key]) {
+          accessGroups[key] = [];
+        }
+        const resKey = UI_LABEL_TO_RESOURCE_KEY[perm.resource] || perm.resource.toLowerCase();
+        accessGroups[key].push(resKey);
+      }
+    });
+
+    const entries: ManagementPolicyEntry[] = Object.entries(accessGroups).map(([key, resources]) => ({
+      resources,
+      access: key.split(','),
+    }));
+
+    try {
+      await updatePolicyMutation.mutateAsync({
+        id: selectedPolicy.id,
+        name: editName.trim(),
+        description: editDescription.trim(),
+        entries,
+      });
+
+      setPolicies((prev) =>
+        prev.map((p) => {
+          if (p.id === selectedPolicy.id) {
+            return {
+              ...p,
+              name: editName.trim(),
+              description: editDescription.trim(),
+              permissions: editPermissions.map((ep) => ({ ...ep })),
+            };
+          }
+          return p;
+        })
+      );
+      setIsEditing(false);
+      alert(`Policy "${editName}" changes saved successfully.`);
+    } catch (err: any) {
+      console.error('Failed to update policy:', err);
+      alert('Failed to update policy. Check permissions or network.');
+    }
   };
 
   return (
@@ -850,17 +954,37 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
               </Box>
             </HStack>
 
-            <Button
-              variant="outline"
-              size="xs"
-              h="28px"
-              w="28px"
-              p={0}
-              color="#64748b"
-              title="More options"
-            >
-              <Icon name="more" size={16} />
-            </Button>
+            {/* Edit policy button - Only visible for Root */}
+            {isRoot && (
+              !isEditing ? (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  h="28px"
+                  px={3}
+                  color="#2563eb"
+                  borderColor="#bfdbfe"
+                  bg="#eff6ff"
+                  _hover={{ bg: '#dbeafe', borderColor: '#93c5fd' }}
+                  onClick={() => {
+                    setEditName(selectedPolicy.name);
+                    setEditDescription(selectedPolicy.description || '');
+                    setEditPermissions(selectedPolicy.permissions.map((p) => ({ ...p })));
+                    setIsEditing(true);
+                    setActiveDetailTab('permissions');
+                  }}
+                >
+                  <HStack gap={1.5}>
+                    <Icon name="edit" size={13} />
+                    <Text fontSize="12px" fontWeight="600">Edit policy</Text>
+                  </HStack>
+                </Button>
+              ) : (
+                <Badge colorScheme="purple" variant="subtle" fontSize="11px" px={2.5} py={1} borderRadius="4px">
+                  Editing Mode
+                </Badge>
+              )
+            )}
           </Flex>
 
           {/* Subtabs: Overview & Permissions */}
@@ -945,9 +1069,16 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
               {/* Resource permissions Table */}
               <Box>
-                <Text fontSize="13px" fontWeight="700" color="#0f172a" mb={2.5}>
-                  Resource permissions
-                </Text>
+                <Flex justify="space-between" align="center" mb={2.5}>
+                  <Text fontSize="13px" fontWeight="700" color="#0f172a">
+                    Resource permissions
+                  </Text>
+                  {isEditing && (
+                    <Text fontSize="11px" color="#2563eb" fontWeight="500">
+                      Click any cell to toggle permissions
+                    </Text>
+                  )}
+                </Flex>
 
                 <Box
                   border="1px solid"
@@ -974,7 +1105,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   </Flex>
 
                   {/* Rows */}
-                  {selectedPolicy.permissions.map((perm) => (
+                  {(isEditing ? editPermissions : selectedPolicy.permissions).map((perm) => (
                     <Flex
                       key={perm.resource}
                       py={2.5}
@@ -990,18 +1121,42 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       </Box>
 
                       {/* Read */}
-                      <Flex flex="1" justify="center">
+                      <Flex
+                        flex="1"
+                        justify="center"
+                        cursor={isEditing ? 'pointer' : 'default'}
+                        onClick={() => isEditing && handleTogglePermission(perm.resource, 'read')}
+                        py={1}
+                        borderRadius="4px"
+                        _hover={isEditing ? { bg: '#eff6ff' } : undefined}
+                      >
                         {perm.read ? (
                           <Flex
-                            w="16px"
-                            h="16px"
+                            w="18px"
+                            h="18px"
                             borderRadius="50%"
                             border="1.5px solid #16a34a"
+                            bg={isEditing ? '#dcfce7' : 'transparent'}
                             color="#16a34a"
                             align="center"
                             justify="center"
+                            transition="all 0.15s ease"
                           >
-                            <Icon name="check" size={10} />
+                            <Icon name="check" size={11} />
+                          </Flex>
+                        ) : isEditing ? (
+                          <Flex
+                            w="18px"
+                            h="18px"
+                            borderRadius="50%"
+                            border="1.5px dashed #cbd5e1"
+                            color="#94a3b8"
+                            align="center"
+                            justify="center"
+                            _hover={{ borderColor: '#16a34a', color: '#16a34a', bg: '#f0fdf4' }}
+                            transition="all 0.15s ease"
+                          >
+                            <Icon name="plus" size={10} />
                           </Flex>
                         ) : (
                           <Text color="#94a3b8" fontWeight="600">—</Text>
@@ -1009,18 +1164,42 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       </Flex>
 
                       {/* Create */}
-                      <Flex flex="1" justify="center">
+                      <Flex
+                        flex="1"
+                        justify="center"
+                        cursor={isEditing ? 'pointer' : 'default'}
+                        onClick={() => isEditing && handleTogglePermission(perm.resource, 'create')}
+                        py={1}
+                        borderRadius="4px"
+                        _hover={isEditing ? { bg: '#eff6ff' } : undefined}
+                      >
                         {perm.create ? (
                           <Flex
-                            w="16px"
-                            h="16px"
+                            w="18px"
+                            h="18px"
                             borderRadius="50%"
                             border="1.5px solid #16a34a"
+                            bg={isEditing ? '#dcfce7' : 'transparent'}
                             color="#16a34a"
                             align="center"
                             justify="center"
+                            transition="all 0.15s ease"
                           >
-                            <Icon name="check" size={10} />
+                            <Icon name="check" size={11} />
+                          </Flex>
+                        ) : isEditing ? (
+                          <Flex
+                            w="18px"
+                            h="18px"
+                            borderRadius="50%"
+                            border="1.5px dashed #cbd5e1"
+                            color="#94a3b8"
+                            align="center"
+                            justify="center"
+                            _hover={{ borderColor: '#16a34a', color: '#16a34a', bg: '#f0fdf4' }}
+                            transition="all 0.15s ease"
+                          >
+                            <Icon name="plus" size={10} />
                           </Flex>
                         ) : (
                           <Text color="#94a3b8" fontWeight="600">—</Text>
@@ -1028,18 +1207,42 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       </Flex>
 
                       {/* Update */}
-                      <Flex flex="1" justify="center">
+                      <Flex
+                        flex="1"
+                        justify="center"
+                        cursor={isEditing ? 'pointer' : 'default'}
+                        onClick={() => isEditing && handleTogglePermission(perm.resource, 'update')}
+                        py={1}
+                        borderRadius="4px"
+                        _hover={isEditing ? { bg: '#eff6ff' } : undefined}
+                      >
                         {perm.update ? (
                           <Flex
-                            w="16px"
-                            h="16px"
+                            w="18px"
+                            h="18px"
                             borderRadius="50%"
                             border="1.5px solid #16a34a"
+                            bg={isEditing ? '#dcfce7' : 'transparent'}
                             color="#16a34a"
                             align="center"
                             justify="center"
+                            transition="all 0.15s ease"
                           >
-                            <Icon name="check" size={10} />
+                            <Icon name="check" size={11} />
+                          </Flex>
+                        ) : isEditing ? (
+                          <Flex
+                            w="18px"
+                            h="18px"
+                            borderRadius="50%"
+                            border="1.5px dashed #cbd5e1"
+                            color="#94a3b8"
+                            align="center"
+                            justify="center"
+                            _hover={{ borderColor: '#16a34a', color: '#16a34a', bg: '#f0fdf4' }}
+                            transition="all 0.15s ease"
+                          >
+                            <Icon name="plus" size={10} />
                           </Flex>
                         ) : (
                           <Text color="#94a3b8" fontWeight="600">—</Text>
@@ -1047,18 +1250,42 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       </Flex>
 
                       {/* Delete */}
-                      <Flex flex="1" justify="center">
+                      <Flex
+                        flex="1"
+                        justify="center"
+                        cursor={isEditing ? 'pointer' : 'default'}
+                        onClick={() => isEditing && handleTogglePermission(perm.resource, 'delete')}
+                        py={1}
+                        borderRadius="4px"
+                        _hover={isEditing ? { bg: '#eff6ff' } : undefined}
+                      >
                         {perm.delete ? (
                           <Flex
-                            w="16px"
-                            h="16px"
+                            w="18px"
+                            h="18px"
                             borderRadius="50%"
                             border="1.5px solid #16a34a"
+                            bg={isEditing ? '#dcfce7' : 'transparent'}
                             color="#16a34a"
                             align="center"
                             justify="center"
+                            transition="all 0.15s ease"
                           >
-                            <Icon name="check" size={10} />
+                            <Icon name="check" size={11} />
+                          </Flex>
+                        ) : isEditing ? (
+                          <Flex
+                            w="18px"
+                            h="18px"
+                            borderRadius="50%"
+                            border="1.5px dashed #cbd5e1"
+                            color="#94a3b8"
+                            align="center"
+                            justify="center"
+                            _hover={{ borderColor: '#16a34a', color: '#16a34a', bg: '#f0fdf4' }}
+                            transition="all 0.15s ease"
+                          >
+                            <Icon name="plus" size={10} />
                           </Flex>
                         ) : (
                           <Text color="#94a3b8" fontWeight="600">—</Text>
@@ -1091,31 +1318,43 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 </Box>
               </Flex>
 
-              {/* Bottom Actions */}
-              <Flex justify="space-between" pt={2}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  h="34px"
-                  px={4}
-                  borderRadius="4px"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  h="34px"
-                  px={5}
-                  bg="#1a9c52"
-                  color="#ffffff"
-                  _hover={{ bg: '#15803d' }}
-                  borderRadius="4px"
-                  fontWeight="600"
-                  onClick={handleSavePolicy}
-                >
-                  Save policy
-                </Button>
-              </Flex>
+              {/* Bottom Actions - only displayed in Edit Mode for Root */}
+              {isEditing && isRoot && (
+                <Flex justify="space-between" pt={2}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    h="34px"
+                    px={4}
+                    borderRadius="4px"
+                    onClick={() => {
+                      if (selectedPolicy) {
+                        setEditName(selectedPolicy.name);
+                        setEditDescription(selectedPolicy.description || '');
+                        setEditPermissions(selectedPolicy.permissions.map((p) => ({ ...p })));
+                      }
+                      setIsEditing(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    h="34px"
+                    px={5}
+                    bg="#1a9c52"
+                    color="#ffffff"
+                    _hover={{ bg: '#15803d' }}
+                    borderRadius="4px"
+                    fontWeight="600"
+                    loading={updatePolicyMutation.isPending}
+                    disabled={updatePolicyMutation.isPending}
+                    onClick={handleSavePolicy}
+                  >
+                    Save policy
+                  </Button>
+                </Flex>
+              )}
             </VStack>
           ) : (
             /* Overview Subtab */

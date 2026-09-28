@@ -288,3 +288,17 @@ export const useCreateManagementPolicy = () => {
     },
   });
 };
+
+export const useUpdateManagementPolicy = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...payload }: Partial<ManagementPolicy> & { id: string }) => {
+      const { data } = await axiosProv.put(`managementPolicy/${id}`, payload);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
+    },
+  });
+};

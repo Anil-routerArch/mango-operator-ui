@@ -157,6 +157,9 @@ export const UsersPage: React.FC = () => {
   const suspendedCount = users.filter((u) => u.suspended).length;
   const mfaEnabledCount = users.filter((u) => u.userTypeProprietaryInfo?.mfa?.enabled).length;
 
+  const currentUser = useAuthStore((s) => s.user);
+  const isCurrentUserRoot = currentUser?.userRole?.toLowerCase() === 'root';
+
   return (
     <Box w="100%" pb={8}>
       {/* Header */}
@@ -170,10 +173,12 @@ export const UsersPage: React.FC = () => {
                 label: 'Create user',
                 onClick: () => setIsCreateModalOpen(true),
               }
-            : {
+            : isCurrentUserRoot
+            ? {
                 label: 'Create policy',
                 onClick: () => setIsCreatePolicyOpen(true),
               }
+            : undefined
         }
       />
 
