@@ -15,7 +15,7 @@ import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useUsersUiStore } from '@/stores/usersUiStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useGetManagementPolicies, useUpdateManagementPolicy } from '@/api';
+import { useGetManagementPolicies, useUpdateManagementPolicy, useCreateManagementPolicy } from '@/api';
 import type { ManagementPolicy, ManagementPolicyEntry } from '@/types/managementRole';
 import { toaster } from '@/components/ui/toaster';
 
@@ -63,229 +63,6 @@ export const ALL_POLICY_RESOURCES = [
   'Location',
 ];
 
-const buildInitialPermissions = (
-  granted: Record<string, { read?: boolean; create?: boolean; update?: boolean; delete?: boolean }>
-): ResourcePermission[] => {
-  return ALL_POLICY_RESOURCES.map((res) => {
-    const perm = granted[res] || {};
-    return {
-      resource: res,
-      read: !!perm.read,
-      create: !!perm.create,
-      update: !!perm.update,
-      delete: !!perm.delete,
-    };
-  });
-};
-
-// Initial dummy policies matching the exact layout and data
-const INITIAL_POLICIES: PolicyItem[] = [
-  {
-    id: 'pol-admin',
-    name: 'Administrator',
-    type: 'Built-in',
-    preset: 'Administrator',
-    status: 'Active',
-    createdBy: 'System',
-    usedByUsers: 6,
-    scopedAssignmentsCount: 8,
-    propertiesCount: 4,
-    venuesCount: 8,
-    modified: '1 Sep 2026',
-    description: 'Full administrative access across all resources and operations.',
-    permissions: buildInitialPermissions({
-      Entity: { read: true, create: true, update: true, delete: true },
-      Venue: { read: true, create: true, update: true, delete: true },
-      Configuration: { read: true, create: true, update: true, delete: true },
-      Inventory: { read: true, create: true, update: true, delete: true },
-      Operator: { read: true, create: true, update: true, delete: true },
-      Subscriber: { read: true, create: true, update: true, delete: true },
-      Contact: { read: true, create: true, update: true, delete: true },
-      Location: { read: true, create: true, update: true, delete: true },
-    }),
-    assignedUsers: [
-      { name: 'Marcus Vance', initials: 'MV', avatarBg: '#1e3a8a', property: 'All Properties', venueScope: 'Global' },
-      { name: 'Sarah Chen', initials: 'SC', avatarBg: '#059669', property: 'Sunset Heights', venueScope: 'All venues' },
-      { name: 'Alex Rivera', initials: 'AR', avatarBg: '#7c3aed', property: 'Oakwood Housing', venueScope: 'Building B' },
-    ],
-  },
-  {
-    id: 'pol-net-op',
-    name: 'Network Operator',
-    type: 'Built-in',
-    preset: 'Network Operator',
-    status: 'Active',
-    createdBy: 'System',
-    usedByUsers: 9,
-    scopedAssignmentsCount: 14,
-    propertiesCount: 6,
-    venuesCount: 8,
-    modified: '2 Sep 2026',
-    description: 'Monitor devices and manage network configuration.',
-    permissions: buildInitialPermissions({
-      Entity: { read: true },
-      Venue: { read: true },
-      Configuration: { read: true, create: true, update: true },
-      Inventory: { read: true, update: true },
-      Operator: { read: true },
-      Subscriber: { read: true },
-      Contact: { read: true },
-      Location: { read: true },
-    }),
-    assignedUsers: [
-      { name: 'Anita Sharma', initials: 'AS', avatarBg: '#1e3a8a', property: 'Sunrise Apartments', venueScope: 'All venues' },
-      { name: 'David Okafor', initials: 'DO', avatarBg: '#581c87', property: 'Oakwood Housing', venueScope: 'Building A' },
-      { name: 'Meera Joshi', initials: 'MJ', avatarBg: '#d97706', property: 'Lakeview Residences', venueScope: '2 venues' },
-    ],
-  },
-  {
-    id: 'pol-installer',
-    name: 'Installer',
-    type: 'Built-in',
-    preset: 'Installer',
-    status: 'Active',
-    createdBy: 'System',
-    usedByUsers: 4,
-    scopedAssignmentsCount: 6,
-    propertiesCount: 3,
-    venuesCount: 6,
-    modified: '28 Aug 2026',
-    description: 'Device onboarding, inventory provisioning and local venue testing.',
-    permissions: buildInitialPermissions({
-      Venue: { read: true },
-      Configuration: { read: true },
-      Inventory: { read: true, update: true },
-      Contact: { read: true },
-      Location: { read: true },
-    }),
-    assignedUsers: [
-      { name: 'Lucas Scott', initials: 'LS', avatarBg: '#0284c7', property: 'Sunrise Apartments', venueScope: 'Tower 1' },
-      { name: 'Elena Rostova', initials: 'ER', avatarBg: '#d97706', property: 'Lakeview Residences', venueScope: 'North Wing' },
-    ],
-  },
-  {
-    id: 'pol-csr',
-    name: 'CSR',
-    type: 'Built-in',
-    preset: 'CSR',
-    status: 'Active',
-    createdBy: 'System',
-    usedByUsers: 3,
-    scopedAssignmentsCount: 4,
-    propertiesCount: 2,
-    venuesCount: 4,
-    modified: '28 Aug 2026',
-    description: 'Customer service support, monitoring and end-user assistance.',
-    permissions: buildInitialPermissions({
-      Entity: { read: true },
-      Venue: { read: true },
-      Configuration: { read: true },
-      Inventory: { read: true },
-      Subscriber: { read: true, update: true },
-      Contact: { read: true },
-    }),
-    assignedUsers: [
-      { name: 'Priya Patel', initials: 'PP', avatarBg: '#db2777', property: 'Oakwood Housing', venueScope: 'All venues' },
-    ],
-  },
-  {
-    id: 'pol-readonly',
-    name: 'Read Only',
-    type: 'Built-in',
-    preset: 'Read Only',
-    status: 'Active',
-    createdBy: 'System',
-    usedByUsers: 5,
-    scopedAssignmentsCount: 7,
-    propertiesCount: 5,
-    venuesCount: 7,
-    modified: '28 Aug 2026',
-    description: 'Audit and reporting view-only access across properties.',
-    permissions: buildInitialPermissions({
-      Entity: { read: true },
-      Venue: { read: true },
-      Configuration: { read: true },
-      Inventory: { read: true },
-      Operator: { read: true },
-      Subscriber: { read: true },
-      Contact: { read: true },
-      Location: { read: true },
-    }),
-    assignedUsers: [
-      { name: 'Tom Bradley', initials: 'TB', avatarBg: '#475569', property: 'Grand Avenue Complex', venueScope: 'All venues' },
-    ],
-  },
-  {
-    id: 'pol-firmware',
-    name: 'Firmware Operator',
-    type: 'Custom',
-    preset: 'Network Operator',
-    status: 'Active',
-    createdBy: 'Marcus Vance',
-    usedByUsers: 2,
-    scopedAssignmentsCount: 3,
-    propertiesCount: 2,
-    venuesCount: 3,
-    modified: '25 Aug 2026',
-    description: 'Dedicated firmware upgrade and scheduled rollout management.',
-    permissions: buildInitialPermissions({
-      Venue: { read: true },
-      Configuration: { read: true },
-      Inventory: { read: true, update: true },
-    }),
-    assignedUsers: [
-      { name: 'David Okafor', initials: 'DO', avatarBg: '#581c87', property: 'Oakwood Housing', venueScope: 'Building A' },
-    ],
-  },
-  {
-    id: 'pol-prop-mgr',
-    name: 'Property Manager',
-    type: 'Custom',
-    preset: 'Network Operator',
-    status: 'Active',
-    createdBy: 'Sarah Chen',
-    usedByUsers: 1,
-    scopedAssignmentsCount: 2,
-    propertiesCount: 1,
-    venuesCount: 2,
-    modified: '20 Aug 2026',
-    description: 'Property and venue configuration boundary management.',
-    permissions: buildInitialPermissions({
-      Entity: { read: true, update: true },
-      Venue: { read: true, create: true, update: true },
-      Configuration: { read: true },
-      Inventory: { read: true },
-    }),
-    assignedUsers: [
-      { name: 'Anita Sharma', initials: 'AS', avatarBg: '#1e3a8a', property: 'Sunrise Apartments', venueScope: 'All venues' },
-    ],
-  },
-  {
-    id: 'pol-auditor',
-    name: 'Auditor',
-    type: 'Custom',
-    preset: 'Read Only',
-    status: 'Active',
-    createdBy: 'System',
-    usedByUsers: 0,
-    scopedAssignmentsCount: 0,
-    propertiesCount: 0,
-    venuesCount: 0,
-    modified: '15 Aug 2026',
-    description: 'Compliance inspection and security policy review.',
-    permissions: buildInitialPermissions({
-      Entity: { read: true },
-      Venue: { read: true },
-      Configuration: { read: true },
-      Inventory: { read: true },
-      Operator: { read: true },
-      Subscriber: { read: true },
-      Contact: { read: true },
-      Location: { read: true },
-    }),
-    assignedUsers: [],
-  },
-];
 
 // Helpers for API data mapping
 const formatPolicyDate = (timestamp?: number): string => {
@@ -401,28 +178,10 @@ const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourceP
 };
 
 const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
-  const mockMatch = INITIAL_POLICIES.find(
-    (m) =>
-      m.id === p.id ||
-      m.name.trim().toLowerCase() === p.name.trim().toLowerCase()
-  );
-
   const formattedDate = formatPolicyDate(p.modified || p.created);
 
   // Always parse all 8 resources from entries for every policy
   const perms = parseEntriesToPermissions(p.entries);
-
-  if (mockMatch) {
-    return {
-      ...mockMatch,
-      id: p.id,
-      name: p.name,
-      description: p.description || mockMatch.description,
-      type: p.entity ? 'Custom' : mockMatch.type,
-      modified: formattedDate !== '—' ? formattedDate : mockMatch.modified,
-      permissions: perms,
-    };
-  }
 
   return {
     id: p.id,
@@ -456,8 +215,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   const currentUser = useAuthStore((s) => s.user);
   const isRoot = currentUser?.userRole?.toLowerCase() === 'root';
   const { data: apiPolicies = [], isLoading: isPoliciesLoading } = useGetManagementPolicies();
+  const createPolicyMutation = useCreateManagementPolicy();
   const updatePolicyMutation = useUpdateManagementPolicy();
-  const [policies, setPolicies] = useState<PolicyItem[]>(INITIAL_POLICIES);
+  const [policies, setPolicies] = useState<PolicyItem[]>([]);
 
   // Edit policy state (only root can toggle)
   const [isEditing, setIsEditing] = useState(false);
@@ -467,7 +227,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
   // Sync real policies from API
   useEffect(() => {
-    if (apiPolicies && apiPolicies.length > 0) {
+    if (apiPolicies) {
       setPolicies(apiPolicies.map(mapApiPolicyToItem));
     }
   }, [apiPolicies]);
@@ -539,7 +299,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
       policies.find((p) => p.id === selectedPolicyId) ||
       filteredPolicies[0] ||
       policies[0] ||
-      INITIAL_POLICIES[0]
+      null
     );
   }, [policies, selectedPolicyId, filteredPolicies]);
 
@@ -550,8 +310,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
       setEditDescription(selectedPolicy.description || '');
       setEditPermissions(selectedPolicy.permissions.map((p) => ({ ...p })));
       setIsEditing(false);
+    } else {
+      setEditName('');
+      setEditDescription('');
+      setEditPermissions([]);
+      setIsEditing(false);
     }
-  }, [selectedPolicy.id]);
+  }, [selectedPolicy?.id]);
 
   const handleTogglePermission = (resource: string, action: 'read' | 'create' | 'update' | 'delete') => {
     if (!isEditing || !isRoot) return;
@@ -580,6 +345,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
   // Handle Save Policy action
   const handleSavePolicy = async () => {
+    if (!selectedPolicy) return;
     if (!isRoot) {
       toaster.error({
         title: 'Access Restricted',
@@ -652,6 +418,69 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
         'Failed to update policy. Check permissions or network.';
       toaster.error({
         title: 'Update Failed',
+        description: errorMsg,
+      });
+    }
+  };
+
+  // Handle Create Policy action via OWPROV API (POST managementPolicy/0)
+  const handleCreatePolicy = async () => {
+    if (!isRoot) {
+      toaster.error({
+        title: 'Access Restricted',
+        description: 'Only root administrators can create management policies.',
+      });
+      return;
+    }
+    if (!newPolicyName.trim()) {
+      toaster.warning({
+        title: 'Validation Error',
+        description: 'Policy name is required.',
+      });
+      return;
+    }
+
+    // Determine starting permissions/entries based on chosen preset or existing policy
+    let entries: ManagementPolicyEntry[] = [];
+    if (newPolicyPreset && newPolicyPreset !== 'None' && newPolicyPreset !== 'Empty') {
+      const matchingPolicy = policies.find(
+        (p) => p.name.trim().toLowerCase() === newPolicyPreset.trim().toLowerCase()
+      );
+      if (matchingPolicy) {
+        const original = apiPolicies.find((ap) => ap.id === matchingPolicy.id);
+        if (original?.entries) {
+          entries = original.entries;
+        }
+      }
+    }
+
+    try {
+      const res = await createPolicyMutation.mutateAsync({
+        name: newPolicyName.trim(),
+        description: newPolicyDesc.trim(),
+        entries,
+      });
+
+      toaster.success({
+        title: 'Policy Created',
+        description: `Policy "${newPolicyName.trim()}" created successfully.`,
+      });
+
+      setNewPolicyName('');
+      setNewPolicyDesc('');
+      setNewPolicyPreset('None');
+      if (onCloseCreatePolicy) onCloseCreatePolicy();
+      if (res?.id) {
+        setSelectedPolicyId(res.id);
+      }
+    } catch (err: any) {
+      console.error('Failed to create policy:', err);
+      const errorMsg =
+        err?.response?.data?.ErrorDescription ||
+        err?.message ||
+        'Failed to create policy. Check permissions or network.';
+      toaster.error({
+        title: 'Creation Failed',
         description: errorMsg,
       });
     }
@@ -747,7 +576,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
           {/* Table Rows */}
           {paginatedPolicies.map((p) => {
-            const isSelected = p.id === selectedPolicy.id;
+            const isSelected = selectedPolicy ? p.id === selectedPolicy.id : false;
             return (
               <Flex
                 key={p.id}
@@ -933,8 +762,17 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
           borderRadius="6px"
           p={5}
         >
-          {/* Policy Title Row */}
-          <Flex justify="space-between" align="flex-start" mb={4}>
+          {!selectedPolicy ? (
+            <Flex h="360px" justify="center" align="center" direction="column" gap={3} color="#64748b">
+              <Icon name="shield" size={32} color="#cbd5e1" />
+              <Text fontSize="14px" fontWeight="500">
+                {isPoliciesLoading ? 'Loading policies...' : 'No policy selected'}
+              </Text>
+            </Flex>
+          ) : (
+            <>
+              {/* Policy Title Row */}
+              <Flex justify="space-between" align="flex-start" mb={4}>
             <HStack gap={3} align="flex-start">
               <Flex
                 w="40px"
@@ -1693,7 +1531,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
               </Box>
             </VStack>
           )}
-        </Box>
+        </>
+      )}
+    </Box>
       </Flex>
 
       {/* 4. Create Policy Modal */}
@@ -1770,7 +1610,19 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 <SelectDropdown
                   value={newPolicyPreset}
                   onChange={(val) => setNewPolicyPreset(String(val))}
-                  options={['Network Operator', 'Installer', 'CSR', 'Read Only']}
+                  options={[
+                    'None',
+                    'Network Operator',
+                    'Installer',
+                    'CSR',
+                    'Read Only',
+                    ...policies
+                      .map((p) => p.name)
+                      .filter(
+                        (n) =>
+                          !['None', 'Network Operator', 'Installer', 'CSR', 'Read Only'].includes(n)
+                      ),
+                  ]}
                   w="100%"
                   h="36px"
                 />
@@ -1795,30 +1647,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 color="#ffffff"
                 _hover={{ bg: '#15803d' }}
                 fontWeight="600"
-                onClick={() => {
-                  if (!newPolicyName.trim()) return;
-                  const newPol: PolicyItem = {
-                    id: `pol-${Date.now()}`,
-                    name: newPolicyName.trim(),
-                    type: 'Custom',
-                    preset: newPolicyPreset,
-                    status: 'Active',
-                    createdBy: 'Current User',
-                    usedByUsers: 0,
-                    scopedAssignmentsCount: 0,
-                    propertiesCount: 0,
-                    venuesCount: 0,
-                    modified: 'Just now',
-                    description: newPolicyDesc.trim() || 'Custom operator policy.',
-                    permissions: parseEntriesToPermissions([]),
-                    assignedUsers: [],
-                  };
-                  setPolicies((prev) => [newPol, ...prev]);
-                  setSelectedPolicyId(newPol.id);
-                  setNewPolicyName('');
-                  setNewPolicyDesc('');
-                  if (onCloseCreatePolicy) onCloseCreatePolicy();
-                }}
+                loading={createPolicyMutation.isPending}
+                disabled={createPolicyMutation.isPending}
+                onClick={handleCreatePolicy}
               >
                 Create policy
               </Button>
