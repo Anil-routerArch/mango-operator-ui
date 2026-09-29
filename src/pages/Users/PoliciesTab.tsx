@@ -56,6 +56,7 @@ export interface PolicyItem {
   description: string;
   permissions: ResourcePermission[];
   assignedUsers: PolicyAssignedUser[];
+  rawEntries?: ManagementPolicyEntry[];
 }
 
 export const ALL_POLICY_RESOURCES = [
@@ -119,7 +120,20 @@ const normalizeResourceName = (raw: string): string => {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 };
 
-const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourcePermission[] => {
+export const MANAGED_RESOURCE_KEYS = new Set([
+  'entity',
+  'property',
+  'venue',
+  'configuration',
+  'inventory',
+  'device',
+  'operator',
+  'subscriber',
+  'contact',
+  'location',
+]);
+
+export const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourcePermission[] => {
   const permMap = new Map<string, ResourcePermission>();
 
   // Always initialize ALL 8 resources in exact order
@@ -143,19 +157,14 @@ const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourceP
       const canDelete = isFull || accessList.includes('DELETE');
 
       for (const rawRes of entry.resources || []) {
-        const lowerRes = rawRes.trim().toLowerCase();
-        if (lowerRes === 'configurationprofile' || lowerRes === 'configuration profile') {
+        const resName = normalizeResourceName(rawRes);
+        if (!permMap.has(resName)) {
+          // Unmanaged resource (e.g. configurationProfile, serviceClass) - ignored for UI matrix display
+          // but preserved losslessly in rawEntries on save.
           continue;
         }
-        const resName = normalizeResourceName(rawRes);
-        const existing = permMap.get(resName) || {
-          resource: resName,
-          read: false,
-          create: false,
-          update: false,
-          delete: false,
-        };
 
+        const existing = permMap.get(resName)!;
         permMap.set(resName, {
           resource: resName,
           read: existing.read || canRead,
@@ -168,19 +177,75 @@ const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): ResourceP
   }
 
   // Always return all 8 resources in the exact specified order
-  const result: ResourcePermission[] = [];
-  for (const res of ALL_POLICY_RESOURCES) {
-    if (permMap.has(res)) {
-      result.push(permMap.get(res)!);
-    }
-  }
-  for (const [resName, perm] of permMap.entries()) {
-    if (!ALL_POLICY_RESOURCES.includes(resName)) {
-      result.push(perm);
+  return ALL_POLICY_RESOURCES.map((res) => permMap.get(res)!);
+};
+
+export const mergePolicyEntries = (
+  originalEntries: ManagementPolicyEntry[] = [],
+  editedPermissions: ResourcePermission[]
+): ManagementPolicyEntry[] => {
+  // 1. Extract and preserve any entries or resources not managed by the UI
+  const preservedUnmanagedEntries: ManagementPolicyEntry[] = [];
+
+  for (const entry of originalEntries) {
+    if (!entry || !Array.isArray(entry.resources)) continue;
+
+    const hasCustomScoping = Boolean(
+      (entry as any).users?.length || (entry as any).policy
+    );
+
+    const unmanagedResources = entry.resources.filter(
+      (r) => !MANAGED_RESOURCE_KEYS.has(r.trim().toLowerCase())
+    );
+
+    if (hasCustomScoping) {
+      // Preserve custom scoped entry completely
+      preservedUnmanagedEntries.push({
+        ...entry,
+        resources: [...entry.resources],
+        access: [...(entry.access || [])],
+      });
+    } else if (unmanagedResources.length > 0) {
+      // Preserve unmanaged resources with their original access and extra properties
+      preservedUnmanagedEntries.push({
+        ...entry,
+        resources: unmanagedResources,
+        access: [...(entry.access || [])],
+      });
     }
   }
 
-  return result;
+  // 2. Generate entries for UI-managed resources from editedPermissions
+  const accessGroups: Record<string, string[]> = {};
+  editedPermissions.forEach((perm) => {
+    const isFull = perm.read && perm.create && perm.update && perm.delete;
+    const access: string[] = [];
+    if (isFull) {
+      access.push('FULL');
+    } else {
+      if (perm.read) access.push('READ');
+      if (perm.create) access.push('CREATE');
+      if (perm.update) access.push('UPDATE');
+      if (perm.delete) access.push('DELETE');
+    }
+
+    if (access.length > 0) {
+      const key = [...access].sort().join(',');
+      if (!accessGroups[key]) {
+        accessGroups[key] = [];
+      }
+      const resKey = UI_LABEL_TO_RESOURCE_KEY[perm.resource] || perm.resource.toLowerCase();
+      accessGroups[key].push(resKey);
+    }
+  });
+
+  const managedEntries: ManagementPolicyEntry[] = Object.entries(accessGroups).map(([key, resources]) => ({
+    resources,
+    access: key.split(','),
+  }));
+
+  // 3. Lossless merge: unmanaged entries + updated managed entries
+  return [...preservedUnmanagedEntries, ...managedEntries];
 };
 
 const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
@@ -202,6 +267,7 @@ const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
     description: p.description || '',
     permissions: perms,
     assignedUsers: [],
+    rawEntries: p.entries ? JSON.parse(JSON.stringify(p.entries)) : [],
   };
 };
 
@@ -469,40 +535,17 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
       return;
     }
 
-    const accessGroups: Record<string, string[]> = {};
-    editPermissions.forEach((perm) => {
-      const isFull = perm.read && perm.create && perm.update && perm.delete;
-      const access: string[] = [];
-      if (isFull) {
-        access.push('FULL');
-      } else {
-        if (perm.read) access.push('READ');
-        if (perm.create) access.push('CREATE');
-        if (perm.update) access.push('UPDATE');
-        if (perm.delete) access.push('DELETE');
-      }
-
-      if (access.length > 0) {
-        const key = [...access].sort().join(',');
-        if (!accessGroups[key]) {
-          accessGroups[key] = [];
-        }
-        const resKey = UI_LABEL_TO_RESOURCE_KEY[perm.resource] || perm.resource.toLowerCase();
-        accessGroups[key].push(resKey);
-      }
-    });
-
-    const entries: ManagementPolicyEntry[] = Object.entries(accessGroups).map(([key, resources]) => ({
-      resources,
-      access: key.split(','),
-    }));
+    const mergedEntries = mergePolicyEntries(
+      selectedPolicy.rawEntries || [],
+      editPermissions
+    );
 
     try {
-      await updatePolicyMutation.mutateAsync({
+      const updatedPolicy = await updatePolicyMutation.mutateAsync({
         id: selectedPolicy.id,
         name: editName.trim(),
         description: editDescription.trim(),
-        entries,
+        entries: mergedEntries,
       });
 
       setPolicies((prev) =>
@@ -513,6 +556,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
               name: editName.trim(),
               description: editDescription.trim(),
               permissions: editPermissions.map((ep) => ({ ...ep })),
+              rawEntries: updatedPolicy?.entries || mergedEntries,
             };
           }
           return p;
