@@ -281,18 +281,6 @@ export const UsersPage: React.FC = () => {
           onCloseCreatePolicy={() => setIsCreatePolicyOpen(false)}
           onNavigateToUsers={() => setMainTab('users')}
         />
-      ) : isAccessDenied ? (
-        <AccessRestrictedState
-          isRetrying={isFetching}
-          onRetry={() => refetch()}
-          onNavigateToPolicies={() => setMainTab('policies')}
-        />
-      ) : isError ? (
-        <DirectoryErrorState
-          error={error}
-          isRetrying={isFetching}
-          onRetry={() => refetch()}
-        />
       ) : (
         <>
           {/* Info Banner Architecture Visualizer */}
@@ -379,7 +367,7 @@ export const UsersPage: React.FC = () => {
               Total Users
             </Text>
             <Text fontSize="22px" fontWeight="600" color={themeColors.text.title}>
-              {isLoading ? '...' : totalUsersCount}
+              {isAccessDenied || isError ? '—' : isLoading ? '...' : totalUsersCount}
             </Text>
           </Box>
         </Flex>
@@ -400,7 +388,7 @@ export const UsersPage: React.FC = () => {
               Active
             </Text>
             <Text fontSize="22px" fontWeight="600" color={themeColors.text.title}>
-              {isLoading ? '...' : activeCount}
+              {isAccessDenied || isError ? '—' : isLoading ? '...' : activeCount}
             </Text>
           </Box>
         </Flex>
@@ -421,7 +409,7 @@ export const UsersPage: React.FC = () => {
               Suspended
             </Text>
             <Text fontSize="22px" fontWeight="600" color={themeColors.text.title}>
-              {isLoading ? '...' : suspendedCount}
+              {isAccessDenied || isError ? '—' : isLoading ? '...' : suspendedCount}
             </Text>
           </Box>
         </Flex>
@@ -442,7 +430,7 @@ export const UsersPage: React.FC = () => {
               MFA Enabled
             </Text>
             <Text fontSize="22px" fontWeight="600" color={themeColors.text.title}>
-              {isLoading ? '...' : `${mfaEnabledCount} of ${totalUsersCount}`}
+              {isAccessDenied || isError ? '—' : isLoading ? '...' : `${mfaEnabledCount} of ${totalUsersCount}`}
             </Text>
           </Box>
         </Flex>
@@ -486,6 +474,7 @@ export const UsersPage: React.FC = () => {
               align="center"
               px={3}
               gap={2}
+              opacity={isAccessDenied || isError ? 0.6 : 1}
             >
               <Icon name="search" size={16} color={themeColors.text.secondary} />
               <Input
@@ -498,6 +487,7 @@ export const UsersPage: React.FC = () => {
                 _focus={{ outline: 'none', border: 'none' }}
                 p={0}
                 h="auto"
+                disabled={isAccessDenied || isError}
               />
             </Flex>
 
@@ -511,6 +501,7 @@ export const UsersPage: React.FC = () => {
               w="150px"
               h="38px"
               borderColor={themeColors.input.filterBorder}
+              disabled={isAccessDenied || isError}
             />
 
             <SelectDropdown
@@ -523,12 +514,26 @@ export const UsersPage: React.FC = () => {
               w="130px"
               h="38px"
               borderColor={themeColors.input.filterBorder}
+              disabled={isAccessDenied || isError}
             />
           </Flex>
 
-          {/* Table */}
-          <Box overflowX="auto">
-            <Box minW="550px">
+          {/* Table Container */}
+          {isAccessDenied ? (
+            <AccessRestrictedState
+              isRetrying={isFetching}
+              onRetry={() => refetch()}
+              onNavigateToPolicies={() => setMainTab('policies')}
+            />
+          ) : isError ? (
+            <DirectoryErrorState
+              error={error}
+              isRetrying={isFetching}
+              onRetry={() => refetch()}
+            />
+          ) : (
+            <Box overflowX="auto">
+              <Box minW="550px">
               <Flex
                 borderBottom="1px solid"
                 borderColor={themeColors.panel.divider}
@@ -754,9 +759,11 @@ export const UsersPage: React.FC = () => {
               )}
             </Box>
           </Box>
+        )}
 
           {/* Pagination bar */}
-          <Flex justify="space-between" align="center" mt={4} fontSize="12px" color={themeColors.text.secondary}>
+          {!isAccessDenied && !isError && manageableUsers.length > 0 && (
+            <Flex justify="space-between" align="center" mt={4} fontSize="12px" color={themeColors.text.secondary}>
             <HStack gap={3} align="center">
               <Text>
                 Showing {filteredUsers.length === 0 ? '0' : `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredUsers.length)}`} of {filteredUsers.length}
@@ -854,7 +861,8 @@ export const UsersPage: React.FC = () => {
               </Button>
             </HStack>
           </Flex>
-        </Box>
+        )}
+      </Box>
 
         {/* Right Panel: Selected User Detail */}
         <Box
@@ -1015,6 +1023,66 @@ export const UsersPage: React.FC = () => {
                 <UserScopedAccessTab user={selectedUser} />
               )}
             </>
+          ) : isAccessDenied ? (
+            <Flex
+              justify="center"
+              align="center"
+              direction="column"
+              minH="260px"
+              color={themeColors.text.secondary}
+              p={6}
+              textAlign="center"
+            >
+              <Flex
+                w="44px"
+                h="44px"
+                borderRadius="50%"
+                bg="#fff7ed"
+                color="#ea580c"
+                border="1px solid #fed7aa"
+                align="center"
+                justify="center"
+                mb={3}
+              >
+                <Icon name="lock" size={20} />
+              </Flex>
+              <Text fontSize="14px" fontWeight="600" color={themeColors.text.title} mb={1}>
+                User details unavailable
+              </Text>
+              <Text fontSize="12px" color={themeColors.text.secondary} maxW="280px">
+                User directory access is restricted. Authorize permissions to view user details.
+              </Text>
+            </Flex>
+          ) : isError ? (
+            <Flex
+              justify="center"
+              align="center"
+              direction="column"
+              minH="260px"
+              color={themeColors.text.secondary}
+              p={6}
+              textAlign="center"
+            >
+              <Flex
+                w="44px"
+                h="44px"
+                borderRadius="50%"
+                bg="#fef2f2"
+                color="#dc2626"
+                border="1px solid #fecaca"
+                align="center"
+                justify="center"
+                mb={3}
+              >
+                <Icon name="x" size={20} />
+              </Flex>
+              <Text fontSize="14px" fontWeight="600" color={themeColors.text.title} mb={1}>
+                User details unavailable
+              </Text>
+              <Text fontSize="12px" color={themeColors.text.secondary} maxW="280px">
+                Directory request failed. User profile cannot be loaded.
+              </Text>
+            </Flex>
           ) : (
             <Flex justify="center" align="center" minH="200px" color={themeColors.text.secondary}>
               <Text fontSize="13px">Select a user to view details</Text>
@@ -1052,28 +1120,27 @@ const AccessRestrictedState: React.FC<{
       direction="column"
       align="center"
       justify="center"
-      p={{ base: 8, md: 12 }}
-      bg="#ffffff"
-      borderRadius="8px"
-      border="1px solid"
-      borderColor={themeColors.panel.border}
-      boxShadow="sm"
+      p={{ base: 6, md: 8 }}
+      bg="#fcfdfe"
+      borderRadius="6px"
+      border="1px dashed"
+      borderColor="#fed7aa"
       textAlign="center"
-      minH="360px"
-      my={4}
+      minH="300px"
+      my={2}
     >
       <Flex
-        w="56px"
-        h="56px"
+        w="48px"
+        h="48px"
         borderRadius="50%"
         bg="#fff7ed"
         border="1px solid #fed7aa"
         color="#ea580c"
         align="center"
         justify="center"
-        mb={4}
+        mb={3}
       >
-        <Icon name="lock" size={26} />
+        <Icon name="lock" size={24} />
       </Flex>
 
       <Box
@@ -1093,11 +1160,11 @@ const AccessRestrictedState: React.FC<{
         HTTP 403 · Access Restricted
       </Box>
 
-      <Text fontSize="18px" fontWeight="700" color={themeColors.text.title} mb={2}>
+      <Text fontSize="16px" fontWeight="700" color={themeColors.text.title} mb={2}>
         User Directory Access Denied
       </Text>
 
-      <Text fontSize="13px" color={themeColors.text.secondary} maxW="520px" mb={6} lineHeight="1.6">
+      <Text fontSize="12px" color={themeColors.text.secondary} maxW="460px" mb={5} lineHeight="1.6">
         Your current account role does not have authorization to view or manage the uCentralSec user directory.
         OWSEC rejected the directory lookup with an <strong>ACCESS_DENIED</strong> code.
         Please contact your platform administrator if you require user management privileges.
@@ -1154,28 +1221,27 @@ const DirectoryErrorState: React.FC<{
       direction="column"
       align="center"
       justify="center"
-      p={{ base: 8, md: 12 }}
-      bg="#ffffff"
-      borderRadius="8px"
-      border="1px solid"
+      p={{ base: 6, md: 8 }}
+      bg="#fffbfa"
+      borderRadius="6px"
+      border="1px dashed"
       borderColor="#fecaca"
-      boxShadow="sm"
       textAlign="center"
-      minH="360px"
-      my={4}
+      minH="300px"
+      my={2}
     >
       <Flex
-        w="56px"
-        h="56px"
+        w="48px"
+        h="48px"
         borderRadius="50%"
         bg="#fef2f2"
         border="1px solid #fecaca"
         color="#dc2626"
         align="center"
         justify="center"
-        mb={4}
+        mb={3}
       >
-        <Icon name="x" size={26} />
+        <Icon name="x" size={24} />
       </Flex>
 
       <Box
@@ -1195,11 +1261,11 @@ const DirectoryErrorState: React.FC<{
         Directory Request Failed
       </Box>
 
-      <Text fontSize="18px" fontWeight="700" color={themeColors.text.title} mb={2}>
+      <Text fontSize="16px" fontWeight="700" color={themeColors.text.title} mb={2}>
         Unable to Load User Directory
       </Text>
 
-      <Text fontSize="13px" color={themeColors.text.secondary} maxW="480px" mb={4} lineHeight="1.6">
+      <Text fontSize="12px" color={themeColors.text.secondary} maxW="440px" mb={3} lineHeight="1.6">
         An unexpected error occurred while communicating with uCentralSec. Check your network connection or verify that OWSEC is operating.
       </Text>
 
@@ -1212,8 +1278,8 @@ const DirectoryErrorState: React.FC<{
         borderRadius="4px"
         border="1px solid #fecaca"
         fontFamily="monospace"
-        maxW="480px"
-        mb={6}
+        maxW="440px"
+        mb={5}
         wordBreak="break-word"
       >
         {errorMessage}
