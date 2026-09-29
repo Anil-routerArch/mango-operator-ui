@@ -23,6 +23,8 @@ import {
   useApiRequirements,
   testPasswordPattern,
   getPasswordRequirementsDescription,
+  parsePasswordPolicy,
+  DEFAULT_PASSWORD_PATTERN,
 } from '@/api';
 import { toaster } from '@/components/ui/toaster';
 import { useAuthStore } from '@/stores/authStore';
@@ -968,6 +970,7 @@ const UserProfileForm: React.FC<{
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
 
   const isPasswordValid = useMemo(
     () => !password.trim() || testPasswordPattern(password.trim(), passwordPattern),
@@ -1208,25 +1211,34 @@ const UserProfileForm: React.FC<{
         />
       </Box>
 
-      {/* View Password Policy Link */}
+      {/* View Password Policy Modal Trigger */}
       <Box mt={1}>
-        <chakra.a
-          href={passwordPolicyLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={passwordPolicyLink}
+        <Button
+          type="button"
+          variant="plain"
+          p={0}
+          h="auto"
           fontSize="12px"
           color={themeColors.brand.accent}
           _hover={{ textDecoration: 'underline' }}
-          display="inline-flex"
-          alignItems="center"
-          gap={1}
+          onClick={() => setIsPolicyModalOpen(true)}
           cursor="pointer"
         >
-          <Text>View password policy</Text>
-          <Icon name="external" size={13} />
-        </chakra.a>
+          <HStack gap={1}>
+            <Text>View password policy</Text>
+            <Icon name="info" size={13} />
+          </HStack>
+        </Button>
       </Box>
+
+      {/* Dynamic OWSEC Password Policy Modal */}
+      <PasswordPolicyModal
+        isOpen={isPolicyModalOpen}
+        onClose={() => setIsPolicyModalOpen(false)}
+        passwordPattern={passwordPattern}
+        passwordPolicyLink={passwordPolicyLink}
+        currentPassword={password}
+      />
 
       {/* Form Action Buttons - Only visible when editing */}
       {isEditing && (
@@ -1261,6 +1273,220 @@ const UserProfileForm: React.FC<{
   );
 };
 
+// Sub-component: Dynamic OWSEC Password Policy Modal
+const PasswordPolicyModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  passwordPattern?: string | null;
+  passwordPolicyLink?: string;
+  currentPassword?: string;
+}> = ({ isOpen, onClose, passwordPattern, passwordPolicyLink, currentPassword = '' }) => {
+  if (!isOpen) return null;
+
+  const rules = parsePasswordPolicy(passwordPattern);
+  const activePattern = passwordPattern || DEFAULT_PASSWORD_PATTERN;
+  const hasPasswordInput = currentPassword.trim().length > 0;
+
+  return (
+    <Box
+      position="fixed"
+      inset="0"
+      bg="rgba(5, 12, 23, 0.54)"
+      display="grid"
+      placeItems="center"
+      zIndex="1200"
+      p={4}
+    >
+      <Box
+        w="min(520px, 95vw)"
+        bg="#ffffff"
+        borderRadius="8px"
+        boxShadow="0 20px 50px rgba(0,0,0,0.3)"
+        p={6}
+      >
+        <Flex justify="space-between" align="flex-start" mb={3}>
+          <HStack gap={2.5}>
+            <Flex
+              w="36px"
+              h="36px"
+              borderRadius="8px"
+              bg={themeColors.brand.accentLight}
+              color={themeColors.brand.accent}
+              align="center"
+              justify="center"
+            >
+              <Icon name="shield" size={20} />
+            </Flex>
+            <Box>
+              <HStack gap={2}>
+                <Text fontSize="16px" fontWeight="700" color={themeColors.text.title}>
+                  Password Policy
+                </Text>
+                <Box
+                  as="span"
+                  fontSize="10px"
+                  fontWeight="600"
+                  px={1.5}
+                  py="1px"
+                  borderRadius="4px"
+                  bg="#eff6ff"
+                  color="#2563eb"
+                  border="1px solid #bfdbfe"
+                >
+                  OWSEC Authoritative
+                </Box>
+              </HStack>
+              <Text fontSize="12px" color={themeColors.text.secondary}>
+                Enforced dynamically via backend security configuration
+              </Text>
+            </Box>
+          </HStack>
+          <Button
+            variant="plain"
+            onClick={onClose}
+            p={1}
+            minW="auto"
+            h="auto"
+            color={themeColors.text.secondary}
+            _hover={{ color: themeColors.text.primary }}
+          >
+            <Icon name="x" size={18} />
+          </Button>
+        </Flex>
+
+        <Text fontSize="13px" color={themeColors.text.secondary} mb={3.5}>
+          Passwords must meet the following complexity rules derived from uCentralSec:
+        </Text>
+
+        {/* Dynamic Rules Checklist */}
+        <VStack gap={2} align="stretch" mb={4}>
+          {rules.map((rule) => {
+            const isMet = hasPasswordInput ? rule.test(currentPassword.trim()) : null;
+            return (
+              <Flex
+                key={rule.id}
+                p={2.5}
+                borderRadius="6px"
+                bg={hasPasswordInput ? (isMet ? '#f0fdf4' : '#fff1f2') : '#f8fafc'}
+                border="1px solid"
+                borderColor={hasPasswordInput ? (isMet ? '#bbf7d0' : '#fecdd3') : '#e2e8f0'}
+                align="flex-start"
+                gap={2.5}
+              >
+                <Box
+                  mt="2px"
+                  color={
+                    hasPasswordInput
+                      ? isMet
+                        ? '#16a34a'
+                        : '#e11d48'
+                      : '#16a34a'
+                  }
+                >
+                  <Icon name={hasPasswordInput ? (isMet ? 'check' : 'x') : 'check'} size={15} />
+                </Box>
+                <Box flex="1">
+                  <Text
+                    fontSize="13px"
+                    fontWeight="600"
+                    color={
+                      hasPasswordInput
+                        ? isMet
+                          ? '#15803d'
+                          : '#be123c'
+                        : themeColors.text.primary
+                    }
+                  >
+                    {rule.label}
+                  </Text>
+                  <Text fontSize="11px" color={themeColors.text.muted}>
+                    {rule.detail}
+                  </Text>
+                </Box>
+                {hasPasswordInput && (
+                  <Box
+                    fontSize="11px"
+                    fontWeight="700"
+                    color={isMet ? '#16a34a' : '#e11d48'}
+                  >
+                    {isMet ? 'Satisfied' : 'Missing'}
+                  </Box>
+                )}
+              </Flex>
+            );
+          })}
+        </VStack>
+
+        {/* Raw OWSEC Pattern Section */}
+        <Box
+          p={2.5}
+          borderRadius="6px"
+          bg="#f8fafc"
+          border="1px solid #e2e8f0"
+          mb={4}
+        >
+          <Flex justify="space-between" align="center" mb={1}>
+            <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary}>
+              Backend Regex Pattern
+            </Text>
+            <Text fontSize="10px" color={themeColors.text.muted}>
+              contract from /api/v1/oauth2
+            </Text>
+          </Flex>
+          <Box
+            as="code"
+            display="block"
+            fontSize="10px"
+            color="#475569"
+            bg="#ffffff"
+            p={1.5}
+            borderRadius="4px"
+            border="1px solid #e2e8f0"
+            fontFamily="monospace"
+            wordBreak="break-all"
+            userSelect="all"
+          >
+            {activePattern}
+          </Box>
+        </Box>
+
+        {/* Footer */}
+        <Flex justify="space-between" align="center" pt={3} borderTop="1px solid" borderColor={themeColors.panel.divider}>
+          {passwordPolicyLink ? (
+            <chakra.a
+              href={passwordPolicyLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              fontSize="12px"
+              color={themeColors.brand.accent}
+              _hover={{ textDecoration: 'underline' }}
+              display="inline-flex"
+              alignItems="center"
+              gap={1}
+            >
+              <Text>Open official policy page</Text>
+              <Icon name="external" size={12} />
+            </chakra.a>
+          ) : (
+            <Box />
+          )}
+
+          <Button
+            bg={themeColors.brand.primary}
+            color="#ffffff"
+            _hover={{ bg: themeColors.brand.primaryHover }}
+            size="sm"
+            px={5}
+            onClick={onClose}
+          >
+            Got it
+          </Button>
+        </Flex>
+      </Box>
+    </Box>
+  );
+};
+
 // Sub-component: Create User Modal
 const CreateUserModal: React.FC<{
   onClose: () => void;
@@ -1285,6 +1511,7 @@ const CreateUserModal: React.FC<{
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [changePassword, setChangePassword] = useState(true);
   const [emailValidation, setEmailValidation] = useState(false);
@@ -1460,22 +1687,22 @@ const CreateUserModal: React.FC<{
                     ? `Password must meet requirements (${getPasswordRequirementsDescription(passwordPattern)})`
                     : getPasswordRequirementsDescription(passwordPattern)}
                 </Text>
-                <chakra.a
-                  href={passwordPolicyLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={passwordPolicyLink}
+                <Button
+                  type="button"
+                  variant="plain"
+                  p={0}
+                  h="auto"
                   fontSize="11px"
                   color={themeColors.brand.accent}
                   _hover={{ textDecoration: 'underline' }}
-                  display="inline-flex"
-                  alignItems="center"
-                  gap={1}
+                  onClick={() => setIsPolicyModalOpen(true)}
                   cursor="pointer"
                 >
-                  <Text>Password policy</Text>
-                  <Icon name="external" size={11} />
-                </chakra.a>
+                  <HStack gap={1}>
+                    <Text>Password policy</Text>
+                    <Icon name="info" size={11} />
+                  </HStack>
+                </Button>
               </Flex>
             </Box>
           </Flex>
@@ -1582,6 +1809,15 @@ const CreateUserModal: React.FC<{
             </Button>
           </Flex>
         </Box>
+
+        {/* Dynamic OWSEC Password Policy Modal */}
+        <PasswordPolicyModal
+          isOpen={isPolicyModalOpen}
+          onClose={() => setIsPolicyModalOpen(false)}
+          passwordPattern={passwordPattern}
+          passwordPolicyLink={passwordPolicyLink}
+          currentPassword={password}
+        />
       </Box>
     </Box>
   );

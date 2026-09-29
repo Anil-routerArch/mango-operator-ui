@@ -348,10 +348,17 @@ export const useApiRequirements = (): ApiRequirements => {
     const secBase = getSecBaseUrl().split('/api/v1')[0];
 
     const resolveLink = (isAccess: boolean, apiResult?: string): string => {
-      if (!apiResult && isAccess) return `${secBase}/wwwassets/access_policy.html`;
-      if (!apiResult && !isAccess) return `${secBase}/wwwassets/password_policy.html`;
-      if (apiResult?.startsWith('http://') || apiResult?.startsWith('https://')) return apiResult;
-      const cleanPath = apiResult?.startsWith('/') ? apiResult : `/${apiResult}`;
+      const defaultPath = isAccess ? '/wwwassets/access_policy.html' : '/wwwassets/password_policy.html';
+      if (!apiResult) return `${secBase}${defaultPath}`;
+      if (apiResult.startsWith('http://') || apiResult.startsWith('https://')) return apiResult;
+
+      // Sanitize filesystem paths like $OWSEC_ROOT/persist/wwwassets/... to web route /wwwassets/...
+      const wwwAssetsIdx = apiResult.indexOf('wwwassets');
+      if (wwwAssetsIdx !== -1) {
+        return `${secBase}/${apiResult.substring(wwwAssetsIdx)}`;
+      }
+
+      const cleanPath = apiResult.startsWith('/') ? apiResult : `/${apiResult}`;
       return `${secBase}${cleanPath}`;
     };
 
@@ -400,4 +407,73 @@ export const getPasswordRequirementsDescription = (pattern?: string | null): str
   if (parts.length <= 1) return `Min ${minLen} characters`;
   const last = parts.pop();
   return `${parts.join(', ')} & ${last}`;
+};
+
+export interface PasswordPolicyRule {
+  id: string;
+  label: string;
+  detail: string;
+  test: (password: string) => boolean;
+}
+
+export const parsePasswordPolicy = (pattern?: string | null): PasswordPolicyRule[] => {
+  const raw = pattern || DEFAULT_PASSWORD_PATTERN;
+  const rules: PasswordPolicyRule[] = [];
+
+  let minLen = 8;
+  const lenMatch = raw.match(/\{(\d+),/);
+  if (lenMatch && lenMatch[1]) {
+    minLen = parseInt(lenMatch[1], 10);
+  }
+  rules.push({
+    id: 'length',
+    label: `Minimum length of ${minLen} characters`,
+    detail: `Must contain at least ${minLen} characters in total`,
+    test: (pw) => pw.length >= minLen,
+  });
+
+  if (raw.includes('[A-Z]')) {
+    rules.push({
+      id: 'uppercase',
+      label: 'At least one uppercase letter (A–Z)',
+      detail: 'Must contain an uppercase Latin letter (A–Z)',
+      test: (pw) => /[A-Z]/.test(pw),
+    });
+  }
+
+  if (raw.includes('[a-z]')) {
+    rules.push({
+      id: 'lowercase',
+      label: 'At least one lowercase letter (a–z)',
+      detail: 'Must contain a lowercase Latin letter (a–z)',
+      test: (pw) => /[a-z]/.test(pw),
+    });
+  }
+
+  if (raw.includes('[0-9]') || raw.includes('\\d')) {
+    rules.push({
+      id: 'number',
+      label: 'At least one number (0–9)',
+      detail: 'Must contain at least one numeric digit (0–9)',
+      test: (pw) => /[0-9]/.test(pw),
+    });
+  }
+
+  if (
+    raw.includes('?') ||
+    raw.includes('!') ||
+    raw.includes('@') ||
+    raw.includes('$') ||
+    raw.includes('^') ||
+    raw.includes('&')
+  ) {
+    rules.push({
+      id: 'symbol',
+      label: 'At least one special character',
+      detail: 'Allowed symbols: ! @ # $ % ^ & * - _ + = ~ ( ) { } [ ] : ; < > . , / ?',
+      test: (pw) => /[#?!@$%^&*\-_+=\~(){}[\]:;<>,.?/\\|`'"]/.test(pw),
+    });
+  }
+
+  return rules;
 };
