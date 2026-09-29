@@ -82,3 +82,57 @@ test('Storage logic simulation: rememberMe=false never resurrects old localStora
     'Page refresh must restore the new valid token, NOT the old token'
   );
 });
+
+test('login and submitMfa clean up storage and reset Axios on failure in catch blocks', () => {
+  const authStorePath = path.join(ROOT_DIR, 'src', 'stores', 'authStore.ts');
+  const content = fs.readFileSync(authStorePath, 'utf-8');
+
+  // Verify catch blocks in authStore.ts perform storage and token reset
+  const matches = content.match(/localStorage\.removeItem\(STORAGE_KEY\);\s+sessionStorage\.removeItem\(STORAGE_KEY\);\s+setApiToken\(null\);/g);
+  assert.ok(matches && matches.length >= 3, 'initializeAuth, login, and submitMfa must all clean up storage and setApiToken(null) on error');
+});
+
+test('Login failure simulation: transient profile failure leaves no stored token and prevents resurrection', async () => {
+  const mockLocalStorage = new Map();
+  const mockSessionStorage = new Map();
+  let mockAxiosToken = null;
+  const STORAGE_KEY = 'access_token';
+
+  const setApiToken = (t) => { mockAxiosToken = t; };
+
+  // Simulated login with delayed persistence and deterministic catch cleanup
+  const mockLoginFlow = async (shouldProfileFail) => {
+    try {
+      const token = 'MOCK_ACCESS_TOKEN';
+      setApiToken(token);
+
+      if (shouldProfileFail) {
+        throw new Error('Profile fetch failed (502 / network timeout)');
+      }
+
+      // Persist only on success
+      mockLocalStorage.set(STORAGE_KEY, token);
+      return true;
+    } catch {
+      // Deterministic cleanup
+      mockLocalStorage.delete(STORAGE_KEY);
+      mockSessionStorage.delete(STORAGE_KEY);
+      setApiToken(null);
+      return false;
+    }
+  };
+
+  // Run failed login
+  const success = await mockLoginFlow(true);
+  assert.strictEqual(success, false, 'Login must report failure');
+
+  // Assert storage is completely clean
+  assert.strictEqual(mockLocalStorage.get(STORAGE_KEY), undefined, 'localStorage must NOT retain access token after failed login');
+  assert.strictEqual(mockSessionStorage.get(STORAGE_KEY), undefined, 'sessionStorage must NOT retain access token after failed login');
+  assert.strictEqual(mockAxiosToken, null, 'Axios token must be reset to null');
+
+  // Refresh must NOT resurrect session
+  const restoredToken = mockSessionStorage.get(STORAGE_KEY) || mockLocalStorage.get(STORAGE_KEY) || null;
+  assert.strictEqual(restoredToken, null, 'Refresh after failed login must not resurrect any session');
+});
+

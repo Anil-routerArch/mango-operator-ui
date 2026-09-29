@@ -115,16 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const token = data.access_token;
 
-      // Save token to browser storage and clean up opposite storage
-      if (rememberMe) {
-        localStorage.setItem(STORAGE_KEY, token);
-        sessionStorage.removeItem(STORAGE_KEY);
-      } else {
-        sessionStorage.setItem(STORAGE_KEY, token);
-        localStorage.removeItem(STORAGE_KEY);
-      }
-
-      // Propagate token to all Axios instances
+      // Propagate token to Axios instances to fetch profile and endpoints
       setApiToken(token);
 
       // Concurrently fetch profile and discover endpoints
@@ -132,6 +123,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         axiosSec.get<User>('oauth2?me=true'),
         fetchSystemEndpoints().catch(() => ({})),
       ]);
+
+      // Only persist to storage once profile retrieval succeeds
+      if (rememberMe) {
+        localStorage.setItem(STORAGE_KEY, token);
+        sessionStorage.removeItem(STORAGE_KEY);
+      } else {
+        sessionStorage.setItem(STORAGE_KEY, token);
+        localStorage.removeItem(STORAGE_KEY);
+      }
 
       set({
         token,
@@ -144,8 +144,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       return true;
     } catch (err: any) {
+      // Deterministically clean up any partially attached token or storage on failure
+      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY);
+      setApiToken(null);
+
       const message = getApiErrorMessage(err, 'Invalid credentials. Please try again.');
-      set({ isLoading: false, error: message, isAuthenticated: false });
+      set({
+        token: null,
+        user: null,
+        isLoading: false,
+        error: message,
+        isAuthenticated: false,
+      });
       throw new Error(message);
     }
   },
@@ -172,6 +183,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
 
       const token = data.access_token;
+
+      // Propagate token to Axios instances to fetch profile and endpoints
+      setApiToken(token);
+
+      const [profileRes] = await Promise.all([
+        axiosSec.get<User>('oauth2?me=true'),
+        fetchSystemEndpoints().catch(() => ({})),
+      ]);
+
+      // Only persist to storage once profile retrieval succeeds
       if (rememberMe) {
         localStorage.setItem(STORAGE_KEY, token);
         sessionStorage.removeItem(STORAGE_KEY);
@@ -179,13 +200,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         sessionStorage.setItem(STORAGE_KEY, token);
         localStorage.removeItem(STORAGE_KEY);
       }
-
-      setApiToken(token);
-
-      const [profileRes] = await Promise.all([
-        axiosSec.get<User>('oauth2?me=true'),
-        fetchSystemEndpoints().catch(() => ({})),
-      ]);
 
       set({
         token,
@@ -198,8 +212,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       return true;
     } catch (err: any) {
+      // Deterministically clean up any partially attached token or storage on failure
+      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY);
+      setApiToken(null);
+
       const message = getApiErrorMessage(err, 'MFA verification failed.');
-      set({ isLoading: false, error: message });
+      set({
+        token: null,
+        user: null,
+        isLoading: false,
+        error: message,
+        isAuthenticated: false,
+      });
       throw new Error(message);
     }
   },
