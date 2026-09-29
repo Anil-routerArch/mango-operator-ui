@@ -287,3 +287,89 @@ test('container-level verification: openwifi_operator-ui serves env-config.js an
   );
 });
 
+test('nginx/default.conf defines exact matches for env-config.js and index.html before static assets', () => {
+  const confPath = path.join(ROOT_DIR, 'nginx/default.conf');
+  assert.ok(fs.existsSync(confPath), 'nginx/default.conf must exist');
+
+  const content = fs.readFileSync(confPath, 'utf-8');
+  const envConfigIndex = content.indexOf('location = /env-config.js');
+  const indexHtmlIndex = content.indexOf('location = /index.html');
+  const staticRegexIndex = content.indexOf('location ~* \\.(js|css|');
+
+  assert.ok(envConfigIndex !== -1, 'location = /env-config.js exact match must be defined');
+  assert.ok(indexHtmlIndex !== -1, 'location = /index.html exact match must be defined');
+  assert.ok(staticRegexIndex !== -1, 'Static assets regex location must be defined');
+  assert.ok(
+    envConfigIndex < staticRegexIndex,
+    'location = /env-config.js must be declared before static assets regex'
+  );
+  assert.ok(
+    indexHtmlIndex < staticRegexIndex,
+    'location = /index.html must be declared before static assets regex'
+  );
+});
+
+test('container-level verification: Nginx response headers prevent caching of env-config.js and index.html', (t) => {
+  let isContainerRunning = false;
+  try {
+    const containerStatus = execSync(
+      'docker inspect -f "{{.State.Running}}" openwifi_operator-ui 2>/dev/null',
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
+    ).trim();
+    isContainerRunning = containerStatus === 'true';
+  } catch {
+    isContainerRunning = false;
+  }
+
+  if (!isContainerRunning) {
+    t.skip('Docker daemon or openwifi_operator-ui container is not available/running');
+    return;
+  }
+
+  // 1. env-config.js must have no-store, no-cache and NEVER be cached
+  const envConfigHeaders = execSync(
+    'docker exec openwifi_operator-ui wget --no-check-certificate -S -O /dev/null https://127.0.0.1:8445/env-config.js 2>&1',
+    { encoding: 'utf-8' }
+  );
+  assert.ok(
+    envConfigHeaders.includes('no-store'),
+    'env-config.js must return Cache-Control: no-store'
+  );
+  assert.ok(
+    envConfigHeaders.includes('no-cache'),
+    'env-config.js must return Cache-Control: no-cache'
+  );
+  assert.strictEqual(
+    envConfigHeaders.includes('immutable'),
+    false,
+    'env-config.js must NOT return Cache-Control: immutable'
+  );
+
+  // 2. index.html must have no-store, no-cache
+  const indexHeaders = execSync(
+    'docker exec openwifi_operator-ui wget --no-check-certificate -S -O /dev/null https://127.0.0.1:8445/index.html 2>&1',
+    { encoding: 'utf-8' }
+  );
+  assert.ok(
+    indexHeaders.includes('no-store'),
+    'index.html must return Cache-Control: no-store'
+  );
+
+  // 3. Static assets under /assets/ must have immutable caching
+  const assetFile = execSync(
+    'docker exec openwifi_operator-ui sh -c "ls /usr/share/nginx/html/assets/*.js | head -n 1"',
+    { encoding: 'utf-8' }
+  ).trim();
+  if (assetFile) {
+    const assetBasename = path.basename(assetFile);
+    const assetHeaders = execSync(
+      `docker exec openwifi_operator-ui wget --no-check-certificate -S -O /dev/null https://127.0.0.1:8445/assets/${assetBasename} 2>&1`,
+      { encoding: 'utf-8' }
+    );
+    assert.ok(
+      assetHeaders.includes('immutable'),
+      'Hashed static assets must return Cache-Control: immutable'
+    );
+  }
+});
+
