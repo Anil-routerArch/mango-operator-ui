@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import axios from 'axios';
 import {
   Box,
   Button,
@@ -78,10 +79,19 @@ const getInitials = (name?: string, email?: string): string => {
 
 export const UsersPage: React.FC = () => {
   // Fetch real users from OWSEC API using token
-  const { data: users = [], isLoading, isFetching, refetch } = useGetUsers();
+  const { data: users = [], isLoading, isFetching, isError, error, refetch } = useGetUsers();
   const createUserMutation = useCreateUser();
   const updateUserMutation = useUpdateUser();
   const suspendUserMutation = useSuspendUser();
+
+  // TC-USR-012/013: Inspect error status to distinguish 403 Access Restricted from other errors
+  const isAccessDenied = useMemo(() => {
+    if (!isError || !error) return false;
+    if (axios.isAxiosError(error)) {
+      return error.response?.status === 403;
+    }
+    return (error as any)?.response?.status === 403;
+  }, [isError, error]);
 
   // Selection & UI State (persisted via Zustand)
   const {
@@ -192,10 +202,12 @@ export const UsersPage: React.FC = () => {
         onRefresh={() => refetch()}
         primaryAction={
           mainTab === 'users'
-            ? {
-                label: 'Create user',
-                onClick: () => setIsCreateModalOpen(true),
-              }
+            ? !isAccessDenied && !isError
+              ? {
+                  label: 'Create user',
+                  onClick: () => setIsCreateModalOpen(true),
+                }
+              : undefined
             : isCurrentUserRoot
             ? {
                 label: 'Create policy',
@@ -268,6 +280,18 @@ export const UsersPage: React.FC = () => {
           isCreatePolicyOpen={isCreatePolicyOpen}
           onCloseCreatePolicy={() => setIsCreatePolicyOpen(false)}
           onNavigateToUsers={() => setMainTab('users')}
+        />
+      ) : isAccessDenied ? (
+        <AccessRestrictedState
+          isRetrying={isFetching}
+          onRetry={() => refetch()}
+          onNavigateToPolicies={() => setMainTab('policies')}
+        />
+      ) : isError ? (
+        <DirectoryErrorState
+          error={error}
+          isRetrying={isFetching}
+          onRetry={() => refetch()}
         />
       ) : (
         <>
@@ -528,9 +552,88 @@ export const UsersPage: React.FC = () => {
                     Loading users from OpenWiFi...
                   </Text>
                 </Flex>
+              ) : manageableUsers.length === 0 ? (
+                <Flex
+                  justify="center"
+                  align="center"
+                  direction="column"
+                  minH="220px"
+                  p={6}
+                  textAlign="center"
+                >
+                  <Flex
+                    w="44px"
+                    h="44px"
+                    borderRadius="50%"
+                    bg={themeColors.brand.accentLight}
+                    color={themeColors.brand.accent}
+                    align="center"
+                    justify="center"
+                    mb={3}
+                  >
+                    <Icon name="users" size={22} />
+                  </Flex>
+                  <Text fontSize="14px" fontWeight="600" color={themeColors.text.title} mb={1}>
+                    No users in directory
+                  </Text>
+                  <Text fontSize="12px" color={themeColors.text.secondary} maxW="320px" mb={4}>
+                    There are currently no manageable users configured in OpenWiFi. Create your first user account to get started.
+                  </Text>
+                  <Button
+                    size="sm"
+                    bg={themeColors.brand.primary}
+                    color="#ffffff"
+                    _hover={{ bg: themeColors.brand.primaryHover }}
+                    onClick={() => setIsCreateModalOpen(true)}
+                    fontWeight="600"
+                  >
+                    <HStack gap={1.5}>
+                      <Icon name="plus" size={13} />
+                      <Text>Create user</Text>
+                    </HStack>
+                  </Button>
+                </Flex>
               ) : filteredUsers.length === 0 ? (
-                <Flex justify="center" align="center" minH="180px" color={themeColors.text.secondary}>
-                  <Text fontSize="13px">No users found</Text>
+                <Flex
+                  justify="center"
+                  align="center"
+                  direction="column"
+                  minH="180px"
+                  p={6}
+                  textAlign="center"
+                >
+                  <Flex
+                    w="40px"
+                    h="40px"
+                    borderRadius="50%"
+                    bg="#f1f5f9"
+                    color={themeColors.text.secondary}
+                    align="center"
+                    justify="center"
+                    mb={2.5}
+                  >
+                    <Icon name="search" size={20} />
+                  </Flex>
+                  <Text fontSize="14px" fontWeight="600" color={themeColors.text.title} mb={1}>
+                    No matching users
+                  </Text>
+                  <Text fontSize="12px" color={themeColors.text.secondary} maxW="300px" mb={3}>
+                    No users match your active search and filter criteria.
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    borderColor={themeColors.panel.border}
+                    color={themeColors.text.primary}
+                    onClick={() => {
+                      setSearch('');
+                      setRoleFilter('All Roles');
+                      setStatusFilter('All Status');
+                    }}
+                    cursor="pointer"
+                  >
+                    Reset filters
+                  </Button>
                 </Flex>
               ) : (
                 paginatedUsers.map((u) => {
@@ -935,6 +1038,203 @@ export const UsersPage: React.FC = () => {
         />
       )}
     </Box>
+  );
+};
+
+// Sub-component: Access Restricted State (TC-USR-012/013: OWSEC 403 ACCESS_DENIED)
+const AccessRestrictedState: React.FC<{
+  isRetrying?: boolean;
+  onRetry: () => void;
+  onNavigateToPolicies: () => void;
+}> = ({ isRetrying, onRetry, onNavigateToPolicies }) => {
+  return (
+    <Flex
+      direction="column"
+      align="center"
+      justify="center"
+      p={{ base: 8, md: 12 }}
+      bg="#ffffff"
+      borderRadius="8px"
+      border="1px solid"
+      borderColor={themeColors.panel.border}
+      boxShadow="sm"
+      textAlign="center"
+      minH="360px"
+      my={4}
+    >
+      <Flex
+        w="56px"
+        h="56px"
+        borderRadius="50%"
+        bg="#fff7ed"
+        border="1px solid #fed7aa"
+        color="#ea580c"
+        align="center"
+        justify="center"
+        mb={4}
+      >
+        <Icon name="lock" size={26} />
+      </Flex>
+
+      <Box
+        as="span"
+        fontSize="11px"
+        fontWeight="700"
+        px={2.5}
+        py="2px"
+        borderRadius="4px"
+        bg="#ffedd5"
+        color="#c2410c"
+        border="1px solid #fed7aa"
+        mb={2}
+        textTransform="uppercase"
+        letterSpacing="0.5px"
+      >
+        HTTP 403 · Access Restricted
+      </Box>
+
+      <Text fontSize="18px" fontWeight="700" color={themeColors.text.title} mb={2}>
+        User Directory Access Denied
+      </Text>
+
+      <Text fontSize="13px" color={themeColors.text.secondary} maxW="520px" mb={6} lineHeight="1.6">
+        Your current account role does not have authorization to view or manage the uCentralSec user directory.
+        OWSEC rejected the directory lookup with an <strong>ACCESS_DENIED</strong> code.
+        Please contact your platform administrator if you require user management privileges.
+      </Text>
+
+      <HStack gap={3}>
+        <Button
+          variant="outline"
+          size="sm"
+          borderColor={themeColors.panel.border}
+          color={themeColors.text.primary}
+          disabled={isRetrying}
+          onClick={onRetry}
+          _hover={{ bg: themeColors.canvas.bg }}
+          cursor="pointer"
+        >
+          <HStack gap={1.5}>
+            <Icon name="refresh" size={13} />
+            <Text>{isRetrying ? 'Retrying...' : 'Retry request'}</Text>
+          </HStack>
+        </Button>
+        <Button
+          bg={themeColors.brand.primary}
+          color="#ffffff"
+          _hover={{ bg: themeColors.brand.primaryHover }}
+          size="sm"
+          onClick={onNavigateToPolicies}
+          cursor="pointer"
+          fontWeight="600"
+        >
+          <HStack gap={1.5}>
+            <Icon name="shield" size={13} />
+            <Text>View security policies</Text>
+          </HStack>
+        </Button>
+      </HStack>
+    </Flex>
+  );
+};
+
+// Sub-component: Request Error State (TC-USR-012/013: 500, Network, Timeout)
+const DirectoryErrorState: React.FC<{
+  error: unknown;
+  isRetrying?: boolean;
+  onRetry: () => void;
+}> = ({ error, isRetrying, onRetry }) => {
+  const errorMessage =
+    (error as any)?.response?.data?.ErrorDescription ||
+    (error as any)?.message ||
+    'Failed to communicate with OpenWiFi Security service';
+
+  return (
+    <Flex
+      direction="column"
+      align="center"
+      justify="center"
+      p={{ base: 8, md: 12 }}
+      bg="#ffffff"
+      borderRadius="8px"
+      border="1px solid"
+      borderColor="#fecaca"
+      boxShadow="sm"
+      textAlign="center"
+      minH="360px"
+      my={4}
+    >
+      <Flex
+        w="56px"
+        h="56px"
+        borderRadius="50%"
+        bg="#fef2f2"
+        border="1px solid #fecaca"
+        color="#dc2626"
+        align="center"
+        justify="center"
+        mb={4}
+      >
+        <Icon name="x" size={26} />
+      </Flex>
+
+      <Box
+        as="span"
+        fontSize="11px"
+        fontWeight="700"
+        px={2.5}
+        py="2px"
+        borderRadius="4px"
+        bg="#fee2e2"
+        color="#b91c1c"
+        border="1px solid #fecaca"
+        mb={2}
+        textTransform="uppercase"
+        letterSpacing="0.5px"
+      >
+        Directory Request Failed
+      </Box>
+
+      <Text fontSize="18px" fontWeight="700" color={themeColors.text.title} mb={2}>
+        Unable to Load User Directory
+      </Text>
+
+      <Text fontSize="13px" color={themeColors.text.secondary} maxW="480px" mb={4} lineHeight="1.6">
+        An unexpected error occurred while communicating with uCentralSec. Check your network connection or verify that OWSEC is operating.
+      </Text>
+
+      <Box
+        as="code"
+        fontSize="11px"
+        color="#b91c1c"
+        bg="#fef2f2"
+        p={2}
+        borderRadius="4px"
+        border="1px solid #fecaca"
+        fontFamily="monospace"
+        maxW="480px"
+        mb={6}
+        wordBreak="break-word"
+      >
+        {errorMessage}
+      </Box>
+
+      <Button
+        bg={themeColors.brand.primary}
+        color="#ffffff"
+        _hover={{ bg: themeColors.brand.primaryHover }}
+        size="sm"
+        disabled={isRetrying}
+        onClick={onRetry}
+        cursor="pointer"
+        fontWeight="600"
+      >
+        <HStack gap={1.5}>
+          <Icon name="refresh" size={13} />
+          <Text>{isRetrying ? 'Retrying...' : 'Retry request'}</Text>
+        </HStack>
+      </Button>
+    </Flex>
   );
 };
 
