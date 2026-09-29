@@ -1,75 +1,74 @@
-# React + TypeScript + Vite
+# Mango Operator UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Web management console for Mango Cloud and OpenWiFi network administration.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+The development server runs by default on `http://localhost:5173`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Production Build
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build
+```
 
+Build outputs will be emitted to `./dist/`.
+
+## Running with Docker
+
+### 1. Build the Docker Image
+
+```bash
+docker build -t mango-operator-ui .
+```
+
+### 2. SSL Termination & Certificate Mounting
+
+Following OpenWiFi architecture (`owprov-ui`, `owgw-ui`), SSL certificates are treated as deployment secrets and are mounted at runtime rather than baked into the container image.
+
+Nginx terminates HTTPS on port **8445** and expects the following certificate files:
+- `/etc/nginx/restapi-cert.pem` (SSL Certificate)
+- `/etc/nginx/restapi-key.pem` (SSL Private Key)
+
+#### Production / Docker Compose Deployment (OpenWiFi Standard)
+
+Mount the cluster certificates from your OpenWiFi deployment:
+
+```yaml
+services:
+  operator-ui:
+    image: mango-operator-ui
+    ports:
+      - "8445:8445"
+    environment:
+      - VITE_UCENTRALSEC_URL=https://openwifi.wlan.local:16001
+      - VITE_MANGO_MDU_URL=https://openwifi.wlan.local:16010
+    volumes:
+      - ./certs/restapi-cert.pem:/etc/nginx/restapi-cert.pem:ro
+      - ./certs/restapi-key.pem:/etc/nginx/restapi-key.pem:ro
+```
+
+#### Standalone `docker run` with Custom Certificates
+
+```bash
+docker run -d \
+  -p 8445:8445 \
+  -v /path/to/certs/restapi-cert.pem:/etc/nginx/restapi-cert.pem:ro \
+  -v /path/to/certs/restapi-key.pem:/etc/nginx/restapi-key.pem:ro \
+  -e VITE_UCENTRALSEC_URL=https://openwifi.wlan.local:16001 \
+  -e VITE_MANGO_MDU_URL=https://openwifi.wlan.local:16010 \
+  mango-operator-ui
+```
+
+#### Standalone `docker run` without Mounted Certificates (Fallback)
+
+If run standalone without mounted certificates, `/docker-entrypoint.d/30-generate-certs.sh` automatically generates a fallback self-signed SSL certificate so Nginx starts cleanly for local testing:
+
+```bash
+docker run -d -p 8445:8445 mango-operator-ui
 ```
