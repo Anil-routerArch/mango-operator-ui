@@ -53,7 +53,9 @@ services:
       - ./certs/restapi-key.pem:/etc/nginx/restapi-key.pem:ro
 ```
 
-#### Standalone `docker run` with Custom Certificates
+#### Standalone `docker run`
+
+Mount your certificates into the container at `/etc/nginx/`:
 
 ```bash
 docker run -d \
@@ -63,12 +65,4 @@ docker run -d \
   -e VITE_UCENTRALSEC_URL=https://openwifi.wlan.local:16001 \
   -e VITE_MANGO_MDU_URL=https://openwifi.wlan.local:16010 \
   mango-operator-ui
-```
-
-#### Standalone `docker run` without Mounted Certificates (Fallback)
-
-If run standalone without mounted certificates, `/docker-entrypoint.d/30-generate-certs.sh` automatically generates a fallback self-signed SSL certificate so Nginx starts cleanly for local testing:
-
-```bash
-docker run -d -p 8445:8445 mango-operator-ui
 ```

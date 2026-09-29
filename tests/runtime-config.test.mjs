@@ -267,15 +267,6 @@ test('container-level verification: openwifi_operator-ui serves env-config.js an
     'Container index.html must include <script src="/env-config.js"></script>'
   );
 
-  const certScriptCheck = execSync(
-    'docker exec openwifi_operator-ui ls -l /docker-entrypoint.d/30-generate-certs.sh',
-    { encoding: 'utf-8' }
-  );
-  assert.ok(
-    certScriptCheck.includes('-rwx') || certScriptCheck.includes('-r-x'),
-    'Container must have executable /docker-entrypoint.d/30-generate-certs.sh'
-  );
-
   const scriptCheck = execSync(
     'docker exec openwifi_operator-ui ls -l /docker-entrypoint.d/40-generate-config.sh',
     { encoding: 'utf-8' }
@@ -294,15 +285,5 @@ test('container-level verification: openwifi_operator-ui serves env-config.js an
     containerEnvConfig.includes('window._env_ = {'),
     'Container env-config.js must contain window._env_ assignment'
   );
-});
-
-test('30-generate-certs.sh generates valid fallback self-signed SSL certs if none are mounted', () => {
-  const scriptPath = path.join(ROOT_DIR, 'docker-entrypoint.d/30-generate-certs.sh');
-  assert.ok(fs.existsSync(scriptPath), '30-generate-certs.sh must exist');
-
-  const content = fs.readFileSync(scriptPath, 'utf-8');
-  assert.ok(content.includes('/etc/nginx/restapi-cert.pem'), 'Script must check for /etc/nginx/restapi-cert.pem');
-  assert.ok(content.includes('/etc/nginx/restapi-key.pem'), 'Script must check for /etc/nginx/restapi-key.pem');
-  assert.ok(content.includes('openssl req -x509'), 'Script must generate self-signed cert if missing');
 });
 

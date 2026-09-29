@@ -18,9 +18,6 @@ RUN npm run build
 # Stage 2: Nginx Runtime
 FROM nginx:1.24-alpine
 
-# Install openssl for fallback self-signed SSL certificate generation
-RUN apk add --no-cache openssl
-
 # Remove default static files
 RUN rm -rf /usr/share/nginx/html/*
 
@@ -30,10 +27,9 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Copy Nginx SSL and routing configuration
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 
-# Copy runtime entrypoint scripts
-COPY docker-entrypoint.d/30-generate-certs.sh /docker-entrypoint.d/30-generate-certs.sh
+# Copy runtime environment variable generator script
 COPY docker-entrypoint.d/40-generate-config.sh /docker-entrypoint.d/40-generate-config.sh
-RUN chmod +x /docker-entrypoint.d/30-generate-certs.sh /docker-entrypoint.d/40-generate-config.sh
+RUN chmod +x /docker-entrypoint.d/40-generate-config.sh
 
 EXPOSE 8445
 
