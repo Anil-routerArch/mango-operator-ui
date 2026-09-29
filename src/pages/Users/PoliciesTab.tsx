@@ -478,7 +478,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
       } else {
         if (perm.read) access.push('READ');
         if (perm.create) access.push('CREATE');
-        if (perm.update) access.push('MODIFY');
+        if (perm.update) access.push('UPDATE');
         if (perm.delete) access.push('DELETE');
       }
 
@@ -584,7 +584,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
         } else {
           if (perm.read) access.push('READ');
           if (perm.create) access.push('CREATE');
-          if (perm.update) access.push('MODIFY');
+          if (perm.update) access.push('UPDATE');
           if (perm.delete) access.push('DELETE');
         }
 
@@ -1920,7 +1920,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Box flex="1.8">Resource</Box>
                       <Box flex="1" textAlign="center">Read</Box>
                       <Box flex="1" textAlign="center">Create</Box>
-                      <Box flex="1" textAlign="center">Modify</Box>
+                      <Box flex="1" textAlign="center">Update</Box>
                       <Box flex="1" textAlign="center">Delete</Box>
                       <Box flex="1" textAlign="center">Set All</Box>
                     </Flex>
@@ -2022,7 +2022,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                             )}
                           </Flex>
 
-                          {/* Modify */}
+                          {/* Update */}
                           <Flex
                             flex="1"
                             justify="center"
