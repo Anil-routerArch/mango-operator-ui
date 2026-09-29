@@ -25,6 +25,24 @@ test('client.ts prioritizes active tab sessionStorage over localStorage in attac
   );
 });
 
+test('client.ts error interceptor removes access_token without clearing entire sessionStorage', () => {
+  const clientPath = path.join(ROOT_DIR, 'src', 'api', 'client.ts');
+  const content = fs.readFileSync(clientPath, 'utf-8');
+
+  assert.strictEqual(
+    content.includes('sessionStorage.clear()'),
+    false,
+    'client.ts must NOT call sessionStorage.clear() to prevent erasing unrelated session data'
+  );
+
+  const removeMatches = content.match(/sessionStorage\.removeItem\('access_token'\);/g);
+  assert.ok(
+    removeMatches && removeMatches.length >= 2,
+    'client.ts must call sessionStorage.removeItem("access_token") in both 403 and 401 error handlers'
+  );
+});
+
+
 test('login and submitMfa cleanly remove token from opposite storage', () => {
   const authStorePath = path.join(ROOT_DIR, 'src', 'stores', 'authStore.ts');
   const content = fs.readFileSync(authStorePath, 'utf-8');

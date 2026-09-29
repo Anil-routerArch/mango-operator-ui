@@ -109,7 +109,7 @@ const handleResponseError = (error: AxiosError<ApiErrorData>) => {
       (data?.ErrorCode === AUTH_EXPIRED_TOKEN_CODE || data?.ErrorCode === AUTH_INVALID_TOKEN_CODE)
     ) {
       localStorage.removeItem('access_token');
-      sessionStorage.clear();
+      sessionStorage.removeItem('access_token');
       setApiToken(null);
       
       // Redirect to login preserving hash routing if present
@@ -121,7 +121,7 @@ const handleResponseError = (error: AxiosError<ApiErrorData>) => {
     // 401 Unauthorized handling
     if (status === 401) {
       localStorage.removeItem('access_token');
-      sessionStorage.clear();
+      sessionStorage.removeItem('access_token');
       setApiToken(null);
       if (!window.location.href.includes('/login')) {
         window.location.href = '/#/login';
