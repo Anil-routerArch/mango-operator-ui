@@ -149,6 +149,18 @@ export const parseEntriesToPermissions = (entries?: ManagementPolicyEntry[]): Re
 
   if (entries && Array.isArray(entries)) {
     for (const entry of entries) {
+      if (!entry) continue;
+
+      // Only global, unscoped entries are represented in the UI matrix.
+      // Entries scoped to specific users or sub-policies must not populate
+      // the matrix to prevent promoting scoped permissions to global policy permissions.
+      const hasCustomScoping = Boolean(
+        (entry as any).users?.length || (entry as any).policy
+      );
+      if (hasCustomScoping) {
+        continue;
+      }
+
       const accessList = (entry.access || []).map((a) => a.toUpperCase());
       const isFull = accessList.includes('FULL') || accessList.includes('*');
       const canRead = isFull || accessList.includes('READ');
