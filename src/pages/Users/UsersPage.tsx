@@ -110,20 +110,35 @@ export const UsersPage: React.FC = () => {
     }
   }, [pageSize]);
 
-  // Auto-select first user when users list loads
+  const currentUser = useAuthStore((s) => s.user);
+  const isCurrentUserRoot = currentUser?.userRole?.toLowerCase() === 'root';
+
+  // Self-account exclusion (TC-USR-001/002):
+  // Exclude the currently logged-in user from manageable users collection
+  const manageableUsers = useMemo(() => {
+    if (!currentUser?.id) return users;
+    return users.filter((u) => u.id !== currentUser.id);
+  }, [users, currentUser?.id]);
+
+  // Auto-select first user when manageable users list loads
   useEffect(() => {
-    if (users.length > 0 && !selectedUserId) {
-      setSelectedUserId(users[0].id);
+    if (manageableUsers.length > 0) {
+      const exists = manageableUsers.some((u) => u.id === selectedUserId);
+      if (!exists) {
+        setSelectedUserId(manageableUsers[0].id);
+      }
+    } else {
+      setSelectedUserId(null);
     }
-  }, [users, selectedUserId]);
+  }, [manageableUsers, selectedUserId]);
 
   const selectedUser = useMemo(() => {
-    return users.find((u) => u.id === selectedUserId) || users[0] || null;
-  }, [users, selectedUserId]);
+    return manageableUsers.find((u) => u.id === selectedUserId) || manageableUsers[0] || null;
+  }, [manageableUsers, selectedUserId]);
 
   // Filtered Users List
   const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
+    return manageableUsers.filter((u) => {
       const q = search.toLowerCase();
       const matchesSearch =
         (u.name || '').toLowerCase().includes(q) ||
@@ -136,7 +151,7 @@ export const UsersPage: React.FC = () => {
         (statusFilter === 'Suspended' && u.suspended);
       return matchesSearch && matchesRole && matchesStatus;
     });
-  }, [users, search, roleFilter, statusFilter]);
+  }, [manageableUsers, search, roleFilter, statusFilter]);
 
   // Reset pagination to first page when search or filters change
   useEffect(() => {
@@ -151,14 +166,11 @@ export const UsersPage: React.FC = () => {
     return filteredUsers.slice(startIndex, startIndex + pageSize);
   }, [filteredUsers, currentPage, pageSize]);
 
-  // Derived KPI Counts
-  const totalUsersCount = users.length;
-  const activeCount = users.filter((u) => !u.suspended).length;
-  const suspendedCount = users.filter((u) => u.suspended).length;
-  const mfaEnabledCount = users.filter((u) => u.userTypeProprietaryInfo?.mfa?.enabled).length;
-
-  const currentUser = useAuthStore((s) => s.user);
-  const isCurrentUserRoot = currentUser?.userRole?.toLowerCase() === 'root';
+  // Derived KPI Counts (calculated from manageableUsers per TC-USR-001/002)
+  const totalUsersCount = manageableUsers.length;
+  const activeCount = manageableUsers.filter((u) => !u.suspended).length;
+  const suspendedCount = manageableUsers.filter((u) => u.suspended).length;
+  const mfaEnabledCount = manageableUsers.filter((u) => u.userTypeProprietaryInfo?.mfa?.enabled).length;
 
   return (
     <Box w="100%" pb={8}>
