@@ -271,7 +271,106 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   // New policy modal state
   const [newPolicyName, setNewPolicyName] = useState('');
   const [newPolicyDesc, setNewPolicyDesc] = useState('');
-  const [newPolicyPreset, setNewPolicyPreset] = useState('Network Operator');
+  const [newPolicyPreset, setNewPolicyPreset] = useState<'custom' | 'full' | 'read'>('custom');
+  const [newPolicyPermissions, setNewPolicyPermissions] = useState<ResourcePermission[]>(() =>
+    ALL_POLICY_RESOURCES.map((res) => ({
+      resource: res,
+      read: true,
+      create: false,
+      update: false,
+      delete: false,
+    }))
+  );
+
+  const handleApplyPreset = (presetType: 'full' | 'read' | 'clear') => {
+    if (presetType === 'full') {
+      setNewPolicyPreset('full');
+      setNewPolicyPermissions(
+        ALL_POLICY_RESOURCES.map((res) => ({
+          resource: res,
+          read: true,
+          create: true,
+          update: true,
+          delete: true,
+        }))
+      );
+    } else if (presetType === 'read') {
+      setNewPolicyPreset('read');
+      setNewPolicyPermissions(
+        ALL_POLICY_RESOURCES.map((res) => ({
+          resource: res,
+          read: true,
+          create: false,
+          update: false,
+          delete: false,
+        }))
+      );
+    } else {
+      setNewPolicyPreset('custom');
+      setNewPolicyPermissions(
+        ALL_POLICY_RESOURCES.map((res) => ({
+          resource: res,
+          read: false,
+          create: false,
+          update: false,
+          delete: false,
+        }))
+      );
+    }
+  };
+
+  const handleToggleNewPolicyPermission = (
+    resource: string,
+    action: 'read' | 'create' | 'update' | 'delete'
+  ) => {
+    setNewPolicyPreset('custom');
+    setNewPolicyPermissions((prev) =>
+      prev.map((p) => {
+        if (p.resource === resource) {
+          return {
+            ...p,
+            [action]: !p[action],
+          };
+        }
+        return p;
+      })
+    );
+  };
+
+  const handleToggleResourceAll = (resource: string) => {
+    setNewPolicyPreset('custom');
+    setNewPolicyPermissions((prev) =>
+      prev.map((p) => {
+        if (p.resource === resource) {
+          const isFull = p.read && p.create && p.update && p.delete;
+          return {
+            ...p,
+            read: !isFull,
+            create: !isFull,
+            update: !isFull,
+            delete: !isFull,
+          };
+        }
+        return p;
+      })
+    );
+  };
+
+  const handleCloseCreateModal = () => {
+    setNewPolicyName('');
+    setNewPolicyDesc('');
+    setNewPolicyPreset('custom');
+    setNewPolicyPermissions(
+      ALL_POLICY_RESOURCES.map((res) => ({
+        resource: res,
+        read: true,
+        create: false,
+        update: false,
+        delete: false,
+      }))
+    );
+    if (onCloseCreatePolicy) onCloseCreatePolicy();
+  };
 
   // Filtered policies list
   const filteredPolicies = useMemo(() => {
@@ -363,11 +462,16 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
     const accessGroups: Record<string, string[]> = {};
     editPermissions.forEach((perm) => {
+      const isFull = perm.read && perm.create && perm.update && perm.delete;
       const access: string[] = [];
-      if (perm.read) access.push('READ');
-      if (perm.create) access.push('CREATE');
-      if (perm.update) access.push('UPDATE');
-      if (perm.delete) access.push('DELETE');
+      if (isFull) {
+        access.push('FULL');
+      } else {
+        if (perm.read) access.push('READ');
+        if (perm.create) access.push('CREATE');
+        if (perm.update) access.push('MODIFY');
+        if (perm.delete) access.push('DELETE');
+      }
 
       if (access.length > 0) {
         const key = [...access].sort().join(',');
@@ -423,7 +527,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
     }
   };
 
-  // Handle Create Policy action via OWPROV API (POST managementPolicy/0)
+  // Handle Create Policy action via OWPROV API (POST managementPolicy/{id})
   const handleCreatePolicy = async () => {
     if (!isRoot) {
       toaster.error({
@@ -440,24 +544,63 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
       return;
     }
 
-    // Determine starting permissions/entries based on chosen preset or existing policy
+    const allResKeys = ALL_POLICY_RESOURCES.map(
+      (r) => UI_LABEL_TO_RESOURCE_KEY[r] || r.toLowerCase()
+    );
+
     let entries: ManagementPolicyEntry[] = [];
-    if (newPolicyPreset && newPolicyPreset !== 'None' && newPolicyPreset !== 'Empty') {
-      const matchingPolicy = policies.find(
-        (p) => p.name.trim().toLowerCase() === newPolicyPreset.trim().toLowerCase()
-      );
-      if (matchingPolicy) {
-        const original = apiPolicies.find((ap) => ap.id === matchingPolicy.id);
-        if (original?.entries) {
-          entries = original.entries;
+
+    if (newPolicyPreset === 'full') {
+      entries = [
+        {
+          resources: allResKeys,
+          access: ['FULL'],
+        },
+      ];
+    } else if (newPolicyPreset === 'read') {
+      entries = [
+        {
+          resources: allResKeys,
+          access: ['READ'],
+        },
+      ];
+    } else {
+      // Group by access permissions list to make payload compact, matching owprov-ui
+      const accessGroups: Record<string, string[]> = {};
+      newPolicyPermissions.forEach((perm) => {
+        const isFull = perm.read && perm.create && perm.update && perm.delete;
+        const access: string[] = [];
+        if (isFull) {
+          access.push('FULL');
+        } else {
+          if (perm.read) access.push('READ');
+          if (perm.create) access.push('CREATE');
+          if (perm.update) access.push('MODIFY');
+          if (perm.delete) access.push('DELETE');
         }
-      }
+
+        if (access.length > 0) {
+          const key = [...access].sort().join(',');
+          if (!accessGroups[key]) {
+            accessGroups[key] = [];
+          }
+          const resKey = UI_LABEL_TO_RESOURCE_KEY[perm.resource] || perm.resource.toLowerCase();
+          accessGroups[key].push(resKey);
+        }
+      });
+
+      entries = Object.entries(accessGroups).map(([key, resources]) => ({
+        resources,
+        access: key.split(','),
+      }));
     }
 
     try {
       const res = await createPolicyMutation.mutateAsync({
         name: newPolicyName.trim(),
         description: newPolicyDesc.trim(),
+        entity: '',
+        venue: '',
         entries,
       });
 
@@ -466,10 +609,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
         description: `Policy "${newPolicyName.trim()}" created successfully.`,
       });
 
-      setNewPolicyName('');
-      setNewPolicyDesc('');
-      setNewPolicyPreset('None');
-      if (onCloseCreatePolicy) onCloseCreatePolicy();
+      handleCloseCreateModal();
       if (res?.id) {
         setSelectedPolicyId(res.id);
       }
@@ -1548,13 +1688,24 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
           p={4}
         >
           <Box
-            w="min(520px, 95vw)"
+            w="min(640px, 95vw)"
+            maxH="90vh"
+            display="flex"
+            flexDirection="column"
             bg="#ffffff"
             borderRadius="8px"
             boxShadow="0 20px 50px rgba(0,0,0,0.3)"
-            p={6}
+            overflow="hidden"
           >
-            <Flex justify="space-between" align="center" pb={3} borderBottom="1px solid" borderColor={themeColors.panel.divider}>
+            {/* Header */}
+            <Flex
+              justify="space-between"
+              align="center"
+              p={5}
+              pb={3}
+              borderBottom="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
               <HStack gap={2}>
                 <Box color="#0869ff">
                   <Icon name="shield" size={20} />
@@ -1568,74 +1719,351 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 size="xs"
                 p={1}
                 cursor="pointer"
-                onClick={onCloseCreatePolicy}
+                onClick={handleCloseCreateModal}
               >
                 <Icon name="x" size={18} />
               </Button>
             </Flex>
 
-            <VStack gap={3.5} align="stretch" mt={4}>
-              <Box>
-                <Text fontSize="12px" fontWeight="600" color="#64748b" mb={1}>
-                  Policy Name <Box as="span" color="#ef4444">*</Box>
-                </Text>
-                <Input
-                  placeholder="e.g. Venue Support Engineer"
-                  value={newPolicyName}
-                  onChange={(e) => setNewPolicyName(e.target.value)}
-                  h="36px"
-                  fontSize="13px"
-                  borderRadius="4px"
-                />
-              </Box>
+            {/* Scrollable Content */}
+            <Box p={5} overflowY="auto" flex="1">
+              <VStack gap={4} align="stretch">
+                <Box>
+                  <Text fontSize="12px" fontWeight="600" color="#64748b" mb={1}>
+                    Policy Name <Box as="span" color="#ef4444">*</Box>
+                  </Text>
+                  <Input
+                    placeholder="e.g. Venue Support Engineer"
+                    value={newPolicyName}
+                    onChange={(e) => setNewPolicyName(e.target.value)}
+                    h="36px"
+                    fontSize="13px"
+                    borderRadius="4px"
+                  />
+                </Box>
 
-              <Box>
-                <Text fontSize="12px" fontWeight="600" color="#64748b" mb={1}>
-                  Description
-                </Text>
-                <Input
-                  placeholder="Describe permitted capabilities and operations"
-                  value={newPolicyDesc}
-                  onChange={(e) => setNewPolicyDesc(e.target.value)}
-                  h="36px"
-                  fontSize="13px"
-                  borderRadius="4px"
-                />
-              </Box>
+                <Box>
+                  <Text fontSize="12px" fontWeight="600" color="#64748b" mb={1}>
+                    Description
+                  </Text>
+                  <Input
+                    placeholder="Describe permitted capabilities and operations"
+                    value={newPolicyDesc}
+                    onChange={(e) => setNewPolicyDesc(e.target.value)}
+                    h="36px"
+                    fontSize="13px"
+                    borderRadius="4px"
+                  />
+                </Box>
 
-              <Box>
-                <Text fontSize="12px" fontWeight="600" color="#64748b" mb={1}>
-                  Clone from preset
-                </Text>
-                <SelectDropdown
-                  value={newPolicyPreset}
-                  onChange={(val) => setNewPolicyPreset(String(val))}
-                  options={[
-                    'None',
-                    'Network Operator',
-                    'Installer',
-                    'CSR',
-                    'Read Only',
-                    ...policies
-                      .map((p) => p.name)
-                      .filter(
-                        (n) =>
-                          !['None', 'Network Operator', 'Installer', 'CSR', 'Read Only'].includes(n)
-                      ),
-                  ]}
-                  w="100%"
-                  h="36px"
-                />
-              </Box>
-            </VStack>
+                {/* Permissions Configuration */}
+                <Box pt={1}>
+                  <Flex justify="space-between" align="center" mb={2.5}>
+                    <Box>
+                      <Text fontSize="13px" fontWeight="700" color="#0f172a">
+                        Permissions Configuration
+                      </Text>
+                      <Text fontSize="11px" color="#64748b">
+                        Set resource-level permissions (matching OpenWiFi OWPROV schema)
+                      </Text>
+                    </Box>
 
-            <Flex justify="flex-end" gap={2} mt={6} pt={3} borderTop="1px solid" borderColor={themeColors.panel.divider}>
+                    {/* Quick Preset Buttons */}
+                    <HStack gap={1.5}>
+                      <Button
+                        size="xs"
+                        variant={newPolicyPreset === 'full' ? 'solid' : 'outline'}
+                        bg={newPolicyPreset === 'full' ? '#0869ff' : 'transparent'}
+                        color={newPolicyPreset === 'full' ? '#ffffff' : '#0869ff'}
+                        borderColor="#0869ff"
+                        _hover={{ bg: newPolicyPreset === 'full' ? '#0650c5' : '#eff6ff' }}
+                        h="26px"
+                        px={2.5}
+                        fontSize="11px"
+                        fontWeight="600"
+                        borderRadius="4px"
+                        onClick={() => handleApplyPreset('full')}
+                      >
+                        Full Access
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant={newPolicyPreset === 'read' ? 'solid' : 'outline'}
+                        bg={newPolicyPreset === 'read' ? '#0869ff' : 'transparent'}
+                        color={newPolicyPreset === 'read' ? '#ffffff' : '#0869ff'}
+                        borderColor="#0869ff"
+                        _hover={{ bg: newPolicyPreset === 'read' ? '#0650c5' : '#eff6ff' }}
+                        h="26px"
+                        px={2.5}
+                        fontSize="11px"
+                        fontWeight="600"
+                        borderRadius="4px"
+                        onClick={() => handleApplyPreset('read')}
+                      >
+                        Read-Only
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        borderColor="#cbd5e1"
+                        color="#64748b"
+                        _hover={{ bg: '#f1f5f9', color: '#0f172a' }}
+                        h="26px"
+                        px={2}
+                        fontSize="11px"
+                        fontWeight="500"
+                        borderRadius="4px"
+                        onClick={() => handleApplyPreset('clear')}
+                      >
+                        Clear All
+                      </Button>
+                    </HStack>
+                  </Flex>
+
+                  {/* Resource Permissions Matrix */}
+                  <Box
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    overflow="hidden"
+                  >
+                    {/* Header */}
+                    <Flex
+                      bg="#f8fafc"
+                      py={2}
+                      px={3}
+                      borderBottom="1px solid"
+                      borderColor={themeColors.panel.border}
+                      fontSize="11px"
+                      fontWeight="700"
+                      color="#64748b"
+                      align="center"
+                    >
+                      <Box flex="1.8">Resource</Box>
+                      <Box flex="1" textAlign="center">Read</Box>
+                      <Box flex="1" textAlign="center">Create</Box>
+                      <Box flex="1" textAlign="center">Modify</Box>
+                      <Box flex="1" textAlign="center">Delete</Box>
+                      <Box flex="1" textAlign="center">Set All</Box>
+                    </Flex>
+
+                    {/* Rows */}
+                    {newPolicyPermissions.map((perm) => {
+                      const isFull = perm.read && perm.create && perm.update && perm.delete;
+                      return (
+                        <Flex
+                          key={perm.resource}
+                          py={2}
+                          px={3}
+                          borderBottom="1px solid"
+                          borderColor={themeColors.panel.divider}
+                          _last={{ borderBottom: 'none' }}
+                          align="center"
+                          fontSize="12px"
+                          _hover={{ bg: '#f8fafc' }}
+                        >
+                          <Box flex="1.8" fontWeight="600" color="#0f172a">
+                            {perm.resource}
+                          </Box>
+
+                          {/* Read */}
+                          <Flex
+                            flex="1"
+                            justify="center"
+                            cursor="pointer"
+                            onClick={() => handleToggleNewPolicyPermission(perm.resource, 'read')}
+                            py={1}
+                            borderRadius="4px"
+                            _hover={{ bg: '#eff6ff' }}
+                          >
+                            {perm.read ? (
+                              <Flex
+                                w="18px"
+                                h="18px"
+                                borderRadius="50%"
+                                border="1.5px solid #16a34a"
+                                bg="#dcfce7"
+                                color="#16a34a"
+                                align="center"
+                                justify="center"
+                              >
+                                <Icon name="check" size={11} />
+                              </Flex>
+                            ) : (
+                              <Flex
+                                w="18px"
+                                h="18px"
+                                borderRadius="50%"
+                                border="1.5px dashed #cbd5e1"
+                                color="#94a3b8"
+                                align="center"
+                                justify="center"
+                                _hover={{ borderColor: '#16a34a', color: '#16a34a', bg: '#f0fdf4' }}
+                              >
+                                <Icon name="plus" size={10} />
+                              </Flex>
+                            )}
+                          </Flex>
+
+                          {/* Create */}
+                          <Flex
+                            flex="1"
+                            justify="center"
+                            cursor="pointer"
+                            onClick={() => handleToggleNewPolicyPermission(perm.resource, 'create')}
+                            py={1}
+                            borderRadius="4px"
+                            _hover={{ bg: '#eff6ff' }}
+                          >
+                            {perm.create ? (
+                              <Flex
+                                w="18px"
+                                h="18px"
+                                borderRadius="50%"
+                                border="1.5px solid #16a34a"
+                                bg="#dcfce7"
+                                color="#16a34a"
+                                align="center"
+                                justify="center"
+                              >
+                                <Icon name="check" size={11} />
+                              </Flex>
+                            ) : (
+                              <Flex
+                                w="18px"
+                                h="18px"
+                                borderRadius="50%"
+                                border="1.5px dashed #cbd5e1"
+                                color="#94a3b8"
+                                align="center"
+                                justify="center"
+                                _hover={{ borderColor: '#16a34a', color: '#16a34a', bg: '#f0fdf4' }}
+                              >
+                                <Icon name="plus" size={10} />
+                              </Flex>
+                            )}
+                          </Flex>
+
+                          {/* Modify */}
+                          <Flex
+                            flex="1"
+                            justify="center"
+                            cursor="pointer"
+                            onClick={() => handleToggleNewPolicyPermission(perm.resource, 'update')}
+                            py={1}
+                            borderRadius="4px"
+                            _hover={{ bg: '#eff6ff' }}
+                          >
+                            {perm.update ? (
+                              <Flex
+                                w="18px"
+                                h="18px"
+                                borderRadius="50%"
+                                border="1.5px solid #16a34a"
+                                bg="#dcfce7"
+                                color="#16a34a"
+                                align="center"
+                                justify="center"
+                              >
+                                <Icon name="check" size={11} />
+                              </Flex>
+                            ) : (
+                              <Flex
+                                w="18px"
+                                h="18px"
+                                borderRadius="50%"
+                                border="1.5px dashed #cbd5e1"
+                                color="#94a3b8"
+                                align="center"
+                                justify="center"
+                                _hover={{ borderColor: '#16a34a', color: '#16a34a', bg: '#f0fdf4' }}
+                              >
+                                <Icon name="plus" size={10} />
+                              </Flex>
+                            )}
+                          </Flex>
+
+                          {/* Delete */}
+                          <Flex
+                            flex="1"
+                            justify="center"
+                            cursor="pointer"
+                            onClick={() => handleToggleNewPolicyPermission(perm.resource, 'delete')}
+                            py={1}
+                            borderRadius="4px"
+                            _hover={{ bg: '#eff6ff' }}
+                          >
+                            {perm.delete ? (
+                              <Flex
+                                w="18px"
+                                h="18px"
+                                borderRadius="50%"
+                                border="1.5px solid #16a34a"
+                                bg="#dcfce7"
+                                color="#16a34a"
+                                align="center"
+                                justify="center"
+                              >
+                                <Icon name="check" size={11} />
+                              </Flex>
+                            ) : (
+                              <Flex
+                                w="18px"
+                                h="18px"
+                                borderRadius="50%"
+                                border="1.5px dashed #cbd5e1"
+                                color="#94a3b8"
+                                align="center"
+                                justify="center"
+                                _hover={{ borderColor: '#16a34a', color: '#16a34a', bg: '#f0fdf4' }}
+                              >
+                                <Icon name="plus" size={10} />
+                              </Flex>
+                            )}
+                          </Flex>
+
+                          {/* Set All / Full */}
+                          <Flex flex="1" justify="center" align="center">
+                            <Button
+                              size="xs"
+                              variant="plain"
+                              h="22px"
+                              px={2}
+                              fontSize="10px"
+                              fontWeight="600"
+                              color={isFull ? '#16a34a' : '#64748b'}
+                              bg={isFull ? '#dcfce7' : '#f1f5f9'}
+                              borderRadius="4px"
+                              _hover={{ bg: isFull ? '#bbf7d0' : '#e2e8f0' }}
+                              onClick={() => handleToggleResourceAll(perm.resource)}
+                            >
+                              {isFull ? 'FULL' : 'SET'}
+                            </Button>
+                          </Flex>
+                        </Flex>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              </VStack>
+            </Box>
+
+            {/* Footer */}
+            <Flex
+              justify="flex-end"
+              gap={2}
+              p={4}
+              px={5}
+              borderTop="1px solid"
+              borderColor={themeColors.panel.divider}
+              bg="#f8fafc"
+            >
               <Button
                 variant="outline"
                 size="sm"
                 h="34px"
                 px={4}
-                onClick={onCloseCreatePolicy}
+                onClick={handleCloseCreateModal}
               >
                 Cancel
               </Button>
