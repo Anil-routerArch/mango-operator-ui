@@ -753,6 +753,10 @@ export const UsersPage: React.FC = () => {
           p={5}
           minH="500px"
           boxSizing="border-box"
+          position={{ base: 'static', xl: 'sticky' }}
+          top="20px"
+          maxH="calc(100vh - 40px)"
+          overflowY="auto"
         >
           {selectedUser ? (
             <>

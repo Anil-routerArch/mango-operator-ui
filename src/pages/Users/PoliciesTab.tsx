@@ -901,6 +901,10 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
           borderColor={themeColors.panel.border}
           borderRadius="6px"
           p={5}
+          position={{ base: 'static', lg: 'sticky' }}
+          top="20px"
+          maxH="calc(100vh - 40px)"
+          overflowY="auto"
         >
           {!selectedPolicy ? (
             <Flex h="360px" justify="center" align="center" direction="column" gap={3} color="#64748b">

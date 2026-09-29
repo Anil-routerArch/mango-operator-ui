@@ -40,20 +40,32 @@ export const Sidebar: React.FC = () => {
   const location = useLocation();
 
   return (
-    <Box
+    <Flex
       as="aside"
+      direction="column"
       w={isCollapsed ? '72px' : '216px'}
-      minH="100vh"
+      h="100vh"
+      maxH="100vh"
       flex={`0 0 ${isCollapsed ? '72px' : '216px'}`}
       bg={`linear-gradient(150deg, ${themeColors.sidebar.bgGradientStart}, ${themeColors.sidebar.bgGradientEnd})`}
       color={themeColors.sidebar.text}
       p="20px 12px"
       boxSizing="border-box"
-      position="relative"
+      position="sticky"
+      top={0}
       transition="width 0.2s ease, flex-basis 0.2s ease"
       userSelect="none"
+      zIndex={100}
     >
-      {/* Brand Header */}
+      <Box
+        flex="1"
+        overflowY="auto"
+        css={{
+          scrollbarWidth: 'none',
+          '&::-webkit-scrollbar': { display: 'none' },
+        }}
+      >
+        {/* Brand Header */}
       {!isCollapsed ? (
         <Flex
           align="center"
@@ -167,14 +179,16 @@ export const Sidebar: React.FC = () => {
             </VStack>
           </Box>
         ))}
-      </VStack>
+        </VStack>
+      </Box>
 
       {/* Collapse Toggle at Bottom */}
       <Box
-        position="absolute"
-        bottom="25px"
-        left={isCollapsed ? '50%' : '20px'}
-        transform={isCollapsed ? 'translateX(-50%)' : 'none'}
+        pt={3}
+        pb={1}
+        display="flex"
+        justifyContent={isCollapsed ? 'center' : 'flex-start'}
+        px={isCollapsed ? 0 : 2}
       >
         <Flex
           as="button"
@@ -195,7 +209,7 @@ export const Sidebar: React.FC = () => {
           <Icon name={isCollapsed ? 'chevronRight' : 'chevronLeft'} size={20} />
         </Flex>
       </Box>
-    </Box>
+    </Flex>
   );
 };
 

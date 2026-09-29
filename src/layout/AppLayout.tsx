@@ -6,7 +6,7 @@ import { themeColors } from '@/theme';
 
 export const AppLayout: React.FC = () => {
   return (
-    <Flex minH="100vh" w="100%" bg={themeColors.canvas.bg}>
+    <Flex h="100vh" maxH="100vh" w="100%" overflow="hidden" bg={themeColors.canvas.bg}>
       {/* Sidebar Navigation */}
       <Sidebar />
 
@@ -14,6 +14,7 @@ export const AppLayout: React.FC = () => {
       <Box
         as="main"
         flex="1"
+        h="100%"
         p="20px 36px 36px"
         overflowX="hidden"
         overflowY="auto"
