@@ -32,9 +32,15 @@ test('index.html loads /env-config.js before Vite module bundle', () => {
 test('dist/index.html production build loads /env-config.js before bundled module', () => {
   const distHtmlPath = path.join(ROOT_DIR, 'dist', 'index.html');
   if (!fs.existsSync(distHtmlPath)) {
-    // If not built yet, skip
-    return;
+    // If not built yet, run build to ensure production artifacts exist and are tested
+    execSync('npm run build', { cwd: ROOT_DIR, stdio: 'pipe' });
   }
+
+  assert.ok(
+    fs.existsSync(distHtmlPath),
+    'Production build dist/index.html must exist (npm run build)'
+  );
+
   const distHtmlContent = fs.readFileSync(distHtmlPath, 'utf-8');
 
   assert.ok(
@@ -234,38 +240,50 @@ test('runtime configured URLs are consumed by client base URL resolvers', () => 
   );
 });
 
-test('container-level verification: openwifi_operator-ui serves env-config.js and includes script in index.html', () => {
+test('container-level verification: openwifi_operator-ui serves env-config.js and includes script in index.html', (t) => {
+  let isContainerRunning = false;
   try {
-    // Check if openwifi_operator-ui container is running
     const containerStatus = execSync(
       'docker inspect -f "{{.State.Running}}" openwifi_operator-ui 2>/dev/null',
-      { encoding: 'utf-8' }
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
     ).trim();
-
-    if (containerStatus !== 'true') {
-      return; // Skip if container is not currently running
-    }
-
-    // Check index.html inside container
-    const containerHtml = execSync(
-      'docker exec openwifi_operator-ui cat /usr/share/nginx/html/index.html',
-      { encoding: 'utf-8' }
-    );
-    assert.ok(
-      containerHtml.includes('<script src="/env-config.js"></script>'),
-      'Container index.html must include <script src="/env-config.js"></script>'
-    );
-
-    // Verify 40-generate-config.sh exists and is executable in container
-    const scriptCheck = execSync(
-      'docker exec openwifi_operator-ui ls -l /docker-entrypoint.d/40-generate-config.sh',
-      { encoding: 'utf-8' }
-    );
-    assert.ok(
-      scriptCheck.includes('-rwx'),
-      'Container must have executable /docker-entrypoint.d/40-generate-config.sh'
-    );
+    isContainerRunning = containerStatus === 'true';
   } catch {
-    // Docker daemon or container not accessible in current environment
+    isContainerRunning = false;
   }
+
+  if (!isContainerRunning) {
+    t.skip('Docker daemon or openwifi_operator-ui container is not available/running');
+    return;
+  }
+
+  // Assertions run OUTSIDE any try/catch so any failure will fail the test!
+  const containerHtml = execSync(
+    'docker exec openwifi_operator-ui cat /usr/share/nginx/html/index.html',
+    { encoding: 'utf-8' }
+  );
+  assert.ok(
+    containerHtml.includes('<script src="/env-config.js"></script>'),
+    'Container index.html must include <script src="/env-config.js"></script>'
+  );
+
+  const scriptCheck = execSync(
+    'docker exec openwifi_operator-ui ls -l /docker-entrypoint.d/40-generate-config.sh',
+    { encoding: 'utf-8' }
+  );
+  assert.ok(
+    scriptCheck.includes('-rwx') || scriptCheck.includes('-r-x'),
+    'Container must have executable /docker-entrypoint.d/40-generate-config.sh'
+  );
+
+  // Check generated env-config.js in container
+  const containerEnvConfig = execSync(
+    'docker exec openwifi_operator-ui cat /usr/share/nginx/html/env-config.js',
+    { encoding: 'utf-8' }
+  );
+  assert.ok(
+    containerEnvConfig.includes('window._env_ = {'),
+    'Container env-config.js must contain window._env_ assignment'
+  );
 });
+
