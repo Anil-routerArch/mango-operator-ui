@@ -14,7 +14,8 @@ export const AppLayout: React.FC = () => {
       <Box
         as="main"
         flex="1"
-        h="100%"
+        h="100vh"
+        maxH="100vh"
         p="20px 36px 36px"
         overflowX="hidden"
         overflowY="auto"

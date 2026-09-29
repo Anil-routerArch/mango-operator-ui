@@ -38,34 +38,45 @@ const NAV_GROUPS: NavGroup[] = [
 export const Sidebar: React.FC = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const location = useLocation();
+  const sidebarWidth = isCollapsed ? '72px' : '216px';
 
   return (
-    <Flex
+    <Box
       as="aside"
-      direction="column"
-      w={isCollapsed ? '72px' : '216px'}
+      w={sidebarWidth}
+      minW={sidebarWidth}
+      flex={`0 0 ${sidebarWidth}`}
       h="100vh"
       maxH="100vh"
-      flex={`0 0 ${isCollapsed ? '72px' : '216px'}`}
-      bg={`linear-gradient(150deg, ${themeColors.sidebar.bgGradientStart}, ${themeColors.sidebar.bgGradientEnd})`}
-      color={themeColors.sidebar.text}
-      p="20px 12px"
-      boxSizing="border-box"
-      position="sticky"
-      top={0}
-      transition="width 0.2s ease, flex-basis 0.2s ease"
-      userSelect="none"
-      zIndex={100}
+      position="relative"
+      transition="width 0.2s ease, min-width 0.2s ease, flex-basis 0.2s ease"
     >
-      <Box
-        flex="1"
-        overflowY="auto"
-        css={{
-          scrollbarWidth: 'none',
-          '&::-webkit-scrollbar': { display: 'none' },
-        }}
+      <Flex
+        direction="column"
+        position="fixed"
+        top={0}
+        left={0}
+        bottom={0}
+        w={sidebarWidth}
+        h="100vh"
+        maxH="100vh"
+        zIndex={1000}
+        bg={`linear-gradient(150deg, ${themeColors.sidebar.bgGradientStart}, ${themeColors.sidebar.bgGradientEnd})`}
+        color={themeColors.sidebar.text}
+        p="20px 12px"
+        boxSizing="border-box"
+        transition="width 0.2s ease"
+        userSelect="none"
       >
-        {/* Brand Header */}
+        <Box
+          flex="1"
+          overflowY="auto"
+          css={{
+            scrollbarWidth: 'none',
+            '&::-webkit-scrollbar': { display: 'none' },
+          }}
+        >
+          {/* Brand Header */}
       {!isCollapsed ? (
         <Flex
           align="center"
@@ -179,37 +190,38 @@ export const Sidebar: React.FC = () => {
             </VStack>
           </Box>
         ))}
-        </VStack>
-      </Box>
+      </VStack>
+        </Box>
 
-      {/* Collapse Toggle at Bottom */}
-      <Box
-        pt={3}
-        pb={1}
-        display="flex"
-        justifyContent={isCollapsed ? 'center' : 'flex-start'}
-        px={isCollapsed ? 0 : 2}
-      >
-        <Flex
-          as="button"
-          align="center"
-          justify="center"
-          w="32px"
-          h="32px"
-          bg="transparent"
-          border="0"
-          color="#ffffff"
-          opacity={0.8}
-          _hover={{ opacity: 1, bg: 'rgba(255, 255, 255, 0.1)' }}
-          borderRadius="4px"
-          cursor="pointer"
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        {/* Collapse Toggle at Bottom */}
+        <Box
+          pt={3}
+          pb={1}
+          display="flex"
+          justifyContent={isCollapsed ? 'center' : 'flex-start'}
+          px={isCollapsed ? 0 : 2}
         >
-          <Icon name={isCollapsed ? 'chevronRight' : 'chevronLeft'} size={20} />
-        </Flex>
-      </Box>
-    </Flex>
+          <Flex
+            as="button"
+            align="center"
+            justify="center"
+            w="32px"
+            h="32px"
+            bg="transparent"
+            border="0"
+            color="#ffffff"
+            opacity={0.8}
+            _hover={{ opacity: 1, bg: 'rgba(255, 255, 255, 0.1)' }}
+            borderRadius="4px"
+            cursor="pointer"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            <Icon name={isCollapsed ? 'chevronRight' : 'chevronLeft'} size={20} />
+          </Flex>
+        </Box>
+      </Flex>
+    </Box>
   );
 };
 
