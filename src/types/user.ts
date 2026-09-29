@@ -7,12 +7,9 @@ export interface Note {
 export type UserRole =
   | 'root'
   | 'admin'
-  | 'subscriber'
-  | 'partner'
   | 'csr'
-  | 'installer'
   | 'noc'
-  | 'accounting';
+  | 'installer';
 
 export interface User {
   id: string;

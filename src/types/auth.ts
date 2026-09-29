@@ -1,12 +1,9 @@
 export type UserRole =
   | 'root'
   | 'admin'
-  | 'subscriber'
-  | 'partner'
   | 'csr'
-  | 'installer'
   | 'noc'
-  | 'accounting';
+  | 'installer';
 
 export interface UserNote {
   created: number;

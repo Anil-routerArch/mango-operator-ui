@@ -60,7 +60,6 @@ const getAvatarColor = (role?: string): string => {
     case 'csr':
       return themeColors.avatar.teal;
     case 'noc':
-    case 'accounting':
       return themeColors.avatar.orange;
     default:
       return themeColors.avatar.green;
@@ -497,7 +496,7 @@ export const UsersPage: React.FC = () => {
                 setRoleFilter(val);
                 setCurrentPage(1);
               }}
-              options={['All Roles', 'root', 'admin', 'installer', 'csr', 'noc', 'accounting']}
+              options={['All Roles', 'root', 'admin', 'csr', 'noc', 'installer']}
               w="150px"
               h="38px"
               borderColor={themeColors.input.filterBorder}
@@ -1322,10 +1321,9 @@ const UserProfileForm: React.FC<{
       ? [{ label: 'Root', value: 'root' }]
       : []),
     { label: 'Admin', value: 'admin' },
-    { label: 'Installer', value: 'installer' },
     { label: 'CSR', value: 'csr' },
     { label: 'NOC', value: 'noc' },
-    { label: 'Accounting', value: 'accounting' },
+    { label: 'Installer', value: 'installer' },
   ];
 
   const [isEditing, setIsEditing] = useState(false);
@@ -1371,6 +1369,13 @@ const UserProfileForm: React.FC<{
       toaster.warning({
         title: 'Validation Error',
         description: `Password must satisfy: ${getPasswordRequirementsDescription(passwordPattern)}`,
+      });
+      return;
+    }
+    if (!isCurrentUserRoot && role === 'root' && user.userRole?.toLowerCase() !== 'root') {
+      toaster.error({
+        title: 'Permission Denied',
+        description: 'Only root administrators can assign the root role.',
       });
       return;
     }
@@ -1888,12 +1893,11 @@ const CreateUserModal: React.FC<{
   );
 
   const roleOptions = [
+    ...(isCurrentUserRoot ? [{ label: 'Root', value: 'root' }] : []),
     { label: 'Admin', value: 'admin' },
-    { label: 'Installer', value: 'installer' },
     { label: 'CSR', value: 'csr' },
     { label: 'NOC', value: 'noc' },
-    { label: 'Accounting', value: 'accounting' },
-    ...(isCurrentUserRoot ? [{ label: 'Root', value: 'root' }] : []),
+    { label: 'Installer', value: 'installer' },
   ];
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1904,6 +1908,13 @@ const CreateUserModal: React.FC<{
       toaster.warning({
         title: 'Validation Error',
         description: `Password must satisfy: ${getPasswordRequirementsDescription(passwordPattern)}`,
+      });
+      return;
+    }
+    if (!isCurrentUserRoot && userRole === 'root') {
+      toaster.error({
+        title: 'Permission Denied',
+        description: 'Only root administrators can create users with the root role.',
       });
       return;
     }
