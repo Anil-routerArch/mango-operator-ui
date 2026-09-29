@@ -1053,44 +1053,25 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       </HStack>
                     </Button>
 
-                    {(() => {
-                      const hasAssignments =
-                        Boolean(
-                          (selectedPolicy.assignedUsers && selectedPolicy.assignedUsers.length > 0) ||
-                          (selectedPolicy.scopedAssignmentsCount && selectedPolicy.scopedAssignmentsCount > 0) ||
-                          (selectedPolicy.usedByUsers && selectedPolicy.usedByUsers > 0)
-                        );
-
-                      return (
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          h="28px"
-                          px={3}
-                          color={hasAssignments ? '#94a3b8' : '#dc2626'}
-                          borderColor={hasAssignments ? '#e2e8f0' : '#fecaca'}
-                          bg={hasAssignments ? '#f8fafc' : '#fef2f2'}
-                          _hover={hasAssignments ? undefined : { bg: '#fee2e2', borderColor: '#fca5a5' }}
-                          disabled={hasAssignments}
-                          cursor={hasAssignments ? 'not-allowed' : 'pointer'}
-                          title={
-                            hasAssignments
-                              ? 'Cannot delete policy: It is currently assigned to one or more management roles.'
-                              : 'Delete management policy'
-                          }
-                          onClick={() => {
-                            if (hasAssignments) return;
-                            setDeleteError(null);
-                            setIsDeleteModalOpen(true);
-                          }}
-                        >
-                          <HStack gap={1.5}>
-                            <Icon name="trash" size={13} />
-                            <Text fontSize="12px" fontWeight="600">Delete policy</Text>
-                          </HStack>
-                        </Button>
-                      );
-                    })()}
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      h="28px"
+                      px={3}
+                      color="#dc2626"
+                      borderColor="#fecaca"
+                      bg="#fef2f2"
+                      _hover={{ bg: '#fee2e2', borderColor: '#fca5a5' }}
+                      onClick={() => {
+                        setDeleteError(null);
+                        setIsDeleteModalOpen(true);
+                      }}
+                    >
+                      <HStack gap={1.5}>
+                        <Icon name="trash" size={13} />
+                        <Text fontSize="12px" fontWeight="600">Delete policy</Text>
+                      </HStack>
+                    </Button>
                   </>
                 ) : (
                   <Badge colorScheme="purple" variant="subtle" fontSize="11px" px={2.5} py={1} borderRadius="4px">
