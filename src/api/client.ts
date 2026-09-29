@@ -84,7 +84,7 @@ export const setApiToken = (token: string | null) => {
 // 4. Request Interceptor: Attach stored token if not already explicitly present
 const attachAuthToken = (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
   if (!config.headers.Authorization) {
-    const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    const token = sessionStorage.getItem('access_token') || localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

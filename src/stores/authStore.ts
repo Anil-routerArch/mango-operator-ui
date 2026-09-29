@@ -49,7 +49,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
    */
   initializeAuth: async () => {
     const savedToken =
-      localStorage.getItem(STORAGE_KEY) || sessionStorage.getItem(STORAGE_KEY);
+      sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
 
     if (!savedToken) {
       set({ isInitialized: true, isAuthenticated: false, token: null, user: null });
@@ -115,11 +115,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       const token = data.access_token;
 
-      // Save token to browser storage
+      // Save token to browser storage and clean up opposite storage
       if (rememberMe) {
         localStorage.setItem(STORAGE_KEY, token);
+        sessionStorage.removeItem(STORAGE_KEY);
       } else {
         sessionStorage.setItem(STORAGE_KEY, token);
+        localStorage.removeItem(STORAGE_KEY);
       }
 
       // Propagate token to all Axios instances
@@ -172,8 +174,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const token = data.access_token;
       if (rememberMe) {
         localStorage.setItem(STORAGE_KEY, token);
+        sessionStorage.removeItem(STORAGE_KEY);
       } else {
         sessionStorage.setItem(STORAGE_KEY, token);
+        localStorage.removeItem(STORAGE_KEY);
       }
 
       setApiToken(token);
