@@ -10,9 +10,11 @@ import {
   VStack,
   HStack,
   Spinner,
+  Image,
 } from '@chakra-ui/react';
 import { useAuthStore } from '@/stores/authStore';
 import { themeColors } from '@/theme';
+import mduLogo from '@/assets/mdu-logo.png';
 
 export const LoginPage: React.FC = () => {
   const { isAuthenticated, login, submitMfa, isLoading, error, mfaChallenge, clearError } = useAuthStore();
@@ -63,47 +65,36 @@ export const LoginPage: React.FC = () => {
       px={4}
       py={12}
     >
-      <Box
-        w="100%"
-        maxW="420px"
-        bg={themeColors.panel.bg}
-        border="1px solid"
-        borderColor={themeColors.panel.border}
-        borderRadius="8px"
-        p={8}
-        boxShadow="0px 10px 25px rgba(0, 0, 0, 0.04)"
-      >
-        {/* Brand Header */}
-        <VStack gap={3} mb={8} align="center">
-          <HStack gap={3}>
-            {/* Mango Fruit Logo */}
-            <Box
-              w="32px"
-              h="38px"
-              bg={`linear-gradient(145deg, ${themeColors.brand.mangoGradientStart}, ${themeColors.brand.mangoGradientEnd})`}
-              borderRadius="70% 40% 65% 55%"
-              transform="rotate(15deg)"
-              position="relative"
-            >
-              <Box
-                w="18px"
-                h="8px"
-                bg={themeColors.brand.mangoLeaf}
-                borderRadius="100% 0"
-                position="absolute"
-                top="-5px"
-                right="-7px"
-                transform="rotate(-25deg)"
-              />
-            </Box>
+      <VStack gap={6} w="100%" maxW="420px" align="center">
+        {/* Mango Cloud Logo above the Form */}
+        <Image
+          src={mduLogo}
+          alt="Mango Cloud"
+          maxH="72px"
+          maxW="260px"
+          w="auto"
+          h="auto"
+          objectFit="contain"
+        />
+
+        <Box
+          w="100%"
+          bg={themeColors.panel.bg}
+          border="1px solid"
+          borderColor={themeColors.panel.border}
+          borderRadius="8px"
+          p={8}
+          boxShadow="0px 10px 25px rgba(0, 0, 0, 0.04)"
+        >
+          {/* Header inside Card */}
+          <VStack gap={1} mb={6} align="start">
             <Heading as="h1" size="lg" color={themeColors.text.title} fontWeight="700">
-              Mango Cloud
+              Welcome Back!
             </Heading>
-          </HStack>
-          <Text fontSize="13px" color={themeColors.text.secondary}>
-            MDU Operator & Access Portal
-          </Text>
-        </VStack>
+            <Text fontSize="13px" color={themeColors.text.secondary}>
+              Enter your email and password to sign in
+            </Text>
+          </VStack>
 
         {/* Error Notification */}
         {error && (
@@ -260,8 +251,9 @@ export const LoginPage: React.FC = () => {
           </VStack>
         </form>
       </Box>
-    </Flex>
-  );
+    </VStack>
+  </Flex>
+);
 };
 
 export default LoginPage;
