@@ -1,8 +1,9 @@
 #!/bin/sh
 
-ENV_CONFIG_PATH=/usr/share/nginx/html/env-config.js
+ENV_CONFIG_PATH="${ENV_CONFIG_PATH:-/usr/share/nginx/html/env-config.js}"
 
 # Recreate config file
+mkdir -p "$(dirname "$ENV_CONFIG_PATH")"
 rm -f "$ENV_CONFIG_PATH"
 touch "$ENV_CONFIG_PATH"
 
