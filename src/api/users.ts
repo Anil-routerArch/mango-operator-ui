@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { axiosSec, axiosProv, axiosProvV2 } from './client';
+import { useMemo } from 'react';
+import { axiosSec, axiosProv, axiosProvV2, getSecBaseUrl } from './client';
 import type { User, CreateUserPayload, UpdateUserPayload } from '@/types/user';
 import type {
   ManagementRole,
@@ -306,4 +307,97 @@ export const useUpdateManagementPolicy = () => {
       queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
     },
   });
+};
+
+// ==========================================
+// 7. SECURITY REQUIREMENTS & PASSWORD POLICY (OWSEC: TC-USR-007)
+// ==========================================
+export interface SecurityRequirements {
+  passwordPattern?: string;
+  accessPolicy?: string;
+  passwordPolicy?: string;
+}
+
+export interface ApiRequirements {
+  passwordPattern: string | null;
+  passwordPolicyLink: string;
+  accessPolicyLink: string;
+  isLoaded: boolean;
+  isLoading: boolean;
+}
+
+export const DEFAULT_PASSWORD_PATTERN =
+  '^(?=.*?[A-Z])(?=.*?[a-z])(?=.*?[0-9])(?=.*?[\\{\\}\\(\\)~_\\+\\|\\\\\\[\\]\\;\\:\\<\\>\\.\\,\\/\\?\\"\\\'\\`\\=#?!@$%^&*-]).{8,}$';
+
+export const useGetRequirements = () => {
+  return useQuery<SecurityRequirements>({
+    queryKey: ['securityRequirements'],
+    queryFn: async () => {
+      const { data } = await axiosSec.post('oauth2?requirements=true', {});
+      return data;
+    },
+    staleTime: Infinity,
+    retry: 1,
+  });
+};
+
+export const useApiRequirements = (): ApiRequirements => {
+  const { data: requirements, isLoading, isSuccess } = useGetRequirements();
+
+  return useMemo(() => {
+    const secBase = getSecBaseUrl().split('/api/v1')[0];
+
+    const resolveLink = (isAccess: boolean, apiResult?: string): string => {
+      if (!apiResult && isAccess) return `${secBase}/wwwassets/access_policy.html`;
+      if (!apiResult && !isAccess) return `${secBase}/wwwassets/password_policy.html`;
+      if (apiResult?.startsWith('http://') || apiResult?.startsWith('https://')) return apiResult;
+      const cleanPath = apiResult?.startsWith('/') ? apiResult : `/${apiResult}`;
+      return `${secBase}${cleanPath}`;
+    };
+
+    return {
+      passwordPattern: requirements?.passwordPattern ?? null,
+      passwordPolicyLink: resolveLink(false, requirements?.passwordPolicy),
+      accessPolicyLink: resolveLink(true, requirements?.accessPolicy),
+      isLoaded: isSuccess && requirements !== undefined,
+      isLoading,
+    };
+  }, [requirements, isLoading, isSuccess]);
+};
+
+export const testPasswordPattern = (password: string, pattern?: string | null): boolean => {
+  if (!password) return false;
+  const regexStr = pattern || DEFAULT_PASSWORD_PATTERN;
+  try {
+    const regex = new RegExp(regexStr);
+    return regex.test(password);
+  } catch (err) {
+    console.warn('Invalid regex in passwordPattern, falling back to default:', err);
+    try {
+      return new RegExp(DEFAULT_PASSWORD_PATTERN).test(password);
+    } catch {
+      return password.length >= 8;
+    }
+  }
+};
+
+export const getPasswordRequirementsDescription = (pattern?: string | null): string => {
+  const raw = pattern || DEFAULT_PASSWORD_PATTERN;
+  let minLen = 8;
+  const lenMatch = raw.match(/\{(\d+),/);
+  if (lenMatch && lenMatch[1]) {
+    minLen = parseInt(lenMatch[1], 10);
+  }
+
+  const parts: string[] = [`Min ${minLen} chars`];
+  if (raw.includes('[A-Z]')) parts.push('uppercase');
+  if (raw.includes('[a-z]')) parts.push('lowercase');
+  if (raw.includes('[0-9]')) parts.push('number');
+  if (raw.includes('?') || raw.includes('!') || raw.includes('@') || raw.includes('$')) {
+    parts.push('symbol');
+  }
+
+  if (parts.length <= 1) return `Min ${minLen} characters`;
+  const last = parts.pop();
+  return `${parts.join(', ')} & ${last}`;
 };

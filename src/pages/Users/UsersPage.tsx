@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   Box,
   Button,
+  chakra,
   Flex,
   HStack,
   Text,
@@ -14,7 +15,16 @@ import { Header } from '@/layout/Header';
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
-import { useGetUsers, useCreateUser, useUpdateUser, useSuspendUser } from '@/api';
+import {
+  useGetUsers,
+  useCreateUser,
+  useUpdateUser,
+  useSuspendUser,
+  useApiRequirements,
+  testPasswordPattern,
+  getPasswordRequirementsDescription,
+} from '@/api';
+import { toaster } from '@/components/ui/toaster';
 import { useAuthStore } from '@/stores/authStore';
 import { UserScopedAccessTab } from './UserScopedAccessTab';
 import { PoliciesTab } from './PoliciesTab';
@@ -84,7 +94,6 @@ export const UsersPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCreatePolicyOpen, setIsCreatePolicyOpen] = useState(false);
-  const [isPasswordPolicyOpen, setIsPasswordPolicyOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(() => {
     try {
@@ -896,7 +905,6 @@ export const UsersPage: React.FC = () => {
                     })
                   }
                   isSaving={updateUserMutation.isPending}
-                  onOpenPasswordPolicy={() => setIsPasswordPolicyOpen(true)}
                 />
               ) : (
                 <UserScopedAccessTab user={selectedUser} />
@@ -922,15 +930,8 @@ export const UsersPage: React.FC = () => {
             });
           }}
           isLoading={createUserMutation.isPending}
-          onOpenPasswordPolicy={() => setIsPasswordPolicyOpen(true)}
         />
       )}
-
-      {/* Password Policy Modal */}
-      <PasswordPolicyModal
-        isOpen={isPasswordPolicyOpen}
-        onClose={() => setIsPasswordPolicyOpen(false)}
-      />
     </Box>
   );
 };
@@ -943,10 +944,10 @@ const UserProfileForm: React.FC<{
     onSuccess?: () => void
   ) => void;
   isSaving: boolean;
-  onOpenPasswordPolicy: () => void;
-}> = ({ user, onSave, isSaving, onOpenPasswordPolicy }) => {
+}> = ({ user, onSave, isSaving }) => {
   const currentUser = useAuthStore((s) => s.user);
   const isCurrentUserRoot = currentUser?.userRole?.toLowerCase() === 'root';
+  const { passwordPattern, passwordPolicyLink } = useApiRequirements();
 
   const availableRoles = [
     ...(isCurrentUserRoot || user.userRole?.toLowerCase() === 'root'
@@ -966,6 +967,12 @@ const UserProfileForm: React.FC<{
   const [description, setDescription] = useState(user.description || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
+
+  const isPasswordValid = useMemo(
+    () => !password.trim() || testPasswordPattern(password.trim(), passwordPattern),
+    [password, passwordPattern]
+  );
 
   useEffect(() => {
     setName(user.name || '');
@@ -974,6 +981,7 @@ const UserProfileForm: React.FC<{
     setDescription(user.description || '');
     setPassword('');
     setShowPassword(false);
+    setPasswordTouched(false);
     setIsEditing(false);
   }, [user]);
 
@@ -984,10 +992,19 @@ const UserProfileForm: React.FC<{
     setDescription(user.description || '');
     setPassword('');
     setShowPassword(false);
+    setPasswordTouched(false);
     setIsEditing(false);
   };
 
   const handleSave = () => {
+    if (password.trim() && !testPasswordPattern(password.trim(), passwordPattern)) {
+      setPasswordTouched(true);
+      toaster.warning({
+        title: 'Validation Error',
+        description: `Password must satisfy: ${getPasswordRequirementsDescription(passwordPattern)}`,
+      });
+      return;
+    }
     const payload: { id: string; name: string; email: string; userRole: string; description: string; currentPassword?: string } = {
       id: user.id,
       name,
@@ -1119,11 +1136,18 @@ const UserProfileForm: React.FC<{
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onBlur={() => {
+              if (password.trim()) setPasswordTouched(true);
+            }}
             placeholder={isEditing ? 'Enter new password to change' : '••••••••••••'}
             size="sm"
             borderRadius="4px"
             pr={isEditing ? '75px' : '12px'}
-            borderColor={themeColors.input.border}
+            borderColor={
+              isEditing && passwordTouched && !isPasswordValid
+                ? themeColors.text.required
+                : themeColors.input.border
+            }
             bg={isEditing ? '#ffffff' : themeColors.input.bg}
             letterSpacing={!showPassword && password ? '2px' : 'normal'}
             readOnly={!isEditing}
@@ -1151,9 +1175,17 @@ const UserProfileForm: React.FC<{
             </Button>
           )}
         </Flex>
-        <Text fontSize="11px" color={themeColors.text.muted} mt={1}>
-          {isEditing ? 'Leave blank to keep the current password.' : 'Password is encrypted and protected.'}
-        </Text>
+        {isEditing && passwordTouched && !isPasswordValid ? (
+          <Text fontSize="11px" color={themeColors.text.required} mt={1}>
+            Password must meet requirements ({getPasswordRequirementsDescription(passwordPattern)})
+          </Text>
+        ) : (
+          <Text fontSize="11px" color={themeColors.text.muted} mt={1}>
+            {isEditing
+              ? `Leave blank to keep current password. Requirements: ${getPasswordRequirementsDescription(passwordPattern)}`
+              : 'Password is encrypted and protected.'}
+          </Text>
+        )}
       </Box>
 
       {/* Description */}
@@ -1178,21 +1210,22 @@ const UserProfileForm: React.FC<{
 
       {/* View Password Policy Link */}
       <Box mt={1}>
-        <Button
-          variant="plain"
-          p={0}
-          h="auto"
+        <chakra.a
+          href={passwordPolicyLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={passwordPolicyLink}
           fontSize="12px"
           color={themeColors.brand.accent}
           _hover={{ textDecoration: 'underline' }}
-          onClick={onOpenPasswordPolicy}
+          display="inline-flex"
+          alignItems="center"
+          gap={1}
           cursor="pointer"
         >
-          <HStack gap={1}>
-            <Text>View password policy</Text>
-            <Icon name="external" size={13} />
-          </HStack>
-        </Button>
+          <Text>View password policy</Text>
+          <Icon name="external" size={13} />
+        </chakra.a>
       </Box>
 
       {/* Form Action Buttons - Only visible when editing */}
@@ -1216,7 +1249,7 @@ const UserProfileForm: React.FC<{
             _active={{ bg: themeColors.brand.primaryActive }}
             size="sm"
             minW="120px"
-            disabled={isSaving}
+            disabled={isSaving || (passwordTouched && !isPasswordValid)}
             onClick={handleSave}
             fontWeight="600"
           >
@@ -1225,97 +1258,6 @@ const UserProfileForm: React.FC<{
         </Flex>
       )}
     </VStack>
-  );
-};
-
-// Sub-component: Password Policy Modal
-const PasswordPolicyModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-}> = ({ isOpen, onClose }) => {
-  if (!isOpen) return null;
-
-  return (
-    <Box
-      position="fixed"
-      inset="0"
-      bg="rgba(5, 12, 23, 0.54)"
-      display="grid"
-      placeItems="center"
-      zIndex="1100"
-      p={4}
-    >
-      <Box
-        w="min(480px, 95vw)"
-        bg="#ffffff"
-        borderRadius="8px"
-        boxShadow="0 20px 50px rgba(0,0,0,0.3)"
-        p={6}
-      >
-        <Flex justify="space-between" align="center" mb={4}>
-          <HStack gap={2}>
-            <Icon name="shield" size={20} color={themeColors.brand.primary} />
-            <Text fontSize="16px" fontWeight="700" color={themeColors.text.title}>
-              Password Policy
-            </Text>
-          </HStack>
-          <Button
-            variant="plain"
-            onClick={onClose}
-            p={1}
-            minW="auto"
-            h="auto"
-            color={themeColors.text.secondary}
-          >
-            <Icon name="x" size={18} />
-          </Button>
-        </Flex>
-
-        <Text fontSize="13px" color={themeColors.text.secondary} mb={4}>
-          To maintain security compliance across OpenWiFi and Mango Cloud services, your password must meet the following complexity requirements:
-        </Text>
-
-        <VStack gap={2} align="stretch" mb={6} fontSize="13px" color={themeColors.text.primary}>
-          <HStack gap={2} align="flex-start">
-            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
-            <Text>Minimum length of <strong>8 characters</strong></Text>
-          </HStack>
-          <HStack gap={2} align="flex-start">
-            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
-            <Text>At least one <strong>uppercase letter (A–Z)</strong></Text>
-          </HStack>
-          <HStack gap={2} align="flex-start">
-            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
-            <Text>At least one <strong>lowercase letter (a–z)</strong></Text>
-          </HStack>
-          <HStack gap={2} align="flex-start">
-            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
-            <Text>At least one <strong>number (0–9)</strong></Text>
-          </HStack>
-          <HStack gap={2} align="flex-start">
-            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
-            <Text>At least one <strong>special character</strong> (e.g. !@#$%^&*)</Text>
-          </HStack>
-          <HStack gap={2} align="flex-start">
-            <Box color="#16a34a" mt="2px"><Icon name="check" size={15} /></Box>
-            <Text>Must not match user's name or email</Text>
-          </HStack>
-        </VStack>
-
-        <Flex justify="flex-end">
-          <Button
-            bg={themeColors.brand.primary}
-            color="#ffffff"
-            _hover={{ bg: themeColors.brand.primaryHover }}
-            size="sm"
-            px={5}
-            onClick={onClose}
-          >
-            Got it
-          </Button>
-        </Flex>
-      </Box>
-    </Box>
   );
 };
 
@@ -1332,19 +1274,25 @@ const CreateUserModal: React.FC<{
     changePassword?: boolean;
   }) => void;
   isLoading: boolean;
-  onOpenPasswordPolicy?: () => void;
-}> = ({ onClose, onCreate, isLoading, onOpenPasswordPolicy }) => {
+}> = ({ onClose, onCreate, isLoading }) => {
   const currentUser = useAuthStore((s) => s.user);
   const isCurrentUserRoot = currentUser?.userRole?.toLowerCase() === 'root';
+  const { passwordPattern, passwordPolicyLink } = useApiRequirements();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [userRole, setUserRole] = useState('admin');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordTouched, setPasswordTouched] = useState(false);
   const [description, setDescription] = useState('');
   const [changePassword, setChangePassword] = useState(true);
   const [emailValidation, setEmailValidation] = useState(false);
+
+  const isPasswordValid = useMemo(
+    () => testPasswordPattern(password, passwordPattern),
+    [password, passwordPattern]
+  );
 
   const roleOptions = [
     { label: 'Admin', value: 'admin' },
@@ -1357,7 +1305,15 @@ const CreateUserModal: React.FC<{
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setPasswordTouched(true);
     if (!email || !name) return;
+    if (!testPasswordPattern(password, passwordPattern)) {
+      toaster.warning({
+        title: 'Validation Error',
+        description: `Password must satisfy: ${getPasswordRequirementsDescription(passwordPattern)}`,
+      });
+      return;
+    }
     onCreate({
       name,
       email,
@@ -1463,10 +1419,16 @@ const CreateUserModal: React.FC<{
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onBlur={() => setPasswordTouched(true)}
                   placeholder="Enter password"
                   size="sm"
                   borderRadius="4px"
                   pr="75px"
+                  borderColor={
+                    passwordTouched && !isPasswordValid
+                      ? themeColors.text.required
+                      : undefined
+                  }
                   letterSpacing={!showPassword && password ? '2px' : 'normal'}
                   required
                 />
@@ -1490,27 +1452,30 @@ const CreateUserModal: React.FC<{
                 </Button>
               </Flex>
               <Flex justify="space-between" align="center" mt={1}>
-                <Text fontSize="11px" color={themeColors.text.muted}>
-                  Min 8 chars, uppercase, number & symbol
+                <Text
+                  fontSize="11px"
+                  color={passwordTouched && !isPasswordValid ? themeColors.text.required : themeColors.text.muted}
+                >
+                  {passwordTouched && !isPasswordValid
+                    ? `Password must meet requirements (${getPasswordRequirementsDescription(passwordPattern)})`
+                    : getPasswordRequirementsDescription(passwordPattern)}
                 </Text>
-                {onOpenPasswordPolicy && (
-                  <Button
-                    type="button"
-                    variant="plain"
-                    p={0}
-                    h="auto"
-                    fontSize="11px"
-                    color={themeColors.brand.accent}
-                    _hover={{ textDecoration: 'underline' }}
-                    onClick={onOpenPasswordPolicy}
-                    cursor="pointer"
-                  >
-                    <HStack gap={1}>
-                      <Text>Password policy</Text>
-                      <Icon name="external" size={11} />
-                    </HStack>
-                  </Button>
-                )}
+                <chakra.a
+                  href={passwordPolicyLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={passwordPolicyLink}
+                  fontSize="11px"
+                  color={themeColors.brand.accent}
+                  _hover={{ textDecoration: 'underline' }}
+                  display="inline-flex"
+                  alignItems="center"
+                  gap={1}
+                  cursor="pointer"
+                >
+                  <Text>Password policy</Text>
+                  <Icon name="external" size={11} />
+                </chakra.a>
               </Flex>
             </Box>
           </Flex>
@@ -1611,7 +1576,7 @@ const CreateUserModal: React.FC<{
               color="#ffffff"
               _hover={{ bg: themeColors.brand.primaryHover }}
               minW="120px"
-              disabled={isLoading}
+              disabled={isLoading || (passwordTouched && !isPasswordValid)}
             >
               {isLoading ? 'Creating...' : 'Create user'}
             </Button>
