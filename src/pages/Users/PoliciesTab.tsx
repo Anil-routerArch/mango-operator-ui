@@ -9,13 +9,19 @@ import {
   Input,
   Badge,
   SimpleGrid,
+  Spinner,
 } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useUsersUiStore } from '@/stores/usersUiStore';
 import { useAuthStore } from '@/stores/authStore';
-import { useGetManagementPolicies, useUpdateManagementPolicy, useCreateManagementPolicy } from '@/api';
+import {
+  useGetManagementPolicies,
+  useUpdateManagementPolicy,
+  useCreateManagementPolicy,
+  useDeleteManagementPolicy,
+} from '@/api';
 import type { ManagementPolicy, ManagementPolicyEntry } from '@/types/managementRole';
 import { toaster } from '@/components/ui/toaster';
 
@@ -215,7 +221,12 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   const { data: apiPolicies = [], isLoading: isPoliciesLoading } = useGetManagementPolicies();
   const createPolicyMutation = useCreateManagementPolicy();
   const updatePolicyMutation = useUpdateManagementPolicy();
+  const deletePolicyMutation = useDeleteManagementPolicy();
   const [policies, setPolicies] = useState<PolicyItem[]>([]);
+
+  // Delete policy modal state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Edit policy state (only root can toggle)
   const [isEditing, setIsEditing] = useState(false);
@@ -624,6 +635,60 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
     }
   };
 
+  const handleDeletePolicy = async () => {
+    if (!selectedPolicy) return;
+
+    setDeleteError(null);
+    try {
+      await deletePolicyMutation.mutateAsync(selectedPolicy.id);
+
+      toaster.success({
+        title: 'Policy Deleted',
+        description: `Policy "${selectedPolicy.name}" has been deleted successfully.`,
+      });
+
+      setIsDeleteModalOpen(false);
+
+      // Select another remaining policy if available
+      const remaining = policies.filter((p) => p.id !== selectedPolicy.id);
+      if (remaining.length > 0) {
+        setSelectedPolicyId(remaining[0].id);
+      } else {
+        setSelectedPolicyId('');
+      }
+    } catch (err: any) {
+      console.error('Failed to delete policy:', err);
+      const status = err?.response?.status;
+      const errorCode = err?.response?.data?.ErrorCode || err?.response?.data?.errorCode;
+      const errorDesc = err?.response?.data?.ErrorDescription || err?.response?.data?.errorDescription || '';
+      const errorDetails = err?.response?.data?.ErrorDetails || err?.response?.data?.errorDetails || '';
+      const rawMsg = `${errorDesc} ${errorDetails}`.toLowerCase();
+
+      const isStillInUse =
+        errorCode === 1005 ||
+        rawMsg.includes('still in use') ||
+        rawMsg.includes('stillinuse') ||
+        rawMsg.includes('currently assigned') ||
+        status === 409;
+
+      let userFacingMessage = 'Failed to delete policy.';
+      if (isStillInUse) {
+        userFacingMessage = `Cannot delete "${selectedPolicy.name}": Management policy is currently assigned to one or more management roles.`;
+        toaster.error({
+          title: 'Policy In Use',
+          description: userFacingMessage,
+        });
+      } else {
+        userFacingMessage = errorDetails || errorDesc || err?.message || 'Failed to delete policy.';
+        toaster.error({
+          title: 'Delete Failed',
+          description: userFacingMessage,
+        });
+      }
+      setDeleteError(userFacingMessage);
+    }
+  };
+
   return (
     <VStack gap={4} align="stretch" w="100%">
       {/* Total Policies KPI Card */}
@@ -960,36 +1025,60 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
               </Box>
             </HStack>
 
-            {/* Edit policy button - Only visible for Root */}
+            {/* Action buttons - Only visible for Root */}
             {isRoot && (
-              !isEditing ? (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  h="28px"
-                  px={3}
-                  color="#2563eb"
-                  borderColor="#bfdbfe"
-                  bg="#eff6ff"
-                  _hover={{ bg: '#dbeafe', borderColor: '#93c5fd' }}
-                  onClick={() => {
-                    setEditName(selectedPolicy.name);
-                    setEditDescription(selectedPolicy.description || '');
-                    setEditPermissions(selectedPolicy.permissions.map((p) => ({ ...p })));
-                    setIsEditing(true);
-                    setActiveDetailTab('permissions');
-                  }}
-                >
-                  <HStack gap={1.5}>
-                    <Icon name="edit" size={13} />
-                    <Text fontSize="12px" fontWeight="600">Edit policy</Text>
-                  </HStack>
-                </Button>
-              ) : (
-                <Badge colorScheme="purple" variant="subtle" fontSize="11px" px={2.5} py={1} borderRadius="4px">
-                  Editing Mode
-                </Badge>
-              )
+              <HStack gap={2}>
+                {!isEditing ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      h="28px"
+                      px={3}
+                      color="#2563eb"
+                      borderColor="#bfdbfe"
+                      bg="#eff6ff"
+                      _hover={{ bg: '#dbeafe', borderColor: '#93c5fd' }}
+                      onClick={() => {
+                        setEditName(selectedPolicy.name);
+                        setEditDescription(selectedPolicy.description || '');
+                        setEditPermissions(selectedPolicy.permissions.map((p) => ({ ...p })));
+                        setIsEditing(true);
+                        setActiveDetailTab('permissions');
+                      }}
+                    >
+                      <HStack gap={1.5}>
+                        <Icon name="edit" size={13} />
+                        <Text fontSize="12px" fontWeight="600">Edit policy</Text>
+                      </HStack>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      h="28px"
+                      px={3}
+                      color="#dc2626"
+                      borderColor="#fecaca"
+                      bg="#fef2f2"
+                      _hover={{ bg: '#fee2e2', borderColor: '#fca5a5' }}
+                      onClick={() => {
+                        setDeleteError(null);
+                        setIsDeleteModalOpen(true);
+                      }}
+                    >
+                      <HStack gap={1.5}>
+                        <Icon name="trash" size={13} />
+                        <Text fontSize="12px" fontWeight="600">Delete policy</Text>
+                      </HStack>
+                    </Button>
+                  </>
+                ) : (
+                  <Badge colorScheme="purple" variant="subtle" fontSize="11px" px={2.5} py={1} borderRadius="4px">
+                    Editing Mode
+                  </Badge>
+                )}
+              </HStack>
             )}
           </Flex>
 
@@ -2071,6 +2160,129 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 Create policy
               </Button>
             </Flex>
+          </Box>
+        </Box>
+      )}
+
+      {/* Delete Policy Confirmation Modal */}
+      {isDeleteModalOpen && selectedPolicy && (
+        <Box
+          position="fixed"
+          inset="0"
+          bg="rgba(5, 12, 23, 0.54)"
+          display="grid"
+          placeItems="center"
+          zIndex="1200"
+          p={4}
+        >
+          <Box
+            w="min(460px, 95vw)"
+            bg="#ffffff"
+            borderRadius="8px"
+            boxShadow="0 20px 50px rgba(0,0,0,0.3)"
+            overflow="hidden"
+          >
+            {/* Header */}
+            <Flex
+              justify="space-between"
+              align="center"
+              p={5}
+              pb={3}
+              borderBottom="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <HStack gap={2}>
+                <Flex
+                  w="28px"
+                  h="28px"
+                  borderRadius="50%"
+                  bg="#fee2e2"
+                  color="#dc2626"
+                  align="center"
+                  justify="center"
+                >
+                  <Icon name="trash" size={15} />
+                </Flex>
+                <Text fontSize="16px" fontWeight="700" color="#0f172a">
+                  Delete management policy
+                </Text>
+              </HStack>
+              <Button
+                variant="plain"
+                size="xs"
+                p={1}
+                cursor="pointer"
+                disabled={deletePolicyMutation.isPending}
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setDeleteError(null);
+                }}
+              >
+                <Icon name="x" size={18} />
+              </Button>
+            </Flex>
+
+            {/* Body */}
+            <Box p={5}>
+              <Text fontSize="13px" color="#334155" mb={2} lineHeight="1.5">
+                Are you sure you want to delete <strong>"{selectedPolicy.name}"</strong>?
+              </Text>
+              <Text fontSize="12px" color="#64748b" mb={4} lineHeight="1.5">
+                This action is permanent and will remove the policy from OpenWiFi. If this policy is currently assigned to any management roles, OWPROV will reject the request.
+              </Text>
+
+              {deleteError && (
+                <Box
+                  p={3}
+                  mb={4}
+                  borderRadius="6px"
+                  bg="#fef2f2"
+                  border="1px solid #fecaca"
+                  color="#b91c1c"
+                  fontSize="12px"
+                  lineHeight="1.5"
+                >
+                  <HStack gap={1.5} align="flex-start">
+                    <Box pt="2px">
+                      <Icon name="x" size={14} color="#dc2626" />
+                    </Box>
+                    <Text>{deleteError}</Text>
+                  </HStack>
+                </Box>
+              )}
+
+              <HStack justify="flex-end" gap={3} pt={2}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  borderColor={themeColors.panel.border}
+                  color={themeColors.text.primary}
+                  disabled={deletePolicyMutation.isPending}
+                  onClick={() => {
+                    setIsDeleteModalOpen(false);
+                    setDeleteError(null);
+                  }}
+                  cursor="pointer"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  bg="#dc2626"
+                  color="#ffffff"
+                  _hover={{ bg: '#b91c1c' }}
+                  disabled={deletePolicyMutation.isPending}
+                  onClick={handleDeletePolicy}
+                  cursor={deletePolicyMutation.isPending ? 'not-allowed' : 'pointer'}
+                  fontWeight="600"
+                >
+                  <HStack gap={1.5}>
+                    {deletePolicyMutation.isPending && <Spinner size="xs" color="#ffffff" />}
+                    <Text>{deletePolicyMutation.isPending ? 'Deleting...' : 'Delete policy'}</Text>
+                  </HStack>
+                </Button>
+              </HStack>
+            </Box>
           </Box>
         </Box>
       )}

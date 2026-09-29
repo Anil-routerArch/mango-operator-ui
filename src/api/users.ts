@@ -309,6 +309,20 @@ export const useUpdateManagementPolicy = () => {
   });
 };
 
+export const useDeleteManagementPolicy = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await axiosProv.delete(`managementPolicy/${id}`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
+    },
+  });
+};
+
 // ==========================================
 // 7. SECURITY REQUIREMENTS & PASSWORD POLICY (OWSEC: TC-USR-007)
 // ==========================================
