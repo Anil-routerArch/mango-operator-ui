@@ -114,6 +114,67 @@ test('40-generate-config.sh generates valid env-config.js with runtime environme
   }
 });
 
+test('40-generate-config.sh safely escapes special characters (quotes, backslashes, newlines, injection attempts)', () => {
+  const scriptPath = path.join(ROOT_DIR, 'docker-entrypoint.d', '40-generate-config.sh');
+  const tempDir = fs.mkdtempSync(path.join(ROOT_DIR, 'tests', 'temp-'));
+  const tempConfigFile = path.join(tempDir, 'env-config.js');
+
+  try {
+    const customEnv = {
+      ...process.env,
+      ENV_CONFIG_PATH: tempConfigFile,
+      // Exact example from review comment:
+      VITE_TEST: 'abc"; console.log("x',
+      VITE_QUOTES: 'Test "double" and \'single\' quotes',
+      VITE_BACKSLASH: 'C:\\Users\\Operator\\Path',
+      VITE_MULTILINE: 'Line 1\nLine 2\r\nLine 3',
+      VITE_INJECTION: 'foo"; window._injected_ = true; //',
+    };
+
+    execFileSync('sh', [scriptPath], { env: customEnv });
+
+    assert.ok(fs.existsSync(tempConfigFile), 'Generated env-config.js must exist');
+    const generatedContent = fs.readFileSync(tempConfigFile, 'utf-8');
+
+    // Ensure the generated code is valid JavaScript and executes safely
+    const sandbox = { window: {} };
+    vm.createContext(sandbox);
+
+    // This will throw a SyntaxError if values were not escaped properly
+    assert.doesNotThrow(() => {
+      vm.runInContext(generatedContent, sandbox);
+    }, 'Generated env-config.js must be syntactically valid JavaScript');
+
+    // Verify injected code was NOT executed
+    assert.strictEqual(
+      sandbox.window._injected_,
+      undefined,
+      'Script injection must not execute'
+    );
+
+    // Verify literal values are accurately preserved
+    assert.strictEqual(
+      sandbox.window._env_.VITE_TEST,
+      'abc"; console.log("x',
+      'Quotes and code-like strings must be preserved without execution'
+    );
+    assert.strictEqual(
+      sandbox.window._env_.VITE_QUOTES,
+      'Test "double" and \'single\' quotes'
+    );
+    assert.strictEqual(
+      sandbox.window._env_.VITE_BACKSLASH,
+      'C:\\Users\\Operator\\Path'
+    );
+    assert.strictEqual(
+      sandbox.window._env_.VITE_MULTILINE,
+      'Line 1\nLine 2\r\nLine 3'
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test('runtime configured URLs are consumed by client base URL resolvers', () => {
   // Mirror client.ts URL resolution logic
   const resolveSecBaseUrl = (win, fallbackEnv = {}) => {

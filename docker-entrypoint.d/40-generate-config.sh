@@ -7,17 +7,23 @@ mkdir -p "$(dirname "$ENV_CONFIG_PATH")"
 rm -f "$ENV_CONFIG_PATH"
 touch "$ENV_CONFIG_PATH"
 
-# Add assignment
+# Write opening assignment
 echo "window._env_ = {" > "$ENV_CONFIG_PATH"
 
-# Read each line in environment variables
-env | grep -E "^(VITE_|REACT_)" | while IFS='=' read -r varname varvalue; do
-  [ -z "$varname" ] && continue
-  eval "value=\"\${$varname}\""
-  [ -z "$value" ] && value="$varvalue"
+# Safely extract and JSON-escape all VITE_ and REACT_ environment variables
+awk 'BEGIN {
+  for (k in ENVIRON) {
+    if (k ~ /^(VITE_|REACT_)/) {
+      val = ENVIRON[k]
+      gsub(/\\/, "\\\\", val)
+      gsub(/"/, "\\\"", val)
+      gsub(/\r/, "\\r", val)
+      gsub(/\n/, "\\n", val)
+      gsub(/\t/, "\\t", val)
+      printf "  \"%s\": \"%s\",\n", k, val
+    }
+  }
+}' | sort >> "$ENV_CONFIG_PATH"
 
-  # Append configuration property to JS file
-  echo "  $varname: \"$value\"," >> "$ENV_CONFIG_PATH"
-done
-
+# Close assignment
 echo "};" >> "$ENV_CONFIG_PATH"
