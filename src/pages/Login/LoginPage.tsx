@@ -14,7 +14,7 @@ import {
 } from '@chakra-ui/react';
 import { useAuthStore } from '@/stores/authStore';
 import { themeColors } from '@/theme';
-import mduLogo from '@/assets/mdu-logo.png';
+import logoDark from '@/assets/logo-dark.png';
 
 export const LoginPage: React.FC = () => {
   const { isAuthenticated, login, submitMfa, isLoading, error, mfaChallenge, clearError } = useAuthStore();
@@ -68,9 +68,9 @@ export const LoginPage: React.FC = () => {
       <VStack gap={6} w="100%" maxW="420px" align="center">
         {/* Mango Cloud Logo above the Form */}
         <Image
-          src={mduLogo}
+          src={logoDark}
           alt="Mango Cloud"
-          maxH="72px"
+          maxH="75px"
           maxW="260px"
           w="auto"
           h="auto"
