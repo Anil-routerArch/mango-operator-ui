@@ -38,10 +38,10 @@ export interface PolicyAssignedUser {
 export interface PolicyItem {
   id: string;
   name: string;
-  type: 'Built-in' | 'Custom';
+  type?: string;
   preset?: string;
   status: string;
-  createdBy: string;
+  createdBy?: string;
   usedByUsers: number;
   scopedAssignmentsCount: number;
   propertiesCount: number;
@@ -186,10 +186,8 @@ const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
   return {
     id: p.id,
     name: p.name,
-    type: p.entity ? 'Custom' : 'Built-in',
     preset: p.name,
     status: 'Active',
-    createdBy: p.entity ? 'Custom' : 'System',
     usedByUsers: 0,
     scopedAssignmentsCount: 0,
     propertiesCount: 0,
@@ -707,9 +705,8 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
             textTransform="uppercase"
             letterSpacing="0.05em"
           >
-            <Box flex="1.8">Policy</Box>
-            <Box flex="1">Type</Box>
-            <Box flex="1">Used By</Box>
+            <Box flex="2">Policy</Box>
+            <Box flex="1">Status</Box>
             <Box flex="1.2">Modified</Box>
             <Box w="24px" />
           </Flex>
@@ -734,7 +731,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 transition="all 0.15s ease"
               >
                 {/* Policy Name & Icon */}
-                <HStack flex="1.8" gap={2.5} minW={0} pr={2}>
+                <HStack flex="2" gap={2.5} minW={0} pr={2}>
                   <Flex
                     w="24px"
                     h="24px"
@@ -757,16 +754,23 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   </Text>
                 </HStack>
 
-                {/* Type */}
+                {/* Status */}
                 <Box flex="1">
-                  <Text fontSize="12px" color="#64748b">
-                    {p.type}
-                  </Text>
-                </Box>
-
-                {/* Used By */}
-                <Box flex="1">
-                  <Text fontSize="12px" color="#64748b" />
+                  <Box
+                    as="span"
+                    display="inline-block"
+                    fontSize="11px"
+                    fontWeight="600"
+                    px="8px"
+                    py="1px"
+                    borderRadius="12px"
+                    bg="#ecfdf5"
+                    color="#15803d"
+                    border="1px solid #bbf7d0"
+                    whiteSpace="nowrap"
+                  >
+                    {p.status || 'Active'}
+                  </Box>
                 </Box>
 
                 {/* Modified */}
@@ -938,13 +942,16 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     {selectedPolicy.name}
                   </Text>
                   <Badge
-                    colorScheme="blue"
-                    variant="subtle"
+                    bg="#ecfdf5"
+                    color="#15803d"
+                    border="1px solid #bbf7d0"
                     fontSize="11px"
                     px={2}
-                    borderRadius="4px"
+                    py="1px"
+                    borderRadius="full"
+                    fontWeight="600"
                   >
-                    {selectedPolicy.type}
+                    {selectedPolicy.status || 'Active'}
                   </Badge>
                 </HStack>
                 <Text fontSize="12px" color="#64748b" mt={0.5}>
@@ -1047,7 +1054,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
               {/* Policy Preset Field */}
               <Box>
                 <Text fontSize="11px" fontWeight="600" color="#64748b" mb={1}>
-                  Policy preset
+                  Policy name
                 </Text>
                 <Input
                   value={selectedPolicy.name}
@@ -1060,9 +1067,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   borderColor={themeColors.panel.border}
                 />
                 <Text fontSize="11px" color="#94a3b8" mt={1}>
-                  {selectedPolicy.type === 'Built-in'
-                    ? 'Built-in presets are protected from deletion.'
-                    : 'Custom policy assigned to scoped entity/venue assignments.'}
+                  Management policy for scoped entity and venue role assignments.
                 </Text>
               </Box>
 
@@ -1473,19 +1478,10 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   <VStack gap={2.5} align="stretch" fontSize="12px">
                     <Flex align="center">
                       <Text w="140px" color="#64748b" flexShrink={0}>
-                        Type
+                        Policy name
                       </Text>
                       <Text color="#0f172a" fontWeight="500">
-                        {selectedPolicy.type}
-                      </Text>
-                    </Flex>
-
-                    <Flex align="center">
-                      <Text w="140px" color="#64748b" flexShrink={0}>
-                        Preset
-                      </Text>
-                      <Text color="#0f172a" fontWeight="500">
-                        {selectedPolicy.preset || selectedPolicy.name}
+                        {selectedPolicy.name}
                       </Text>
                     </Flex>
 
@@ -1519,30 +1515,19 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       </Text>
                     </Flex>
 
-                    <Flex align="center">
-                      <Text w="140px" color="#64748b" flexShrink={0}>
-                        Created by
-                      </Text>
-                      <Text color="#0f172a">
-                        {selectedPolicy.createdBy || 'System'}
-                      </Text>
-                    </Flex>
-
                     <Flex align="flex-start">
                       <Text w="140px" color="#64748b" flexShrink={0}>
                         Description
                       </Text>
                       <Text color="#0f172a">
-                        {selectedPolicy.description}
+                        {selectedPolicy.description || '—'}
                       </Text>
                     </Flex>
 
                     <HStack gap={1.5} pt={2} color="#64748b" fontSize="11px" align="center">
                       <Icon name="lock" size={13} color="#64748b" />
                       <Text color="#64748b">
-                        {selectedPolicy.type === 'Built-in'
-                          ? 'Built-in policies cannot be deleted.'
-                          : 'Custom policies can be edited and deleted.'}
+                        Policies assigned to active management roles are protected from deletion by OWPROV.
                       </Text>
                     </HStack>
                   </VStack>
