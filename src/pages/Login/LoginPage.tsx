@@ -70,8 +70,8 @@ export const LoginPage: React.FC = () => {
         <Image
           src={logoDark}
           alt="Mango Cloud"
-          maxH="75px"
-          maxW="260px"
+          maxH="100px"
+          maxW="300px"
           w="auto"
           h="auto"
           objectFit="contain"
