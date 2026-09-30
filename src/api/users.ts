@@ -112,6 +112,7 @@ export const useUpdateUser = () => {
   return useMutation({
     mutationFn: async (payload: UpdateUserPayload) => {
       const { id, ...body } = payload;
+      delete (body as Record<string, unknown>).email;
       const { data } = await axiosSec.put(`user/${id}`, body);
       return data;
     },
