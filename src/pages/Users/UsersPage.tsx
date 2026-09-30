@@ -33,7 +33,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { UserScopedAccessTab } from './UserScopedAccessTab';
 import { PoliciesTab } from './PoliciesTab';
 import { useUsersUiStore } from '@/stores/usersUiStore';
-import type { User } from '@/types/user';
+import type { User, UpdateUserPayload } from '@/types/user';
 
 // Helper: Format unix timestamp to human readable relative time
 const formatLastLogin = (timestamp?: number): string => {
@@ -1324,7 +1324,7 @@ const DirectoryErrorState: React.FC<{
 const UserProfileForm: React.FC<{
   user: User;
   onSave: (
-    payload: { id: string; name: string; email: string; userRole: string; description: string; currentPassword?: string },
+    payload: UpdateUserPayload,
     onSuccess?: () => void
   ) => void;
   isSaving: boolean;
@@ -1345,7 +1345,6 @@ const UserProfileForm: React.FC<{
 
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user.name || '');
-  const [email, setEmail] = useState(user.email || '');
   const [role, setRole] = useState(user.userRole || 'admin');
   const [description, setDescription] = useState(user.description || '');
   const [password, setPassword] = useState('');
@@ -1360,7 +1359,6 @@ const UserProfileForm: React.FC<{
 
   useEffect(() => {
     setName(user.name || '');
-    setEmail(user.email || '');
     setRole(user.userRole || 'admin');
     setDescription(user.description || '');
     setPassword('');
@@ -1371,7 +1369,6 @@ const UserProfileForm: React.FC<{
 
   const handleCancel = () => {
     setName(user.name || '');
-    setEmail(user.email || '');
     setRole(user.userRole || 'admin');
     setDescription(user.description || '');
     setPassword('');
@@ -1396,16 +1393,13 @@ const UserProfileForm: React.FC<{
       });
       return;
     }
-    const payload: { id: string; name: string; email: string; userRole: string; description: string; currentPassword?: string } = {
+    const payload: UpdateUserPayload = {
       id: user.id,
       name,
-      email,
       userRole: role,
       description,
+      ...(password.trim() ? { currentPassword: password.trim() } : {}),
     };
-    if (password.trim()) {
-      payload.currentPassword = password.trim();
-    }
     onSave(payload, () => {
       setIsEditing(false);
     });
@@ -1465,19 +1459,23 @@ const UserProfileForm: React.FC<{
       <Flex gap={3}>
         <Box flex="1">
           <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-            Email {isEditing && <Box as="span" color={themeColors.text.required}>*</Box>}
+            Email
           </Text>
           <Input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={user.email || ''}
             size="sm"
             borderRadius="4px"
             borderColor={themeColors.input.border}
-            bg={isEditing ? '#ffffff' : themeColors.input.bg}
-            readOnly={!isEditing}
-            disabled={!isEditing}
-            cursor={!isEditing ? 'default' : 'text'}
+            bg={themeColors.input.bg}
+            readOnly
+            disabled
+            cursor="default"
           />
+          {isEditing && (
+            <Text fontSize="10px" color={themeColors.text.muted} mt={1}>
+              Email is immutable and cannot be modified.
+            </Text>
+          )}
         </Box>
         <Box flex="1">
           <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>

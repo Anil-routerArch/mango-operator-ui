@@ -57,7 +57,6 @@ export interface CreateUserPayload {
 export interface UpdateUserPayload {
   id: string;
   name?: string;
-  email?: string;
   description?: string;
   userRole?: string;
   suspended?: boolean;
