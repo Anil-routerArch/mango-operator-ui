@@ -13,32 +13,28 @@ import type {
 } from '@/types/managementRole';
 
 // ==========================================
-// 1. AVATAR FETCHING & CONVERSION
+// 1. LAZY USER AVATAR FETCHING (OWSEC: Port 16001)
 // ==========================================
-const getAvatarPromises = (userList: User[], queryClient: QueryClient) => {
-  return userList.map(async (user) => {
-    if (user.avatar && user.avatar !== '' && user.avatar !== '0') {
-      const cachedAvatar = queryClient.getQueryData<string>(['avatar', user.id, user.avatar]);
-      if (cachedAvatar) return cachedAvatar;
-
-      try {
-        const response = await axiosSec.get(`avatar/${user.id}?cache=${user.avatar}`, {
-          responseType: 'arraybuffer',
-        });
-        const uint8 = new Uint8Array(response.data);
-        let binary = '';
-        for (let i = 0; i < uint8.byteLength; i++) {
-          binary += String.fromCharCode(uint8[i]);
-        }
-        const base64 = `data:image/png;base64,${btoa(binary)}`;
-        queryClient.setQueryData(['avatar', user.id, user.avatar], base64);
-        return base64;
-      } catch (err) {
-        console.warn(`Failed to fetch avatar for user ${user.id}:`, err);
+export const useGetUserAvatar = (userId?: string, avatarToken?: string) => {
+  return useQuery({
+    queryKey: ['avatar', userId, avatarToken],
+    queryFn: async () => {
+      if (!userId || !avatarToken || avatarToken === '' || avatarToken === '0') {
         return '';
       }
-    }
-    return '';
+      try {
+        const response = await axiosSec.get(`avatar/${userId}?cache=${avatarToken}`, {
+          responseType: 'blob',
+        });
+        return URL.createObjectURL(response.data);
+      } catch (err) {
+        console.warn(`Failed to fetch avatar for user ${userId}:`, err);
+        return '';
+      }
+    },
+    enabled: Boolean(userId && avatarToken && avatarToken !== '' && avatarToken !== '0'),
+    staleTime: Infinity,
+    gcTime: 60 * 60 * 1000,
   });
 };
 
@@ -52,7 +48,7 @@ export const getBatchUsers = async (offset = 0, limit = 500): Promise<User[]> =>
   return data?.users || [];
 };
 
-export const getAllUsers = async (queryClient: QueryClient): Promise<User[]> => {
+export const getAllUsers = async (_queryClient?: QueryClient): Promise<User[]> => {
   let allUsers: User[] = [];
   let offset = 0;
   const limit = 500;
@@ -65,14 +61,7 @@ export const getAllUsers = async (queryClient: QueryClient): Promise<User[]> => 
     lastLength = batch.length;
   } while (lastLength === limit);
 
-  // Concurrently resolve avatars
-  const avatarResults = await Promise.allSettled(getAvatarPromises(allUsers, queryClient));
-  const avatars = avatarResults.map((r) => (r.status === 'fulfilled' ? r.value : ''));
-
-  return allUsers.map((u, i) => ({
-    ...u,
-    avatar: avatars[i] || u.avatar || '',
-  }));
+  return allUsers;
 };
 
 // ==========================================

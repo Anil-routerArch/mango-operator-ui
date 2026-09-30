@@ -18,6 +18,7 @@ import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import {
   useGetUsers,
+  useGetUserAvatar,
   useCreateUser,
   useUpdateUser,
   useSuspendUser,
@@ -74,6 +75,66 @@ const getInitials = (name?: string, email?: string): string => {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
   return source.slice(0, 2).toUpperCase();
+};
+
+// Component: Lazy loaded user avatar with fallback to role-colored initials
+interface UserAvatarProps {
+  userId?: string;
+  avatarToken?: string;
+  name?: string;
+  email?: string;
+  userRole?: string;
+  size?: string;
+  fontSize?: string;
+}
+
+const UserAvatar: React.FC<UserAvatarProps> = ({
+  userId,
+  avatarToken,
+  name,
+  email,
+  userRole,
+  size = '32px',
+  fontSize = '12px',
+}) => {
+  const { data: avatarUrl } = useGetUserAvatar(userId, avatarToken);
+  const avatarColor = getAvatarColor(userRole);
+  const initials = getInitials(name, email);
+
+  if (avatarUrl) {
+    return (
+      <Box
+        w={size}
+        h={size}
+        borderRadius="50%"
+        overflow="hidden"
+        flexShrink={0}
+      >
+        <img
+          src={avatarUrl}
+          alt={name || email}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      </Box>
+    );
+  }
+
+  return (
+    <Flex
+      w={size}
+      h={size}
+      borderRadius="50%"
+      bg={avatarColor}
+      color="#ffffff"
+      align="center"
+      justify="center"
+      fontSize={fontSize}
+      fontWeight="700"
+      flexShrink={0}
+    >
+      {initials}
+    </Flex>
+  );
 };
 
 export const UsersPage: React.FC = () => {
@@ -642,8 +703,6 @@ export const UsersPage: React.FC = () => {
               ) : (
                 paginatedUsers.map((u) => {
                   const isSelected = selectedUser?.id === u.id;
-                  const initials = getInitials(u.name, u.email);
-                  const avatarColor = getAvatarColor(u.userRole);
 
                   return (
                     <Flex
@@ -665,36 +724,15 @@ export const UsersPage: React.FC = () => {
                     >
                       {/* Identity */}
                       <HStack flex="2" gap={3} minW={0} pr={2}>
-                        {u.avatar && u.avatar.startsWith('data:') ? (
-                          <Box
-                            w="32px"
-                            h="32px"
-                            borderRadius="50%"
-                            overflow="hidden"
-                            flexShrink={0}
-                          >
-                            <img
-                              src={u.avatar}
-                              alt={u.name || u.email}
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            />
-                          </Box>
-                        ) : (
-                          <Flex
-                            w="32px"
-                            h="32px"
-                            borderRadius="50%"
-                            bg={avatarColor}
-                            color="#ffffff"
-                            align="center"
-                            justify="center"
-                            fontSize="12px"
-                            fontWeight="700"
-                            flexShrink={0}
-                          >
-                            {initials}
-                          </Flex>
-                        )}
+                        <UserAvatar
+                          userId={u.id}
+                          avatarToken={u.avatar}
+                          name={u.name}
+                          email={u.email}
+                          userRole={u.userRole}
+                          size="32px"
+                          fontSize="12px"
+                        />
                         <Box minW={0} overflow="hidden">
                           <Text
                             fontSize="13px"
@@ -883,36 +921,15 @@ export const UsersPage: React.FC = () => {
             <>
               {/* User Detail Head */}
               <Flex align="center" gap={3} pb={3}>
-                {selectedUser.avatar && selectedUser.avatar.startsWith('data:') ? (
-                  <Box
-                    w="44px"
-                    h="44px"
-                    borderRadius="50%"
-                    overflow="hidden"
-                    flexShrink={0}
-                  >
-                    <img
-                      src={selectedUser.avatar}
-                      alt={selectedUser.name || selectedUser.email}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                  </Box>
-                ) : (
-                  <Flex
-                    w="44px"
-                    h="44px"
-                    borderRadius="50%"
-                    bg={getAvatarColor(selectedUser.userRole)}
-                    color="#ffffff"
-                    align="center"
-                    justify="center"
-                    fontSize="16px"
-                    fontWeight="700"
-                    flexShrink={0}
-                  >
-                    {getInitials(selectedUser.name, selectedUser.email)}
-                  </Flex>
-                )}
+                <UserAvatar
+                  userId={selectedUser.id}
+                  avatarToken={selectedUser.avatar}
+                  name={selectedUser.name}
+                  email={selectedUser.email}
+                  userRole={selectedUser.userRole}
+                  size="44px"
+                  fontSize="16px"
+                />
                 <Box flex="1">
                   <Text fontSize="18px" fontWeight="700" color={themeColors.text.title} lineHeight="1.2">
                     {selectedUser.name || selectedUser.email}
