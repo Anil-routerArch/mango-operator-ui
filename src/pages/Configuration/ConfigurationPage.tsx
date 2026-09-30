@@ -1,0 +1,31 @@
+import React from 'react';
+import { Box, Flex, Text } from '@chakra-ui/react';
+import { Header } from '@/layout/Header';
+import { themeColors } from '@/theme';
+
+export const ConfigurationPage: React.FC = () => {
+  return (
+    <Box>
+      <Header
+        title="Configuration"
+        subtitle="Network profiles, SSIDs, and system configurations."
+      />
+      <Box
+        bg={themeColors.panel.bg}
+        border="1px solid"
+        borderColor={themeColors.panel.border}
+        borderRadius="8px"
+        p={8}
+        minH="450px"
+      >
+        <Flex align="center" justify="center" minH="300px">
+          <Text fontSize="14px" color={themeColors.text.muted}>
+            Configuration content will appear here.
+          </Text>
+        </Flex>
+      </Box>
+    </Box>
+  );
+};
+
+export default ConfigurationPage;
