@@ -4,6 +4,8 @@ import { persist } from 'zustand/middleware';
 export interface UsersUiState {
   mainTab: 'users' | 'policies';
   setMainTab: (tab: 'users' | 'policies') => void;
+  selectedUserId: string | null;
+  setSelectedUserId: (id: string | null) => void;
   selectedPolicyId: string;
   setSelectedPolicyId: (id: string) => void;
   policySubTab: 'overview' | 'permissions';
@@ -17,6 +19,9 @@ export const useUsersUiStore = create<UsersUiState>()(
     (set) => ({
       mainTab: 'users',
       setMainTab: (mainTab) => set({ mainTab }),
+      selectedUserId: null,
+      setSelectedUserId: (selectedUserId) =>
+        set((state) => (state.selectedUserId === selectedUserId ? state : { selectedUserId })),
       selectedPolicyId: 'pol-net-op',
       setSelectedPolicyId: (selectedPolicyId) => set({ selectedPolicyId }),
       policySubTab: 'overview',
@@ -26,6 +31,12 @@ export const useUsersUiStore = create<UsersUiState>()(
     }),
     {
       name: 'users_ui_store',
+      partialize: (state) => ({
+        mainTab: state.mainTab,
+        selectedPolicyId: state.selectedPolicyId,
+        policySubTab: state.policySubTab,
+        userSubTab: state.userSubTab,
+      }),
     }
   )
 );

@@ -21,6 +21,7 @@ import {
   useUpdateManagementPolicy,
   useCreateManagementPolicy,
   useDeleteManagementPolicy,
+  useGetPolicyOverview,
 } from '@/api';
 import type { ManagementPolicy, ManagementPolicyEntry } from '@/types/managementRole';
 import { toaster } from '@/components/ui/toaster';
@@ -34,6 +35,7 @@ export interface ResourcePermission {
 }
 
 export interface PolicyAssignedUser {
+  id?: string;
   name: string;
   initials: string;
   avatarBg: string;
@@ -319,6 +321,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
     }
   }, [apiPolicies]);
   const {
+    setMainTab,
+    setSelectedUserId,
+    setUserSubTab,
     selectedPolicyId,
     setSelectedPolicyId,
     policySubTab: activeDetailTab,
@@ -488,6 +493,54 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
       null
     );
   }, [policies, selectedPolicyId, filteredPolicies]);
+
+  // Fetch real-time policy overview from mango-mdu-service
+  const { data: policyOverview, isLoading: isOverviewLoading } = useGetPolicyOverview(selectedPolicy?.id);
+
+  const overviewStats = useMemo(() => {
+    if (!policyOverview) {
+      return {
+        usedByUsers: selectedPolicy?.usedByUsers ?? 0,
+        scopedAssignmentsCount: selectedPolicy?.scopedAssignmentsCount ?? 0,
+        propertiesCount: selectedPolicy?.propertiesCount ?? 0,
+        venuesCount: selectedPolicy?.venuesCount ?? 0,
+        assignedUsers: selectedPolicy?.assignedUsers ?? [],
+      };
+    }
+
+    const assignedUsers: PolicyAssignedUser[] = (policyOverview.usersWithPolicy || []).map((u) => {
+      const name = u.name || u.email || 'Unknown User';
+      const initials =
+        name
+          .split(' ')
+          .map((n) => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2) || 'U';
+
+      const propertyNames =
+        Array.from(new Set((u.scopes || []).map((s) => s.entityName).filter(Boolean))).join(', ') || '—';
+      const venueNames =
+        Array.from(new Set((u.scopes || []).map((s) => s.venueName).filter(Boolean))).join(', ') || 'All venues';
+
+      return {
+        id: u.id,
+        name,
+        initials,
+        avatarBg: '#2563eb',
+        property: propertyNames,
+        venueScope: venueNames,
+      };
+    });
+
+    return {
+      usedByUsers: policyOverview.totalUsers ?? 0,
+      scopedAssignmentsCount: policyOverview.totalScopedAssignments ?? 0,
+      propertiesCount: policyOverview.totalProperties ?? 0,
+      venuesCount: policyOverview.totalVenues ?? 0,
+      assignedUsers,
+    };
+  }, [policyOverview, selectedPolicy]);
 
   // Sync edit state with selectedPolicy
   useEffect(() => {
@@ -1462,7 +1515,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     Policy impact
                   </Text>
                   <Text fontSize="11px" color="#1e40af" mt={0.5}>
-                    {selectedPolicy.usedByUsers} users across {selectedPolicy.scopedAssignmentsCount} scoped assignments will be affected by permission changes.
+                    {overviewStats.usedByUsers} users across {overviewStats.scopedAssignmentsCount} scoped assignments will be affected by permission changes.
                   </Text>
                 </Box>
               </Flex>
@@ -1505,6 +1558,11 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 </Flex>
               )}
             </VStack>
+          ) : isOverviewLoading && !policyOverview ? (
+            <Flex h="200px" justify="center" align="center" direction="column" gap={3}>
+              <Spinner size="md" color="#0869ff" />
+              <Text fontSize="12px" color="#64748b">Loading policy overview...</Text>
+            </Flex>
           ) : (
             /* Overview Subtab */
             <VStack gap={4} align="stretch">
@@ -1532,7 +1590,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         Users
                       </Text>
                       <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {selectedPolicy.usedByUsers}
+                        {overviewStats.usedByUsers}
                       </Text>
                     </Box>
                   </Flex>
@@ -1555,7 +1613,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         Scoped assignments
                       </Text>
                       <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {selectedPolicy.scopedAssignmentsCount}
+                        {overviewStats.scopedAssignmentsCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1578,7 +1636,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         Properties
                       </Text>
                       <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {selectedPolicy.propertiesCount}
+                        {overviewStats.propertiesCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1601,7 +1659,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         Venues
                       </Text>
                       <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {selectedPolicy.venuesCount}
+                        {overviewStats.venuesCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1696,11 +1754,11 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     fontSize="11px"
                     fontWeight="600"
                   >
-                    {selectedPolicy.usedByUsers}
+                    {overviewStats.usedByUsers}
                   </Flex>
                 </HStack>
 
-                {selectedPolicy.assignedUsers && selectedPolicy.assignedUsers.length > 0 ? (
+                {overviewStats.assignedUsers && overviewStats.assignedUsers.length > 0 ? (
                   <Box
                     border="1px solid"
                     borderColor={themeColors.panel.border}
@@ -1708,9 +1766,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     overflow="hidden"
                     bg="#ffffff"
                   >
-                    {selectedPolicy.assignedUsers.map((u, idx) => (
+                    {overviewStats.assignedUsers.map((u, idx) => (
                       <Flex
-                        key={u.name + idx}
+                        key={u.id || u.name + idx}
                         align="center"
                         justify="space-between"
                         py={2.5}
@@ -1719,6 +1777,20 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         borderColor={themeColors.panel.divider}
                         _last={{ borderBottom: 'none' }}
                         fontSize="12px"
+                        cursor="pointer"
+                        _hover={{ bg: '#f8fafc' }}
+                        transition="background-color 0.15s ease"
+                        onClick={() => {
+                          if (u.id) {
+                            setSelectedUserId(u.id);
+                          }
+                          setUserSubTab('profile');
+                          if (onNavigateToUsers) {
+                            onNavigateToUsers();
+                          } else {
+                            setMainTab('users');
+                          }
+                        }}
                       >
                         {/* User Avatar & Name */}
                         <HStack gap={2.5} flex="1.4" minW={0} align="center">
@@ -1787,7 +1859,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   </Box>
                 )}
 
-                {selectedPolicy.usedByUsers > 0 && (
+                {overviewStats.usedByUsers > 0 && (
                   <Box mt={2}>
                     <Text
                       as="span"
@@ -1798,7 +1870,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       _hover={{ textDecoration: 'underline' }}
                       onClick={onNavigateToUsers}
                     >
-                      View all {selectedPolicy.usedByUsers} users
+                      View all {overviewStats.usedByUsers} users
                     </Text>
                   </Box>
                 )}

@@ -159,8 +159,9 @@ export const UsersPage: React.FC = () => {
     setMainTab,
     userSubTab: activeDetailTab,
     setUserSubTab: setActiveDetailTab,
+    selectedUserId,
+    setSelectedUserId,
   } = useUsersUiStore();
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All Roles');
   const [statusFilter, setStatusFilter] = useState('All Status');
@@ -197,6 +198,7 @@ export const UsersPage: React.FC = () => {
   // Self-account exclusion (TC-USR-001/002):
   // Exclude the currently logged-in user from manageable users collection
   const manageableUsers = useMemo(() => {
+    if (!users || users.length === 0) return [];
     if (!currentUser?.id) return users;
     return users.filter((u) => u.id !== currentUser.id);
   }, [users, currentUser?.id]);
@@ -208,10 +210,10 @@ export const UsersPage: React.FC = () => {
       if (!exists) {
         setSelectedUserId(manageableUsers[0].id);
       }
-    } else {
+    } else if (selectedUserId !== null) {
       setSelectedUserId(null);
     }
-  }, [manageableUsers, selectedUserId]);
+  }, [manageableUsers, selectedUserId, setSelectedUserId]);
 
   const selectedUser = useMemo(() => {
     return manageableUsers.find((u) => u.id === selectedUserId) || manageableUsers[0] || null;
@@ -238,6 +240,17 @@ export const UsersPage: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [search, roleFilter, statusFilter]);
+
+  // Ensure current page shows the selected user when selectedUserId changes
+  useEffect(() => {
+    if (selectedUserId && filteredUsers.length > 0) {
+      const idx = filteredUsers.findIndex((u) => u.id === selectedUserId);
+      if (idx !== -1) {
+        const targetPage = Math.floor(idx / pageSize) + 1;
+        setCurrentPage((prev) => (prev === targetPage ? prev : targetPage));
+      }
+    }
+  }, [selectedUserId, pageSize, filteredUsers]);
 
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
 

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { axiosSec, axiosProv, axiosProvV2, getSecBaseUrl } from './client';
+import { axiosSec, axiosProv, axiosProvV2, axiosMdu, getSecBaseUrl } from './client';
 import type { User, CreateUserPayload, UpdateUserPayload } from '@/types/user';
 import type {
   ManagementRole,
@@ -310,6 +310,56 @@ export const useDeleteManagementPolicy = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
     },
+  });
+};
+
+// ==========================================
+// 6b. POLICY OVERVIEW (MANGO-MDU-SERVICE: Port 16010)
+// ==========================================
+export interface PolicyScopeInfo {
+  entityId: string;
+  entityName: string;
+  venueId: string;
+  venueName: string;
+}
+
+export interface UserWithPolicySummary {
+  id: string;
+  name: string;
+  email: string;
+  userRole: string;
+  avatar?: string;
+  scopedAssignmentsCount: number;
+  scopes: PolicyScopeInfo[];
+}
+
+export interface PolicyOverviewResponse {
+  policy: {
+    id: string;
+    name: string;
+    description: string;
+    entity: string;
+    venue: string;
+    created: number;
+    modified: number;
+  };
+  totalUsers: number;
+  totalScopedAssignments: number;
+  totalProperties: number;
+  totalVenues: number;
+  usersWithPolicy: UserWithPolicySummary[];
+}
+
+export const useGetPolicyOverview = (policyId?: string) => {
+  return useQuery<PolicyOverviewResponse | null>({
+    queryKey: ['policyOverview', policyId],
+    queryFn: async () => {
+      if (!policyId) return null;
+      const { data } = await axiosMdu.get<PolicyOverviewResponse>(`policy/${policyId}/overview`);
+      return data;
+    },
+    enabled: Boolean(policyId),
+    staleTime: 30 * 1000,
   });
 };
 

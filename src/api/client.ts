@@ -23,6 +23,11 @@ export const getProvV2BaseUrl = (): string => {
   return `${raw.replace(/\/+$/, '')}/api/v2`;
 };
 
+export const getMduBaseUrl = (): string => {
+  const raw = window._env_?.VITE_MANGO_MDU_URL || import.meta.env.VITE_MANGO_MDU_URL || 'https://openwifi.wlan.local:16010';
+  return `${raw.replace(/\/+$/, '')}/api/v1`;
+};
+
 // 2. Base Configuration for all OpenWiFi & Mango Clients
 export const defaultClientConfig = {
   timeout: DEFAULT_TIMEOUT_MS,
@@ -39,8 +44,11 @@ export const axiosSec: AxiosInstance = axios.create({
   baseURL: getSecBaseUrl(),
 });
 
-// Mango MDU client (discovered dynamically from OWSEC systemEndpoints - no VIP treatment)
-export const axiosMdu: AxiosInstance = axios.create(defaultClientConfig);
+// Mango MDU client (discovered dynamically from OWSEC systemEndpoints or default VITE_MANGO_MDU_URL)
+export const axiosMdu: AxiosInstance = axios.create({
+  ...defaultClientConfig,
+  baseURL: getMduBaseUrl(),
+});
 
 // OWPROV API v1 and v2 clients (dynamically updated upon endpoint discovery or defaulting to 16005)
 export const axiosProv: AxiosInstance = axios.create({
