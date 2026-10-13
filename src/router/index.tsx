@@ -22,7 +22,7 @@ export const AppRoutes: React.FC = () => {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/properties" element={<PropertiesPage />} />
           <Route path="/devices" element={<DevicesPage />} />
-          <Route path="/configuration" element={<ConfigurationPage />} />
+          <Route path="/configurations" element={<ConfigurationPage />} />
           <Route path="/users" element={<UsersPage />} />
         </Route>
       </Route>

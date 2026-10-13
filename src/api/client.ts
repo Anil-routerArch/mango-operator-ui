@@ -23,6 +23,11 @@ export const getProvV2BaseUrl = (): string => {
   return `${raw.replace(/\/+$/, '')}/api/v2`;
 };
 
+export const getGwBaseUrl = (): string => {
+  const raw = window._env_?.VITE_UCENTRALGW_URL || import.meta.env.VITE_UCENTRALGW_URL || 'https://openwifi.wlan.local:16002';
+  return `${raw.replace(/\/+$/, '')}/api/v1`;
+};
+
 // 2. Base Configuration for all OpenWiFi & Mango Clients
 export const defaultClientConfig = {
   timeout: DEFAULT_TIMEOUT_MS,
@@ -53,7 +58,10 @@ export const axiosProvV2: AxiosInstance = axios.create({
 });
 
 // Additional OpenWiFi Services (all sharing the same uniform configuration)
-export const axiosGw: AxiosInstance = axios.create(defaultClientConfig);
+export const axiosGw: AxiosInstance = axios.create({
+  ...defaultClientConfig,
+  baseURL: getGwBaseUrl(),
+});
 export const axiosFms: AxiosInstance = axios.create(defaultClientConfig);
 export const axiosSub: AxiosInstance = axios.create(defaultClientConfig);
 export const axiosAnalytics: AxiosInstance = axios.create(defaultClientConfig);
