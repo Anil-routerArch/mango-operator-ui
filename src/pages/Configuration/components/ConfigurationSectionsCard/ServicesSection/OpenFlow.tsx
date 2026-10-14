@@ -11,11 +11,18 @@ interface OpenFlowProps {
   data: ServicesSectionData;
   onChange: (data: ServicesSectionData) => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 type OpenFlowCertField = 'ca-certificate' | 'private-key' | 'ssl-certificate';
 
-export const OpenFlow: React.FC<OpenFlowProps> = ({ data, onChange, disabled = false }) => {
+export const OpenFlow: React.FC<OpenFlowProps> = ({
+  data,
+  onChange,
+  disabled = false,
+  isDefaultConfig = false,
+}) => {
+  const isInputDisabled = disabled || isDefaultConfig;
   const [activeCertField, setActiveCertField] = useState<OpenFlowCertField | null>(null);
 
   const getCertValue = (field: OpenFlowCertField | null): { value: string; filename?: string } => {
@@ -123,14 +130,14 @@ export const OpenFlow: React.FC<OpenFlowProps> = ({ data, onChange, disabled = f
             color="#ffffff"
             display="grid"
             placeItems="center"
-            cursor={disabled ? 'not-allowed' : 'pointer'}
-            _hover={disabled ? undefined : { bg: '#2563eb' }}
-            onClick={() => setActiveCertField(field)}
+            cursor={isInputDisabled ? 'not-allowed' : 'pointer'}
+            _hover={isInputDisabled ? undefined : { bg: '#2563eb' }}
+            onClick={() => !isInputDisabled && setActiveCertField(field)}
             title={`Upload ${label}`}
           >
             <Icon name="upload" size={15} />
           </Box>
-          {hasUploaded && !disabled && (
+          {hasUploaded && !isInputDisabled && (
             <Box
               as="button"
               w="26px"
@@ -178,6 +185,17 @@ export const OpenFlow: React.FC<OpenFlowProps> = ({ data, onChange, disabled = f
         </Flex>
         <Box p={4}>
           <VStack gap={4} align="stretch">
+            {isDefaultConfig && (
+              <Box bg="#fef2f2" border="1px solid #fecaca" borderRadius="6px" p={2.5}>
+                <Text fontSize="11px" color="#b91c1c" fontWeight="600">
+                  Not supported in OWGW default configurations
+                </Text>
+                <Text fontSize="11px" color="#b91c1c" mt={0.5}>
+                  open-flow is not part of the OpenWiFi Gateway (OWGW) uCentral schema. This service cannot be configured in default configuration.
+                </Text>
+              </Box>
+            )}
+
             {/* controller */}
             <Box>
               <Text fontSize="12px" fontWeight="600" color="#334155" mb={1.5}>
@@ -188,7 +206,7 @@ export const OpenFlow: React.FC<OpenFlowProps> = ({ data, onChange, disabled = f
                 value={data.openFlow.controller}
                 onChange={(e) => onChange({ ...data, openFlow: { ...data.openFlow, controller: e.target.value } })}
                 placeholder=""
-                disabled={disabled}
+                disabled={isInputDisabled}
                 borderRadius="8px"
                 borderColor="#cbd5e1"
               />
@@ -204,7 +222,7 @@ export const OpenFlow: React.FC<OpenFlowProps> = ({ data, onChange, disabled = f
                 value={data.openFlow.mode}
                 onChange={(val) => onChange({ ...data, openFlow: { ...data.openFlow, mode: String(val) } })}
                 options={OPEN_FLOW_MODES}
-                disabled={disabled}
+                disabled={isInputDisabled}
                 w="100%"
               />
             </Box>
@@ -230,7 +248,7 @@ export const OpenFlow: React.FC<OpenFlowProps> = ({ data, onChange, disabled = f
           value={currentCert.value}
           fileName={currentCert.filename}
           onSave={handleSaveCert}
-          disabled={disabled}
+          disabled={isInputDisabled}
         />
       )}
     </>

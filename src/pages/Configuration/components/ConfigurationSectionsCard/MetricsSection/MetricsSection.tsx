@@ -16,6 +16,7 @@ export interface MetricsSectionProps {
   onChange: (data: MetricsSectionData) => void;
   onDeleteSection: () => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const MetricsSection: React.FC<MetricsSectionProps> = ({
@@ -23,6 +24,7 @@ export const MetricsSection: React.FC<MetricsSectionProps> = ({
   onChange,
   onDeleteSection,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   const activeSubs = data.activeSubsections || [];
 
@@ -45,6 +47,7 @@ export const MetricsSection: React.FC<MetricsSectionProps> = ({
           activeSubsections={activeSubs}
           onSubsectionsChange={handleSubsectionsChange}
           disabled={disabled}
+          isDefaultConfig={isDefaultConfig}
         />
 
         {activeSubs.includes('dhcp-snooping') && (

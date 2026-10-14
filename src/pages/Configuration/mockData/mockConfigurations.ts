@@ -472,6 +472,8 @@ export const MOCK_CONFIGURATIONS: DeviceConfiguration[] = [
     name: 'Chandan-Master-Template',
     description: 'Master config referencing variable block for radios and dynamic SSIDs',
     configType: 'modular',
+    platform: 'ap',
+    deviceGroup: 'ap',
     notes: [
       { note: 'Assigned to Sunrise Apartments Building B', created: 1788163485, author: 'Chandan' },
     ],
@@ -620,6 +622,9 @@ export const MOCK_CONFIGURATIONS: DeviceConfiguration[] = [
     id: 'cfg-common-area',
     name: 'Common Area Wi-Fi Template',
     description: 'Shared common area and clubhouse Wi-Fi with isolated captive portal',
+    configType: 'modular',
+    platform: 'ap',
+    deviceGroup: 'ap',
     notes: [],
     created: 1788100000,
     modified: 1788150000,

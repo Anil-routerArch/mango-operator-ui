@@ -29,6 +29,7 @@ interface SingleRadioProps {
   onDelete?: () => void;
   canDelete: boolean;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const SingleRadio: React.FC<SingleRadioProps> = ({
@@ -37,6 +38,7 @@ export const SingleRadio: React.FC<SingleRadioProps> = ({
   onDelete,
   canDelete,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   return (
     <Box p={4}>
@@ -53,16 +55,18 @@ export const SingleRadio: React.FC<SingleRadioProps> = ({
             General
           </Text>
 
-          <SelectDropdown
-            value="No Resource Selected"
-            onChange={() => {}}
-            options={['No Resource Selected']}
-            disabled={disabled}
-            size="sm"
-            h="28px"
-            fontSize="12px"
-            minW="180px"
-          />
+          <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
+            <SelectDropdown
+              value="No Resource Selected"
+              onChange={() => {}}
+              options={['No Resource Selected']}
+              disabled={disabled || isDefaultConfig}
+              size="sm"
+              h="28px"
+              fontSize="12px"
+              minW="180px"
+            />
+          </Box>
         </Flex>
 
         {canDelete && !disabled && onDelete && (

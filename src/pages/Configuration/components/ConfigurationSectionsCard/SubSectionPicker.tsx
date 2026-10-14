@@ -10,9 +10,16 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 
+export interface SubSectionOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
 export interface SubSectionPickerProps {
   label?: string;
-  options: { value: string; label: string }[];
+  options: SubSectionOption[];
   activeSubsections?: string[];
   value?: string[];
   onChange: (selected: string[]) => void;
@@ -57,6 +64,8 @@ export const SubSectionPicker: React.FC<SubSectionPickerProps> = ({
 
   const handleToggle = (val: string) => {
     if (disabled) return;
+    const opt = options.find((o) => o.value === val);
+    if (opt?.disabled) return;
     if (selectedValues.includes(val)) {
       onChange(selectedValues.filter((s) => s !== val));
     } else {
@@ -221,6 +230,7 @@ export const SubSectionPicker: React.FC<SubSectionPickerProps> = ({
             ) : (
               filteredOptions.map((opt) => {
                 const isSelected = selectedValues.includes(opt.value);
+                const isOptDisabled = opt.disabled || false;
                 return (
                   <Flex
                     key={opt.value}
@@ -229,16 +239,25 @@ export const SubSectionPicker: React.FC<SubSectionPickerProps> = ({
                     align="center"
                     justify="space-between"
                     borderRadius="6px"
-                    cursor="pointer"
-                    bg={isSelected ? '#eff6ff' : 'transparent'}
-                    color={isSelected ? themeColors.brand.accent : themeColors.text.primary}
-                    _hover={{ bg: isSelected ? '#dbeafe' : '#f8fafc' }}
+                    cursor={isOptDisabled ? 'not-allowed' : 'pointer'}
+                    bg={isOptDisabled ? '#f8fafc' : isSelected ? '#eff6ff' : 'transparent'}
+                    color={isOptDisabled ? '#94a3b8' : isSelected ? themeColors.brand.accent : themeColors.text.primary}
+                    opacity={isOptDisabled ? 0.65 : 1}
+                    _hover={isOptDisabled ? undefined : { bg: isSelected ? '#dbeafe' : '#f8fafc' }}
                     fontSize="12px"
                     fontWeight={isSelected ? '600' : '400'}
-                    onClick={() => handleToggle(opt.value)}
+                    onClick={() => !isOptDisabled && handleToggle(opt.value)}
+                    title={opt.disabledReason}
                   >
-                    <Text>{opt.label}</Text>
-                    {isSelected && <Icon name="check" size={14} color={themeColors.brand.accent} />}
+                    <HStack gap={2}>
+                      <Text>{opt.label}</Text>
+                      {isOptDisabled && (
+                        <Text as="span" fontSize="10px" color="#ef4444" fontWeight="500">
+                          (Not supported in Default Config)
+                        </Text>
+                      )}
+                    </HStack>
+                    {isSelected && <Icon name="check" size={14} color={isOptDisabled ? '#94a3b8' : themeColors.brand.accent} />}
                   </Flex>
                 );
               })

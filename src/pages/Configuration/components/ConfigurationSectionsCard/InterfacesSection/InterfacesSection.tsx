@@ -18,6 +18,7 @@ export interface InterfacesSectionProps {
   onChange: (data: InterfacesSectionData) => void;
   onDeleteSection: () => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const InterfacesSection: React.FC<InterfacesSectionProps> = ({
@@ -25,6 +26,7 @@ export const InterfacesSection: React.FC<InterfacesSectionProps> = ({
   onChange,
   onDeleteSection,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   const [selectedIfaceId, setSelectedIfaceId] = useState<string>(
     () => data.interfaces[0]?.id || ''
@@ -90,6 +92,7 @@ export const InterfacesSection: React.FC<InterfacesSectionProps> = ({
           onChange={(meta) => onChange({ ...data, meta })}
           onDeleteSection={onDeleteSection}
           disabled={disabled}
+          isDefaultConfig={isDefaultConfig}
         />
 
         {/* If no interfaces created yet: show "Add Interface +" button as in Image 1 */}
@@ -190,6 +193,7 @@ export const InterfacesSection: React.FC<InterfacesSectionProps> = ({
                 onManageEthernetPorts={() => setActiveEthernetIndex(activeIdx)}
                 canDelete={true}
                 disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
               />
             )}
           </Box>

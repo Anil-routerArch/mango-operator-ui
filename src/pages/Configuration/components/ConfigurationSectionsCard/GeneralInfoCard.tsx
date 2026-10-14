@@ -8,7 +8,7 @@ import {
 } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
-import { SubSectionPicker } from './SubSectionPicker';
+import { SubSectionPicker, type SubSectionOption } from './SubSectionPicker';
 import type { SectionMeta } from './types';
 
 interface GeneralInfoCardProps {
@@ -16,7 +16,8 @@ interface GeneralInfoCardProps {
   onChange: (updated: SectionMeta) => void;
   onDeleteSection: () => void;
   disabled?: boolean;
-  subsectionsOptions?: { value: string; label: string }[];
+  isDefaultConfig?: boolean;
+  subsectionsOptions?: SubSectionOption[];
   activeSubsections?: string[];
   onSubsectionsChange?: (subs: string[]) => void;
 }
@@ -26,6 +27,7 @@ export const GeneralInfoCard: React.FC<GeneralInfoCardProps> = ({
   onChange,
   onDeleteSection,
   disabled = false,
+  isDefaultConfig = false,
   subsectionsOptions,
   activeSubsections,
   onSubsectionsChange,
@@ -56,7 +58,7 @@ export const GeneralInfoCard: React.FC<GeneralInfoCardProps> = ({
           General Information
         </Text>
 
-        {!disabled && (
+        {!disabled && !isDefaultConfig && (
           <Box
             as="button"
             w="26px"
@@ -89,7 +91,10 @@ export const GeneralInfoCard: React.FC<GeneralInfoCardProps> = ({
                 value={meta.name}
                 onChange={(e) => onChange({ ...meta, name: e.target.value })}
                 placeholder="Section Name"
-                disabled={disabled}
+                disabled={disabled || isDefaultConfig}
+                bg={disabled || isDefaultConfig ? '#f8fafc' : '#ffffff'}
+                cursor={isDefaultConfig ? 'not-allowed' : undefined}
+                title={isDefaultConfig ? 'Fixed section name in uCentral schema' : undefined}
                 borderRadius="4px"
               />
             </Box>
@@ -102,8 +107,11 @@ export const GeneralInfoCard: React.FC<GeneralInfoCardProps> = ({
                 size="sm"
                 value={meta.description}
                 onChange={(e) => onChange({ ...meta, description: e.target.value })}
-                placeholder="Optional description"
-                disabled={disabled}
+                placeholder={isDefaultConfig ? 'N/A for default configs' : 'Optional description'}
+                disabled={disabled || isDefaultConfig}
+                bg={disabled || isDefaultConfig ? '#f8fafc' : '#ffffff'}
+                cursor={isDefaultConfig ? 'not-allowed' : undefined}
+                title={isDefaultConfig ? 'Section descriptions are not supported in uCentral JSON default configurations' : undefined}
                 borderRadius="4px"
               />
             </Box>
@@ -119,7 +127,7 @@ export const GeneralInfoCard: React.FC<GeneralInfoCardProps> = ({
             />
           )}
 
-          <Box maxW="120px">
+          <Box maxW="140px">
             <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
               Weight <Text as="span" color="#dc2626">*</Text>
             </Text>
@@ -128,9 +136,17 @@ export const GeneralInfoCard: React.FC<GeneralInfoCardProps> = ({
               type="number"
               value={meta.weight}
               onChange={(e) => onChange({ ...meta, weight: Number(e.target.value) || 1 })}
-              disabled={disabled}
+              disabled={disabled || isDefaultConfig}
+              bg={disabled || isDefaultConfig ? '#f8fafc' : '#ffffff'}
+              cursor={isDefaultConfig ? 'not-allowed' : undefined}
+              title={isDefaultConfig ? 'Weight is only used for OWPROV modular profile priority, not applicable to default configurations' : undefined}
               borderRadius="4px"
             />
+            {isDefaultConfig && (
+              <Text fontSize="10px" color={themeColors.text.muted} mt={0.5}>
+                N/A for default configs
+              </Text>
+            )}
           </Box>
         </VStack>
       </Box>

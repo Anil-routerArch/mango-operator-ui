@@ -58,7 +58,7 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
 
   // JSON state synchronized from ConfigurationSectionsCard (or initial config)
   const [configurationJson, setConfigurationJson] = useState<string>(
-    initialConfig?.rawConfigurationJson || SAMPLE_AP_CONFIG_JSON
+    initialConfig?.rawConfigurationJson || (isEditMode ? '' : SAMPLE_AP_CONFIG_JSON)
   );
 
   const [jsonError, setJsonError] = useState<string | null>(null);
@@ -109,8 +109,10 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
     setApiError(null);
     setApiSuccess(null);
 
+    const configName = (isEditMode && initialConfig ? initialConfig.name : name).trim();
+
     const payload: DefaultConfigurationPayload = {
-      name: name.trim(),
+      name: configName,
       description: description.trim(),
       modelIds: deviceTypes.length > 0 ? deviceTypes : ['*'],
       platform,
@@ -124,7 +126,7 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
         await createDefaultConfiguration(payload);
       }
 
-      setApiSuccess(`Successfully saved default configuration "${name.trim()}" to OWGW`);
+      setApiSuccess(`Successfully saved default configuration "${configName}" to OWGW`);
 
       const saved: DeviceConfiguration = {
         id: initialConfig?.id || `cfg-owgw-${Date.now().toString(36)}`,
@@ -373,9 +375,16 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
                   size="sm"
                   borderRadius="4px"
                   borderColor={themeColors.panel.border}
-                  disabled={isDisabled}
-                  bg={isDisabled ? '#f8fafc' : '#ffffff'}
+                  disabled={isDisabled || isEditMode}
+                  bg={isDisabled || isEditMode ? '#f8fafc' : '#ffffff'}
+                  cursor={isEditMode ? 'not-allowed' : undefined}
+                  title={isEditMode ? 'Default configuration name cannot be changed in OWGW' : undefined}
                 />
+                {isEditMode && (
+                  <Text fontSize="10px" color={themeColors.text.muted} mt={1}>
+                    Name cannot be changed for existing default configurations in OWGW
+                  </Text>
+                )}
               </Box>
 
               <Box w="180px">
@@ -519,7 +528,10 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
             {/* Configuration Sections (Unified OWPROV Architecture with Expert Mode) */}
             <Box pt={1}>
               <ConfigurationSectionsCard
+                key={initialConfig?.id || 'new'}
                 platform={platform}
+                initialJson={initialConfig?.rawConfigurationJson}
+                isDefaultConfig={true}
                 onStateChange={(_state, compiledJson) => {
                   setConfigurationJson(compiledJson);
                   validateJson(compiledJson);

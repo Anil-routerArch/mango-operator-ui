@@ -1,4 +1,10 @@
-import type { ConfigurationSectionsState } from './types';
+import type {
+  ConfigurationSectionsState,
+  SubsectionKey,
+  SingleRadioConfigItem,
+  SingleSsidConfigItem,
+  InterfaceEthernetItem,
+} from './types';
 
 export const getInitialSectionsState = (): ConfigurationSectionsState => ({
   activeSections: [],
@@ -242,9 +248,9 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
     if (u.timezone && u.timezone !== 'None') unitObj.timezone = u.timezone;
     if (u.beaconAdvertisement?.enabled) {
       unitObj['beacon-advertisement'] = {
-        'device-name': u.beaconAdvertisement.deviceName,
-        'device-serial': u.beaconAdvertisement.deviceSerial,
-        'network-id': u.beaconAdvertisement.networkId,
+        'device-name': typeof u.beaconAdvertisement.deviceName === 'boolean' ? u.beaconAdvertisement.deviceName : Boolean(u.beaconAdvertisement.deviceName),
+        'device-serial': typeof u.beaconAdvertisement.deviceSerial === 'boolean' ? u.beaconAdvertisement.deviceSerial : Boolean(u.beaconAdvertisement.deviceSerial),
+        'network-id': Number(u.beaconAdvertisement.networkId) || 1024,
       };
     }
     doc.unit = unitObj;
@@ -445,8 +451,8 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
     if (subs.includes('fingerprint')) {
       servicesObj.fingerprint = {
         mode: s.fingerprint.mode,
-        minimumAge: s.fingerprint.minimumAge,
-        maximumAge: s.fingerprint.maximumAge,
+        'minimum-age': s.fingerprint.minimumAge,
+        'maximum-age': s.fingerprint.maximumAge,
         periodicity: s.fingerprint.periodicity,
       };
     }
@@ -721,3 +727,697 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
 
   return JSON.stringify(doc, null, 2);
 };
+
+export const parseUCentralJsonToSectionsState = (
+  raw: string | Record<string, unknown> | null | undefined
+): ConfigurationSectionsState => {
+  const base = getInitialSectionsState();
+  if (!raw) return base;
+
+  let doc: Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      doc = JSON.parse(raw);
+    } catch {
+      return base;
+    }
+  } else if (typeof raw === 'object') {
+    doc = raw;
+  } else {
+    return base;
+  }
+
+  if (!doc || typeof doc !== 'object') return base;
+
+  const detectedSections: SubsectionKey[] = [];
+
+  // 1. Globals
+  if (doc.globals && typeof doc.globals === 'object') {
+    detectedSections.push('globals');
+    const g = doc.globals as Record<string, unknown>;
+    base.globals.ipv4Network = String(g['ipv4-network'] ?? g.ipv4Network ?? base.globals.ipv4Network);
+    base.globals.ipv6Network = String(g['ipv6-network'] ?? g.ipv6Network ?? base.globals.ipv6Network);
+  }
+
+  // 2. Unit
+  if (doc.unit && typeof doc.unit === 'object') {
+    detectedSections.push('unit');
+    const u = doc.unit as Record<string, unknown>;
+    base.unit.name = String(u.name ?? base.unit.name);
+    base.unit.location = String(u.location ?? base.unit.location);
+    if (u.hostname) base.unit.hostname = String(u.hostname);
+    if (u.timezone) base.unit.timezone = String(u.timezone);
+    if (u['leds-active'] !== undefined) base.unit.ledsActive = Boolean(u['leds-active']);
+    else if (u.ledsActive !== undefined) base.unit.ledsActive = Boolean(u.ledsActive);
+    if (u['random-password'] !== undefined) base.unit.randomPassword = Boolean(u['random-password']);
+    else if (u.randomPassword !== undefined) base.unit.randomPassword = Boolean(u.randomPassword);
+
+    const ba = (u['beacon-advertisement'] || u.beaconAdvertisement) as Record<string, unknown> | undefined;
+    if (ba && typeof ba === 'object') {
+      base.unit.beaconAdvertisement = {
+        enabled: ba.enabled !== undefined ? Boolean(ba.enabled) : true,
+        deviceName: String(ba['device-name'] ?? ba.deviceName ?? ''),
+        deviceSerial: String(ba['device-serial'] ?? ba.deviceSerial ?? ''),
+        networkId: Number(ba['network-id'] ?? ba.networkId ?? 1024),
+      };
+    }
+  }
+
+  // 3. Metrics
+  if (doc.metrics && typeof doc.metrics === 'object') {
+    detectedSections.push('metrics');
+    const m = doc.metrics as Record<string, unknown>;
+    const subs: string[] = [];
+
+    if (m.statistics && typeof m.statistics === 'object') {
+      subs.push('statistics');
+      const stats = m.statistics as Record<string, unknown>;
+      base.metrics.statistics = {
+        interval: Number(stats.interval ?? 60),
+        types: Array.isArray(stats.types) ? stats.types.map(String) : [],
+      };
+    }
+    if (m.health && typeof m.health === 'object') {
+      subs.push('health');
+      const h = m.health as Record<string, unknown>;
+      base.metrics.health = {
+        interval: Number(h.interval ?? 60),
+        dhcpLocal: h['dhcp-local'] !== undefined ? Boolean(h['dhcp-local']) : (h.dhcpLocal !== undefined ? Boolean(h.dhcpLocal) : true),
+        dhcpRemote: h['dhcp-remote'] !== undefined ? Boolean(h['dhcp-remote']) : (h.dhcpRemote !== undefined ? Boolean(h.dhcpRemote) : false),
+        dnsLocal: h['dns-local'] !== undefined ? Boolean(h['dns-local']) : (h.dnsLocal !== undefined ? Boolean(h.dnsLocal) : true),
+        dnsRemote: h['dns-remote'] !== undefined ? Boolean(h['dns-remote']) : (h.dnsRemote !== undefined ? Boolean(h.dnsRemote) : true),
+      };
+    }
+    const wf = (m['wifi-frames'] || m.wifiFrames) as Record<string, unknown> | undefined;
+    if (wf && typeof wf === 'object') {
+      subs.push('wifi-frames');
+      base.metrics.wifiFrames = {
+        filters: Array.isArray(wf.filters) ? wf.filters.map(String) : [],
+      };
+    }
+    const ds = (m['dhcp-snooping'] || m.dhcpSnooping) as Record<string, unknown> | undefined;
+    if (ds && typeof ds === 'object') {
+      subs.push('dhcp-snooping');
+      base.metrics.dhcpSnooping = {
+        filters: Array.isArray(ds.filters) ? ds.filters.map(String) : [],
+      };
+    }
+    if (m.realtime && typeof m.realtime === 'object') {
+      subs.push('realtime');
+      const rt = m.realtime as Record<string, unknown>;
+      base.metrics.realtime = {
+        types: Array.isArray(rt.types) ? rt.types.map(String) : [],
+      };
+    }
+    if (m.telemetry && typeof m.telemetry === 'object') {
+      subs.push('telemetry');
+      const tel = m.telemetry as Record<string, unknown>;
+      base.metrics.telemetry = {
+        interval: Number(tel.interval ?? 60),
+        types: Array.isArray(tel.types) ? tel.types.map(String) : [],
+      };
+    }
+    const ws = (m['wifi-scan'] || m.wifiScan) as Record<string, unknown> | undefined;
+    if (ws && typeof ws === 'object') {
+      subs.push('wifi-scan');
+      base.metrics.wifiScan = {
+        interval: Number(ws.interval ?? 60),
+      };
+    }
+
+    base.metrics.activeSubsections = subs;
+  }
+
+  // 4. Services
+  if (doc.services && typeof doc.services === 'object') {
+    detectedSections.push('services');
+    const s = doc.services as Record<string, unknown>;
+    const subs: string[] = [];
+
+    if (s.lldp && typeof s.lldp === 'object') {
+      subs.push('lldp');
+      const lldp = s.lldp as Record<string, unknown>;
+      base.services.lldp = {
+        describe: String(lldp.describe ?? 'OpenWiFi AP'),
+        location: String(lldp.location ?? ''),
+      };
+    }
+    if (s.ssh && typeof s.ssh === 'object') {
+      subs.push('ssh');
+      const ssh = s.ssh as Record<string, unknown>;
+      base.services.ssh = {
+        port: Number(ssh.port ?? 22),
+        passwordAuthentication: ssh['password-authentication'] !== undefined
+          ? Boolean(ssh['password-authentication'])
+          : (ssh.passwordAuthentication !== undefined ? Boolean(ssh.passwordAuthentication) : true),
+      };
+    }
+    if (s.ntp && typeof s.ntp === 'object') {
+      subs.push('ntp');
+      const ntp = s.ntp as Record<string, unknown>;
+      base.services.ntp = {
+        servers: Array.isArray(ntp.servers) ? ntp.servers.map(String) : ['0.pool.ntp.org', '1.pool.ntp.org'],
+        localServer: Boolean(ntp['local-server'] ?? ntp.localServer),
+      };
+    }
+    if (s.http && typeof s.http === 'object') {
+      subs.push('http');
+      const http = s.http as Record<string, unknown>;
+      base.services.http = {
+        httpPort: Number(http['http-port'] ?? http.httpPort ?? 80),
+      };
+    }
+    if (s.mdns && typeof s.mdns === 'object') {
+      subs.push('mdns');
+      const mdns = s.mdns as Record<string, unknown>;
+      base.services.mdns = {
+        enable: Boolean(mdns.enable),
+      };
+    }
+    if (s.rtty && typeof s.rtty === 'object') {
+      subs.push('rtty');
+      const rtty = s.rtty as Record<string, unknown>;
+      base.services.rtty = {
+        host: String(rtty.host ?? ''),
+        port: Number(rtty.port ?? 5912),
+        token: String(rtty.token ?? ''),
+      };
+    }
+    if (s.log && typeof s.log === 'object') {
+      subs.push('log');
+      const log = s.log as Record<string, unknown>;
+      base.services.log = {
+        host: String(log.host ?? ''),
+        port: Number(log.port ?? 5912),
+        proto: log.proto === 'tcp' ? 'tcp' : 'udp',
+        size: Number(log.size ?? 1000),
+      };
+    }
+    if (s.igmp && typeof s.igmp === 'object') {
+      subs.push('igmp');
+      const igmp = s.igmp as Record<string, unknown>;
+      base.services.igmp = {
+        enable: Boolean(igmp.enable),
+      };
+    }
+    const oc = (s['online-check'] || s.onlineCheck) as Record<string, unknown> | undefined;
+    if (oc && typeof oc === 'object') {
+      subs.push('online-check');
+      base.services.onlineCheck = {
+        action: Array.isArray(oc.action) ? oc.action.map(String) : (oc.action ? [String(oc.action)] : []),
+        pingHosts: Array.isArray(oc['ping-hosts'] ?? oc.pingHosts) ? ((oc['ping-hosts'] ?? oc.pingHosts) as unknown[]).map(String) : [],
+        downloadHosts: Array.isArray(oc['download-hosts'] ?? oc.downloadHosts) ? ((oc['download-hosts'] ?? oc.downloadHosts) as unknown[]).map(String) : [],
+        checkInterval: Number(oc['check-interval'] ?? oc.checkInterval ?? 60),
+        checkThreshold: Number(oc['check-threshold'] ?? oc.checkThreshold ?? 1),
+      };
+    }
+    const of = (s['open-flow'] || s.openFlow) as Record<string, unknown> | undefined;
+    if (of && typeof of === 'object') {
+      subs.push('open-flow');
+      base.services.openFlow = {
+        controller: String(of.controller ?? ''),
+        mode: String(of.mode ?? 'ssl'),
+        caCertificate: String(of['ca-certificate'] ?? of.caCertificate ?? ''),
+        caCertificateFilename: of['ca-certificate-filename'] ?? of.caCertificateFilename ? String(of['ca-certificate-filename'] ?? of.caCertificateFilename) : undefined,
+        privateKey: String(of['private-key'] ?? of.privateKey ?? ''),
+        privateKeyFilename: of['private-key-filename'] ?? of.privateKeyFilename ? String(of['private-key-filename'] ?? of.privateKeyFilename) : undefined,
+        sslCertificate: String(of['ssl-certificate'] ?? of.sslCertificate ?? ''),
+        sslCertificateFilename: of['ssl-certificate-filename'] ?? of.sslCertificateFilename ? String(of['ssl-certificate-filename'] ?? of.sslCertificateFilename) : undefined,
+      };
+    }
+    const ws = (s['wifi-steering'] || s.wifiSteering) as Record<string, unknown> | undefined;
+    if (ws && typeof ws === 'object') {
+      subs.push('wifi-steering');
+      base.services.wifiSteering = {
+        mode: ws.mode === 'cloud' ? 'cloud' : 'local',
+        assocSteering: Boolean(ws['assoc-steering'] ?? ws.assocSteering),
+        autoChannel: Boolean(ws['auto-channel'] ?? ws.autoChannel),
+        requiredProbeSnr: Number(ws['required-probe-snr'] ?? ws.requiredProbeSnr ?? 0),
+        requiredRoamSnr: Number(ws['required-roam-snr'] ?? ws.requiredRoamSnr ?? 0),
+        loadKickThreshold: Number(ws['load-kick-threshold'] ?? ws.loadKickThreshold ?? 0),
+      };
+    }
+    const qos = (s['quality-of-service'] || s.qualityOfService) as Record<string, unknown> | undefined;
+    if (qos && typeof qos === 'object') {
+      subs.push('quality-of-service');
+      const classifierRaw = Array.isArray(qos.classifier) ? (qos.classifier as Record<string, unknown>[]) : [];
+      base.services.qualityOfService = {
+        selectPorts: Array.isArray(qos['select-ports'] ?? qos.selectPorts) ? ((qos['select-ports'] ?? qos.selectPorts) as unknown[]).map(String) : ['WAN*'],
+        bandwidthUp: Number(qos['bandwidth-up'] ?? qos.bandwidthUp ?? 0),
+        bandwidthDown: Number(qos['bandwidth-down'] ?? qos.bandwidthDown ?? 0),
+        bulkDetection: Boolean(qos['bulk-detection'] ?? qos.bulkDetection),
+        bulkDetectionDscp: String((qos['bulk-detection'] as Record<string, unknown> | undefined)?.dscp ?? qos.bulkDetectionDscp ?? 'CS0'),
+        bulkDetectionPacketsPerSecond: Number((qos['bulk-detection'] as Record<string, unknown> | undefined)?.['packets-per-second'] ?? qos.bulkDetectionPacketsPerSecond ?? 0),
+        classifier: classifierRaw.map((c: Record<string, unknown>) => ({
+          dscp: String(c.dscp ?? 'CS0'),
+          ports: Array.isArray(c.ports) ? (c.ports as Record<string, unknown>[]).map((p: Record<string, unknown>) => ({
+            protocol: String(p.protocol ?? 'any'),
+            port: Number(p.port ?? 0),
+            rangeEnd: Number(p['range-end'] ?? p.rangeEnd ?? 0),
+            reclassify: Boolean(p.reclassify),
+          })) : [],
+          dns: Array.isArray(c.dns) ? (c.dns as Record<string, unknown>[]).map((d: Record<string, unknown>) => ({
+            fqdn: String(d.fqdn ?? ''),
+            suffixMatching: Boolean(d['suffix-matching'] ?? d.suffixMatching),
+            reclassify: Boolean(d.reclassify),
+          })) : [],
+        })),
+      };
+    }
+    const fb = (s['facebook-wifi'] || s.facebookWifi) as Record<string, unknown> | undefined;
+    if (fb && typeof fb === 'object') {
+      subs.push('facebook-wifi');
+      base.services.facebookWifi = {
+        vendorId: String(fb['vendor-id'] ?? fb.vendorId ?? ''),
+        gatewayId: String(fb['gateway-id'] ?? fb.gatewayId ?? ''),
+        secret: String(fb.secret ?? ''),
+      };
+    }
+    const ap = (s['airtime-policies'] || s.airtimePolicies) as Record<string, unknown> | undefined;
+    if (ap && typeof ap === 'object') {
+      subs.push('airtime-policies');
+      base.services.airtimePolicies = {
+        dnsMatch: Array.isArray(ap['dns-match'] ?? ap.dnsMatch) ? ((ap['dns-match'] ?? ap.dnsMatch) as unknown[]).map(String) : ['*'],
+        dnsWeight: Number(ap['dns-weight'] ?? ap.dnsWeight ?? 256),
+      };
+    }
+    const dp = (s['data-plane'] || s.dataPlane) as Record<string, unknown> | undefined;
+    if (dp && typeof dp === 'object') {
+      subs.push('data-plane');
+      const ingressRaw = Array.isArray(dp['ingress-filters'] ?? dp.ingressFilters)
+        ? ((dp['ingress-filters'] ?? dp.ingressFilters) as Record<string, unknown>[])
+        : [];
+      base.services.dataPlane = {
+        ingressFilters: ingressRaw.map((f: Record<string, unknown>) => ({
+          name: String(f.name ?? ''),
+          program: String(f.program ?? ''),
+        })),
+      };
+    }
+    if (s.ieee8021x && typeof s.ieee8021x === 'object') {
+      subs.push('ieee8021x');
+      const dot1x = s.ieee8021x as Record<string, unknown>;
+      const usersRaw = Array.isArray(dot1x.users) ? (dot1x.users as Record<string, unknown>[]) : [];
+      base.services.ieee8021x = {
+        useLocalCertificates: Boolean(dot1x['use-local-certificates'] ?? dot1x.useLocalCertificates),
+        caCertificate: String(dot1x['ca-certificate'] ?? dot1x.caCertificate ?? ''),
+        caCertificateFilename: dot1x['ca-certificate-filename'] ?? dot1x.caCertificateFilename ? String(dot1x['ca-certificate-filename'] ?? dot1x.caCertificateFilename) : undefined,
+        privateKey: String(dot1x['private-key'] ?? dot1x.privateKey ?? ''),
+        privateKeyFilename: dot1x['private-key-filename'] ?? dot1x.privateKeyFilename ? String(dot1x['private-key-filename'] ?? dot1x.privateKeyFilename) : undefined,
+        serverCertificate: String(dot1x['server-certificate'] ?? dot1x.serverCertificate ?? ''),
+        serverCertificateFilename: dot1x['server-certificate-filename'] ?? dot1x.serverCertificateFilename ? String(dot1x['server-certificate-filename'] ?? dot1x.serverCertificateFilename) : undefined,
+        users: usersRaw.map((u: Record<string, unknown>) => ({
+          mac: String(u.mac ?? ''),
+          userName: String(u['user-name'] ?? u.userName ?? ''),
+          password: String(u.password ?? ''),
+          vlanId: Number(u['vlan-id'] ?? u.vlanId ?? 0),
+        })),
+      };
+    }
+    const rp = (s['radius-proxy'] || s.radiusProxy) as Record<string, unknown> | undefined;
+    if (rp && typeof rp === 'object') {
+      subs.push('radius-proxy');
+      const realmsRaw = Array.isArray(rp.realms) ? (rp.realms as Record<string, unknown>[]) : [];
+      base.services.radiusProxy = {
+        realms: realmsRaw.map((r: Record<string, unknown>) => ({
+          realm: String(r.realm ?? ''),
+          port: Number(r.port ?? 1812),
+          autoDiscover: Boolean(r['auto-discover'] ?? r.autoDiscover),
+          secret: String(r.secret ?? ''),
+          useLocalCertificates: Boolean(r['use-local-certificates'] ?? r.useLocalCertificates),
+          caCertificate: r['ca-certificate'] ?? r.caCertificate ? String(r['ca-certificate'] ?? r.caCertificate) : undefined,
+          caCertificateFilename: r['ca-certificate-filename'] ?? r.caCertificateFilename ? String(r['ca-certificate-filename'] ?? r.caCertificateFilename) : undefined,
+          certificate: r.certificate ? String(r.certificate) : undefined,
+          certificateFilename: r['certificate-filename'] ?? r.certificateFilename ? String(r['certificate-filename'] ?? r.certificateFilename) : undefined,
+          privateKey: r['private-key'] ?? r.privateKey ? String(r['private-key'] ?? r.privateKey) : undefined,
+          privateKeyFilename: r['private-key-filename'] ?? r.privateKeyFilename ? String(r['private-key-filename'] ?? r.privateKeyFilename) : undefined,
+          privateKeyPassword: r['private-key-password'] ?? r.privateKeyPassword ? String(r['private-key-password'] ?? r.privateKeyPassword) : undefined,
+        })),
+      };
+    }
+    if (s.gps && typeof s.gps === 'object') {
+      subs.push('gps');
+      const gps = s.gps as Record<string, unknown>;
+      base.services.gps = {
+        baudRate: Number(gps['baud-rate'] ?? gps.baudRate ?? 2400),
+        adjustTime: Boolean(gps['adjust-time'] ?? gps.adjustTime),
+      };
+    }
+    const dr = (s['dhcp-relay'] || s.dhcpRelay) as Record<string, unknown> | undefined;
+    if (dr && typeof dr === 'object') {
+      subs.push('dhcp-relay');
+      const vlansRaw = Array.isArray(dr.vlans) ? (dr.vlans as Record<string, unknown>[]) : [];
+      base.services.dhcpRelay = {
+        selectPorts: Array.isArray(dr['select-ports'] ?? dr.selectPorts) ? ((dr['select-ports'] ?? dr.selectPorts) as unknown[]).map(String) : ['LAN*'],
+        vlans: vlansRaw.map((v: Record<string, unknown>) => ({
+          vlan: Number(v.vlan ?? 0),
+          relayServer: String(v['relay-server'] ?? v.relayServer ?? ''),
+          circuitIdFormat: String(v['circuit-id-format'] ?? v.circuitIdFormat ?? ''),
+          remoteIdFormat: String(v['remote-id-format'] ?? v.remoteIdFormat ?? ''),
+        })),
+      };
+    }
+    if (s.fingerprint && typeof s.fingerprint === 'object') {
+      subs.push('fingerprint');
+      const fp = s.fingerprint as Record<string, unknown>;
+      base.services.fingerprint = {
+        mode: (fp.mode as 'always' | 'polled' | 'final' | 'raw-data') || 'always',
+        minimumAge: Number(fp['minimum-age'] ?? fp.minimumAge ?? 60),
+        maximumAge: Number(fp['maximum-age'] ?? fp.maximumAge ?? 60),
+        periodicity: Number(fp.periodicity ?? 600),
+      };
+    }
+
+    base.services.activeSubsections = subs;
+  }
+
+  // 5. Radios
+  if (Array.isArray(doc.radios) && doc.radios.length > 0) {
+    detectedSections.push('radios');
+    const radiosList = doc.radios as Record<string, unknown>[];
+    base.radios.bands = radiosList.map((r: Record<string, unknown>, idx: number) => {
+      const bandRaw = r.band || (idx === 0 ? '2G' : '5G');
+      const band: SingleRadioConfigItem['band'] =
+        bandRaw === '2G' || bandRaw === '5G' || bandRaw === '5G-lower' || bandRaw === '5G-upper' || bandRaw === '6G'
+          ? bandRaw
+          : '2G';
+
+      const heObj = r.he as Record<string, unknown> | undefined;
+      const ratesObj = r.rates as Record<string, unknown> | undefined;
+
+      return {
+        id: r.id ? String(r.id) : `radio-${band.toLowerCase()}-${idx + 1}`,
+        band,
+        bandwidth: Number(r.bandwidth ?? 5),
+        country: r.country ? String(r.country) : 'US',
+        channelMode: String(r['channel-mode'] ?? r.channelMode ?? (band === '6G' ? 'HE' : 'HT')),
+        channelWidth: Number(r['channel-width'] ?? r.channelWidth ?? 20),
+        channel: r.channel !== undefined ? String(r.channel) : 'auto',
+        mimo: r.mimo ? String(r.mimo) : 'None',
+        txPower: Number(r['tx-power'] ?? r.txPower ?? 0),
+        legacyRates: Boolean(r['legacy-rates'] ?? r.legacyRates),
+        maximumClients: Number(r['maximum-clients'] ?? r.maximumClients ?? 64),
+        multipleBssid: Boolean(heObj?.['multiple-bssid'] ?? r['multiple-bssid'] ?? r.multipleBssid),
+        allowDfs: r['allow-dfs'] !== undefined ? Boolean(r['allow-dfs']) : (r.allowDfs !== undefined ? Boolean(r.allowDfs) : true),
+        beaconRate: ratesObj?.beacon !== undefined ? String(ratesObj.beacon) : (r.beaconRate !== undefined ? String(r.beaconRate) : 'None'),
+        beaconInterval: Number(r['beacon-interval'] ?? r.beaconInterval ?? 100),
+        hostapdIfaceRaw: Array.isArray(r['hostapd-iface-raw'])
+          ? (r['hostapd-iface-raw'] as string[]).join('\n')
+          : (r['hostapd-iface-raw'] ? String(r['hostapd-iface-raw']) : (r.hostapdIfaceRaw ? String(r.hostapdIfaceRaw) : '')),
+        multicast: ratesObj?.multicast !== undefined ? String(ratesObj.multicast) : (r.multicast !== undefined ? String(r.multicast) : 'None'),
+        ema: Boolean(heObj?.ema ?? r.ema),
+        bssColor: heObj?.['bss-color'] !== undefined ? Number(heObj['bss-color']) : (r.bssColor !== undefined ? Number(r.bssColor) : undefined),
+        requireMode: r['require-mode'] ? String(r['require-mode']) : (r.requireMode ? String(r.requireMode) : 'None'),
+      };
+    });
+  }
+
+  // 6. Interfaces
+  if (Array.isArray(doc.interfaces) && doc.interfaces.length > 0) {
+    detectedSections.push('interfaces');
+    const ifaceList = doc.interfaces as Record<string, unknown>[];
+    base.interfaces.interfaces = ifaceList.map((iface: Record<string, unknown>, idx: number) => {
+      const role: 'upstream' | 'downstream' = iface.role === 'downstream' ? 'downstream' : 'upstream';
+      const name = iface.name ? String(iface.name) : (role === 'upstream' ? 'WAN' : `LAN${idx || 1}`);
+      const id = iface.id ? String(iface.id) : `iface-${name.toLowerCase()}-${idx + 1}`;
+
+      let ethernet: InterfaceEthernetItem[] | undefined = undefined;
+      if (Array.isArray(iface.ethernet)) {
+        const ethList = iface.ethernet as Record<string, unknown>[];
+        ethernet = ethList.map((eth: Record<string, unknown>) => ({
+          selectPorts: Array.isArray(eth['select-ports'] ?? eth.selectPorts)
+            ? (((eth['select-ports'] ?? eth.selectPorts) as unknown[]).map(String))
+            : [],
+          macaddr: eth.macaddr ? String(eth.macaddr) : undefined,
+          multicast: Boolean(eth.multicast),
+          learning: eth.learning !== undefined ? Boolean(eth.learning) : true,
+          isolate: eth.isolate !== undefined ? Boolean(eth.isolate) : undefined,
+          reversePath: Boolean(eth['reverse-path'] ?? eth.reversePath),
+          vlanTag: String(eth['vlan-tag'] ?? eth.vlanTag ?? 'auto'),
+        }));
+      }
+
+      const selectPorts: string[] =
+        ethernet && ethernet.length > 0
+          ? Array.from(new Set(ethernet.flatMap((e) => e.selectPorts)))
+          : (Array.isArray(iface['select-ports'] ?? iface.selectPorts)
+              ? ((iface['select-ports'] ?? iface.selectPorts) as unknown[]).map(String)
+              : []);
+
+      const services: string[] = Array.isArray(iface.services) ? (iface.services as unknown[]).map(String) : [];
+
+      const ipv4Raw = (iface.ipv4 as Record<string, unknown> | undefined) || {};
+      const hasDhcp = Boolean(ipv4Raw.dhcp || ipv4Raw['dhcp-leases'] || ipv4Raw.dhcpServer);
+      const dhcpRaw = (ipv4Raw.dhcp as Record<string, unknown> | undefined) || {};
+      const leasesRaw = Array.isArray(ipv4Raw['dhcp-leases'])
+        ? (ipv4Raw['dhcp-leases'] as Record<string, unknown>[])
+        : (Array.isArray(dhcpRaw.reservedAddresses) ? (dhcpRaw.reservedAddresses as Record<string, unknown>[]) : []);
+
+      const ipv4 = {
+        addressing: (ipv4Raw.addressing || 'dynamic') as 'dynamic' | 'static' | 'none',
+        resource: ipv4Raw.resource ? String(ipv4Raw.resource) : undefined,
+        subnet: ipv4Raw.subnet ? String(ipv4Raw.subnet) : undefined,
+        gateway: ipv4Raw.gateway ? String(ipv4Raw.gateway) : undefined,
+        sendHostname: ipv4Raw['send-hostname'] !== undefined ? Boolean(ipv4Raw['send-hostname']) : (ipv4Raw.sendHostname !== undefined ? Boolean(ipv4Raw.sendHostname) : true),
+        useDns: Array.isArray(ipv4Raw['use-dns'] ?? ipv4Raw.useDns) ? ((ipv4Raw['use-dns'] ?? ipv4Raw.useDns) as unknown[]).map(String) : undefined,
+        dhcpServer: hasDhcp,
+        dhcp: {
+          leaseFirst: Number(dhcpRaw['lease-first'] ?? dhcpRaw.leaseFirst ?? ipv4Raw['lease-first'] ?? 10),
+          leaseCount: Number(dhcpRaw['lease-count'] ?? dhcpRaw.leaseCount ?? ipv4Raw['lease-count'] ?? 100),
+          leaseTime: String(dhcpRaw['lease-time'] ?? dhcpRaw.leaseTime ?? ipv4Raw['lease-time'] ?? '6h'),
+          relayServer: String(dhcpRaw['relay-server'] ?? dhcpRaw.relayServer ?? ''),
+          circuitIdFormat: String(dhcpRaw['circuit-id-format'] ?? dhcpRaw.circuitIdFormat ?? ''),
+          remoteIdFormat: String(dhcpRaw['remote-id-format'] ?? dhcpRaw.remoteIdFormat ?? ''),
+          reservedAddresses: leasesRaw.map((l: Record<string, unknown>) => ({
+            macaddr: String(l.macaddr ?? ''),
+            staticLeaseOffset: l['static-lease-offset'] !== undefined ? Number(l['static-lease-offset']) : (l.staticLeaseOffset !== undefined ? Number(l.staticLeaseOffset) : undefined),
+            leaseTime: String(l['lease-time'] ?? l.leaseTime ?? '6h'),
+            publishHostname: Boolean(l['publish-hostname'] ?? l.publishHostname),
+          })),
+        },
+        dns: Array.isArray(ipv4Raw.dns) ? (ipv4Raw.dns as unknown[]).map(String) : undefined,
+        leaseFirst: Number(dhcpRaw['lease-first'] ?? ipv4Raw['lease-first'] ?? 10),
+        leaseCount: Number(dhcpRaw['lease-count'] ?? ipv4Raw['lease-count'] ?? 100),
+        leaseTime: String(dhcpRaw['lease-time'] ?? ipv4Raw['lease-time'] ?? '6h'),
+      };
+
+      const ipv6Raw = (iface.ipv6 as Record<string, unknown> | undefined) || {};
+      const dhcpv6Raw = ipv6Raw.dhcpv6 as Record<string, unknown> | undefined;
+      const ipv6 = {
+        addressing: (ipv6Raw.addressing || 'none') as 'dynamic' | 'static' | 'none',
+        resource: ipv6Raw.resource ? String(ipv6Raw.resource) : undefined,
+        subnet: ipv6Raw.subnet ? String(ipv6Raw.subnet) : undefined,
+        gateway: ipv6Raw.gateway ? String(ipv6Raw.gateway) : undefined,
+        prefixSize: ipv6Raw['prefix-size'] !== undefined ? Number(ipv6Raw['prefix-size']) : (ipv6Raw.prefixSize !== undefined ? Number(ipv6Raw.prefixSize) : 64),
+        dhcpv6: {
+          enabled: Boolean(dhcpv6Raw),
+          mode: ((dhcpv6Raw?.mode as string) || 'hybrid') as 'hybrid' | 'stateless' | 'stateful' | 'relay',
+          announceDns: Array.isArray(dhcpv6Raw?.['announce-dns'] ?? dhcpv6Raw?.announceDns) ? ((dhcpv6Raw?.['announce-dns'] ?? dhcpv6Raw?.announceDns) as unknown[]).map(String) : [],
+          filterPrefix: String(dhcpv6Raw?.['filter-prefix'] ?? dhcpv6Raw?.filterPrefix ?? '::/0'),
+        },
+      };
+
+      const vlanRaw = (iface.vlan as Record<string, unknown> | undefined) || {};
+      const vlan = {
+        enabled: Boolean(vlanRaw.id !== undefined || vlanRaw.enabled),
+        resource: vlanRaw.resource ? String(vlanRaw.resource) : undefined,
+        id: vlanRaw.id !== undefined ? Number(vlanRaw.id) : 1080,
+      };
+
+      const tunRaw = (iface.tunnel as Record<string, unknown> | undefined) || {};
+      const tunnel = {
+        proto: tunRaw.proto ? String(tunRaw.proto) : (tunRaw.peer ? 'mesh' : 'none'),
+        resource: tunRaw.resource ? String(tunRaw.resource) : undefined,
+        peer: tunRaw.peer ? String(tunRaw.peer) : undefined,
+      };
+
+      const ssidsRaw = Array.isArray(iface.ssids) ? (iface.ssids as Record<string, unknown>[]) : [];
+      const ssids: SingleSsidConfigItem[] = ssidsRaw.map((s: Record<string, unknown>, sIdx: number) => {
+        const sName = s.name ? String(s.name) : `SSID-${sIdx + 1}`;
+        const sId = s.id ? String(s.id) : `ssid-${sName.toLowerCase()}-${sIdx + 1}`;
+        const bssMode = (s['bss-mode'] || s.bssMode || 'ap') as SingleSsidConfigItem['bssMode'];
+        const wifiBands = Array.isArray(s['wifi-bands'] ?? s.wifiBands)
+          ? ((s['wifi-bands'] ?? s.wifiBands) as SingleSsidConfigItem['wifiBands'])
+          : (['2G', '5G'] as SingleSsidConfigItem['wifiBands']);
+
+        const encRaw = (s.encryption as Record<string, unknown> | undefined) || {};
+        let proto = String(encRaw.proto ?? encRaw.protocol ?? s.security ?? 'none').toLowerCase();
+        if (proto === 'wpa2-psk' || proto === 'wpa2_psk') proto = 'psk2';
+        else if (proto === 'wpa-psk' || proto === 'wpa_psk') proto = 'psk';
+        else if (proto === 'wpa3-sae' || proto === 'wpa3_sae') proto = 'sae';
+        else if (proto === 'open') proto = 'none';
+
+        const encryption = {
+          proto,
+          key: String(encRaw.key ?? s.key ?? ''),
+          ieee80211w: ((encRaw.ieee80211w ?? s.ieee80211w ?? 'disabled') as 'disabled' | 'optional' | 'required'),
+          keyCaching: encRaw['key-caching'] !== undefined ? Boolean(encRaw['key-caching']) : (encRaw.keyCaching !== undefined ? Boolean(encRaw.keyCaching) : true),
+        };
+
+        const radRaw = s.radius as Record<string, unknown> | undefined;
+        const radius = radRaw
+          ? {
+              server: radRaw.server ? String(radRaw.server) : undefined,
+              port: radRaw.port !== undefined ? Number(radRaw.port) : 1812,
+              secret: radRaw.secret ? String(radRaw.secret) : undefined,
+              accountingServer: radRaw['accounting-server'] ?? radRaw.accountingServer ? String(radRaw['accounting-server'] ?? radRaw.accountingServer) : undefined,
+              accountingPort: radRaw['accounting-port'] ?? radRaw.accountingPort ? Number(radRaw['accounting-port'] ?? radRaw.accountingPort) : undefined,
+              accountingSecret: radRaw['accounting-secret'] ?? radRaw.accountingSecret ? String(radRaw['accounting-secret'] ?? radRaw.accountingSecret) : undefined,
+            }
+          : undefined;
+
+        const ppRaw = (s['pass-point'] || s.passPoint) as Record<string, unknown> | undefined;
+        const passPoint = ppRaw
+          ? {
+              enabled: true,
+              venueName: Array.isArray(ppRaw['venue-name'] ?? ppRaw.venueName) ? ((ppRaw['venue-name'] ?? ppRaw.venueName) as unknown[]).map(String) : undefined,
+              venueUrl: Array.isArray(ppRaw['venue-url'] ?? ppRaw.venueUrl) ? ((ppRaw['venue-url'] ?? ppRaw.venueUrl) as unknown[]).map(String) : undefined,
+              domainName: Array.isArray(ppRaw['domain-name'] ?? ppRaw.domainName) ? ((ppRaw['domain-name'] ?? ppRaw.domainName) as unknown[]).map(String) : undefined,
+            }
+          : undefined;
+
+        const advRaw = (s.advanced as Record<string, unknown> | undefined) || {};
+        const multiPskRaw = Array.isArray(s['multi-psk'])
+          ? (s['multi-psk'] as Record<string, unknown>[])
+          : (Array.isArray(advRaw.multiPsk) ? (advRaw.multiPsk as Record<string, unknown>[]) : []);
+        const advanced = {
+          hiddenSsid: Boolean(s['hidden-ssid'] ?? advRaw.hiddenSsid),
+          services: Array.isArray(s.services ?? advRaw.services) ? ((s.services ?? advRaw.services) as unknown[]).map(String) : [],
+          maximumClients: s['maximum-clients'] !== undefined ? Number(s['maximum-clients']) : (advRaw.maximumClients !== undefined ? Number(advRaw.maximumClients) : 64),
+          filsDiscoveryInterval: s['fils-discovery-interval'] !== undefined ? Number(s['fils-discovery-interval']) : (advRaw.filsDiscoveryInterval !== undefined ? Number(advRaw.filsDiscoveryInterval) : 20),
+          purpose: s.purpose ? String(s.purpose) : (advRaw.purpose ? String(advRaw.purpose) : ''),
+          dtimPeriod: s['dtim-period'] !== undefined ? Number(s['dtim-period']) : (advRaw.dtimPeriod !== undefined ? Number(advRaw.dtimPeriod) : 2),
+          isolateClients: Boolean(s['isolate-clients'] ?? advRaw.isolateClients),
+          powerSave: Boolean(s['power-save'] ?? advRaw.powerSave),
+          broadcastTime: Boolean(s['broadcast-time'] ?? advRaw.broadcastTime),
+          unicastConversion: Boolean(s['unicast-conversion'] ?? advRaw.unicastConversion),
+          proxyArp: Boolean(s['proxy-arp'] ?? advRaw.proxyArp),
+          disassocLowAck: Boolean(s['disassoc-low-ack'] ?? advRaw.disassocLowAck),
+          vendorElements: s['vendor-elements'] ? String(s['vendor-elements']) : (advRaw.vendorElements ? String(advRaw.vendorElements) : ''),
+          tipInformationElement: s['tip-information-element'] !== undefined ? Boolean(s['tip-information-element']) : (advRaw.tipInformationElement !== undefined ? Boolean(advRaw.tipInformationElement) : true),
+          multiPsk: multiPskRaw.map((m: Record<string, unknown>) => ({
+            mac: m.mac ? String(m.mac) : undefined,
+            key: String(m.key ?? ''),
+            vlanId: Number(m['vlan-id'] ?? m.vlanId ?? 0),
+          })),
+          rrm: Boolean(s.rrm ?? advRaw.rrm),
+        };
+
+        const rlRaw = (s['rate-limit'] || s.rateLimit) as Record<string, unknown> | undefined;
+        const rateLimit = rlRaw
+          ? {
+              enabled: true,
+              ingressRate: Number(rlRaw['ingress-rate'] ?? rlRaw.ingressRate ?? 0),
+              egressRate: Number(rlRaw['egress-rate'] ?? rlRaw.egressRate ?? 0),
+            }
+          : undefined;
+
+        const rrmRaw = s.rrm as Record<string, unknown> | undefined;
+        const rrm = (rrmRaw && typeof rrmRaw === 'object')
+          ? {
+              enabled: true,
+              neighborReporting: Boolean(rrmRaw['neighbor-reporting'] ?? rrmRaw.neighborReporting),
+              lci: rrmRaw.lci ? String(rrmRaw.lci) : '',
+              civicLocation: rrmRaw['civic-location'] ?? rrmRaw.civicLocation ? String(rrmRaw['civic-location'] ?? rrmRaw.civicLocation) : '',
+              ftmResponder: Boolean(rrmRaw['ftm-responder'] ?? rrmRaw.ftmResponder),
+              stationaryAp: Boolean(rrmRaw['stationary-ap'] ?? rrmRaw.stationaryAp),
+            }
+          : undefined;
+
+        const capRaw = (s.captive || s['captive-portal'] || s.captivePortal) as Record<string, unknown> | undefined;
+        const captivePortal = (capRaw && typeof capRaw === 'object')
+          ? {
+              mode: capRaw.mode ? String(capRaw.mode) : 'click-to-continue',
+              walledGardenFqdn: Array.isArray(capRaw['walled-garden-fqdn'] ?? capRaw.walledGardenFqdn) ? ((capRaw['walled-garden-fqdn'] ?? capRaw.walledGardenFqdn) as unknown[]).map(String) : [],
+              walledGardenIpaddr: Array.isArray(capRaw['walled-garden-ipaddr'] ?? capRaw.walledGardenIpaddr) ? ((capRaw['walled-garden-ipaddr'] ?? capRaw.walledGardenIpaddr) as unknown[]).map(String) : [],
+              idleTimeout: capRaw['idle-timeout'] !== undefined ? Number(capRaw['idle-timeout']) : (capRaw.idleTimeout !== undefined ? Number(capRaw.idleTimeout) : undefined),
+              sessionTimeout: capRaw['session-timeout'] !== undefined ? Number(capRaw['session-timeout']) : (capRaw.sessionTimeout !== undefined ? Number(capRaw.sessionTimeout) : undefined),
+            }
+          : undefined;
+
+        const aclRaw = (s['access-control-list'] || s.accessControlList) as Record<string, unknown> | undefined;
+        const accessControlList = (aclRaw && typeof aclRaw === 'object')
+          ? {
+              enabled: true,
+              mode: (aclRaw.mode === 'deny' ? 'deny' : 'allow') as 'allow' | 'deny',
+              macAddress: Array.isArray(aclRaw['mac-address'] ?? aclRaw.macAddress) ? ((aclRaw['mac-address'] ?? aclRaw.macAddress) as unknown[]).map(String) : [],
+            }
+          : undefined;
+
+        let roaming: SingleSsidConfigItem['roaming'] = undefined;
+        if (s.roaming === true) {
+          roaming = { state: 'on', messageExchange: 'air', generatePsk: false };
+        } else if (s.roaming && typeof s.roaming === 'object') {
+          const roamObj = s.roaming as Record<string, unknown>;
+          roaming = {
+            state: 'custom',
+            messageExchange: ((roamObj['message-exchange'] ?? roamObj.messageExchange ?? 'air') as 'air' | 'ds'),
+            generatePsk: Boolean(roamObj['generate-psk'] ?? roamObj.generatePsk),
+            domainIdentifier: roamObj['domain-identifier'] ?? roamObj.domainIdentifier ? String(roamObj['domain-identifier'] ?? roamObj.domainIdentifier) : '',
+            pmkR0KeyHolder: roamObj['pmk-r0-key-holder'] ?? roamObj.pmkR0KeyHolder ? String(roamObj['pmk-r0-key-holder'] ?? roamObj.pmkR0KeyHolder) : '',
+            pmkR1KeyHolder: roamObj['pmk-r1-key-holder'] ?? roamObj.pmkR1KeyHolder ? String(roamObj['pmk-r1-key-holder'] ?? roamObj.pmkR1KeyHolder) : '',
+          };
+        }
+
+        return {
+          id: sId,
+          name: sName,
+          resource: s.resource ? String(s.resource) : undefined,
+          bssMode,
+          wifiBands,
+          encryption,
+          radius,
+          passPoint,
+          advanced,
+          rateLimit,
+          rrm,
+          captivePortal,
+          accessControlList,
+          roaming,
+        };
+      });
+
+      return {
+        id,
+        name,
+        role,
+        selectPorts,
+        ethernet,
+        isolateHosts: Boolean(iface['isolate-hosts'] ?? iface.isolateHosts),
+        services,
+        hostapdBssRaw: Array.isArray(iface['hostapd-bss-raw'])
+          ? ((iface['hostapd-bss-raw'] as unknown[]).map(String)).join('\n')
+          : (iface['hostapd-bss-raw'] ? String(iface['hostapd-bss-raw']) : ''),
+        ipv4,
+        ipv6,
+        vlan,
+        tunnel,
+        ssids,
+      };
+    });
+  }
+
+  // 7. Third Party
+  if (doc['third-party'] || doc.thirdParty) {
+    detectedSections.push('third-party');
+    const tp = doc['third-party'] ?? doc.thirdParty;
+    base.thirdParty.customProperties = typeof tp === 'object' && tp !== null ? (tp as Record<string, unknown>) : {};
+    base.thirdParty.configuration = JSON.stringify(base.thirdParty.customProperties, null, 2);
+  }
+
+  // Desired order of tabs
+  const sectionPrecedence: SubsectionKey[] = [
+    'interfaces',
+    'radios',
+    'services',
+    'metrics',
+    'unit',
+    'globals',
+    'third-party',
+  ];
+
+  base.activeSections = sectionPrecedence.filter((sec) => detectedSections.includes(sec));
+
+  return base;
+};
+

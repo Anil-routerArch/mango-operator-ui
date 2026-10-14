@@ -17,6 +17,7 @@ export interface GlobalsSectionProps {
   onChange: (updated: GlobalsSectionData) => void;
   onDeleteSection: () => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const GlobalsSection: React.FC<GlobalsSectionProps> = ({
@@ -24,6 +25,7 @@ export const GlobalsSection: React.FC<GlobalsSectionProps> = ({
   onChange,
   onDeleteSection,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   return (
     <Flex gap={4} wrap={{ base: 'wrap', lg: 'nowrap' }} align="stretch">
@@ -33,6 +35,7 @@ export const GlobalsSection: React.FC<GlobalsSectionProps> = ({
         onChange={(meta) => onChange({ ...data, meta })}
         onDeleteSection={onDeleteSection}
         disabled={disabled}
+        isDefaultConfig={isDefaultConfig}
       />
 
       {/* Right Card: Globals parameters matching OWPROV */}

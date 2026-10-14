@@ -203,6 +203,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
   const [scopeFilter, setScopeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [formatFilter, setFormatFilter] = useState('all');
+  const [platformFilter, setPlatformFilter] = useState('all');
 
   const [isSelectTypeModalOpen, setIsSelectTypeModalOpen] = useState(false);
   const [isDefaultConfigModalOpen, setIsDefaultConfigModalOpen] = useState(false);
@@ -309,7 +310,8 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
 
     const matchesScope =
       scopeFilter === 'all' ||
-      (scopeFilter === 'global' && !c.entity && !c.venue) ||
+      (scopeFilter === 'default' && c.configType === 'default') ||
+      (scopeFilter === 'global' && c.configType !== 'default' && !c.entity && !c.venue) ||
       (scopeFilter === 'property' && Boolean(c.entity) && !c.venue) ||
       (scopeFilter === 'venue' && Boolean(c.venue));
 
@@ -321,7 +323,11 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
       (formatFilter === 'default' && c.configType === 'default') ||
       (formatFilter === 'modular' && c.configType !== 'default');
 
-    return matchesSearch && matchesScope && matchesStatus && matchesFormat;
+    const rawPlatform = (c.platform || c.deviceGroup || 'ap').toLowerCase();
+    const matchesPlatform =
+      platformFilter === 'all' || rawPlatform === platformFilter.toLowerCase();
+
+    return matchesSearch && matchesScope && matchesStatus && matchesFormat && matchesPlatform;
   });
 
   const handleDeleteConfig = async (id: string) => {
@@ -411,7 +417,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
             />
           </Box>
 
-          <Box w="180px">
+          <Box w="150px">
             <SelectDropdown
               value={formatFilter}
               onChange={setFormatFilter}
@@ -423,12 +429,26 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
             />
           </Box>
 
+          <Box w="140px">
+            <SelectDropdown
+              value={platformFilter}
+              onChange={setPlatformFilter}
+              options={[
+                { value: 'all', label: 'All Platforms' },
+                { value: 'ap', label: 'AP' },
+                { value: 'switch', label: 'Switch' },
+                { value: 'olg', label: 'OLG' },
+              ]}
+            />
+          </Box>
+
           <Box w="180px">
             <SelectDropdown
               value={scopeFilter}
               onChange={setScopeFilter}
               options={[
                 { value: 'all', label: 'All Scopes' },
+                { value: 'default', label: 'Default' },
                 { value: 'global', label: 'Global Scope' },
                 { value: 'property', label: 'Property Scope' },
                 { value: 'venue', label: 'Venue Scope' },
@@ -465,6 +485,9 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                 Configuration Name
               </Box>
               <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
+                Platform
+              </Box>
+              <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
                 Device Types
               </Box>
               <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
@@ -488,7 +511,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
           <Box as="tbody">
             {filteredConfigs.length === 0 ? (
               <Box as="tr">
-                <td colSpan={7} style={{ padding: '32px', textAlign: 'center' }}>
+                <td colSpan={8} style={{ padding: '32px', textAlign: 'center' }}>
                   <Text fontSize="13px" color={themeColors.text.muted}>
                     No configurations found matching filters.
                   </Text>
@@ -546,7 +569,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                                 border="1px solid"
                                 borderColor="rgba(8, 145, 178, 0.2)"
                               >
-                                DEFAULT ({c.platform?.toUpperCase() || 'AP'})
+                                DEFAULT
                               </Box>
                             ) : (
                               <Box
@@ -572,6 +595,38 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                     </Box>
 
                     <Box as="td" p="12px 16px">
+                      {(() => {
+                        const raw = (c.platform || c.deviceGroup || 'ap').toLowerCase();
+                        const label = raw.toUpperCase();
+                        const isAp = raw === 'ap';
+                        const isSwitch = raw === 'switch';
+                        const isOlg = raw === 'olg';
+
+                        const badgeBg = isAp ? '#eff6ff' : isSwitch ? '#faf5ff' : isOlg ? '#f0fdfa' : '#f8fafc';
+                        const badgeColor = isAp ? '#1d4ed8' : isSwitch ? '#7e22ce' : isOlg ? '#0f766e' : '#334155';
+                        const badgeBorder = isAp ? '#bfdbfe' : isSwitch ? '#e9d5ff' : isOlg ? '#99f6e4' : '#e2e8f0';
+
+                        return (
+                          <Box
+                            display="inline-block"
+                            fontSize="11px"
+                            fontWeight="700"
+                            px={2}
+                            py={0.5}
+                            borderRadius="4px"
+                            bg={badgeBg}
+                            color={badgeColor}
+                            border="1px solid"
+                            borderColor={badgeBorder}
+                            fontFamily="monospace"
+                          >
+                            {label}
+                          </Box>
+                        );
+                      })()}
+                    </Box>
+
+                    <Box as="td" p="12px 16px">
                       <HStack gap={1}>
                         {c.devicetypes.map((dt, idx) => (
                           <Box
@@ -592,7 +647,21 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                     </Box>
 
                     <Box as="td" p="12px 16px">
-                      {c.venue ? (
+                      {c.configType === 'default' ? (
+                        <Box
+                          display="inline-block"
+                          fontSize="11px"
+                          fontWeight="600"
+                          px={2}
+                          py={0.5}
+                          borderRadius="4px"
+                          bg="#e0f2fe"
+                          color="#0369a1"
+                          border="1px solid #bae6fd"
+                        >
+                          Default
+                        </Box>
+                      ) : c.venue ? (
                         <Box
                           display="inline-block"
                           fontSize="11px"
@@ -635,11 +704,10 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                     </Box>
 
                     <Box as="td" p="12px 16px">
-                      {c.configType === 'default' ? (
-                        <HStack gap={1.5} fontSize="11px" color="#0891b2" fontWeight="600">
-                          <Icon name="file" size={13} color="#0891b2" />
-                          <Text fontFamily="monospace">uCentral JSON ({c.platform?.toUpperCase() || 'AP'})</Text>
-                        </HStack>
+                      {c.configType === 'default' || c.variables.length === 0 ? (
+                        <Text fontSize="12px" color={themeColors.text.muted}>
+                          None
+                        </Text>
                       ) : (
                         <HStack gap={1.5} wrap="wrap" maxW="240px">
                           {c.variables.map((vId) => {
@@ -667,14 +735,22 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                     </Box>
 
                     <Box as="td" p="12px 16px" fontSize="11px" color={themeColors.text.secondary}>
-                      <Text>FW: <Text as="span" fontWeight="600">{c.devicerules?.firmwareUpgrade || 'inherit'}</Text></Text>
-                      <Text>RRM: <Text as="span" fontWeight="600">{c.devicerules?.rrm || 'inherit'}</Text></Text>
+                      {c.configType === 'default' ? (
+                        <Text fontSize="12px" color={themeColors.text.muted}>
+                          N/A
+                        </Text>
+                      ) : (
+                        <>
+                          <Text>FW: <Text as="span" fontWeight="600">{c.devicerules?.firmwareUpgrade || 'inherit'}</Text></Text>
+                          <Text>RRM: <Text as="span" fontWeight="600">{c.devicerules?.rrm || 'inherit'}</Text></Text>
+                        </>
+                      )}
                     </Box>
 
                     <Box as="td" p="12px 16px">
                       {c.configType === 'default' ? (
-                        <Text fontSize="11px" color={themeColors.text.muted}>
-                          — (Direct JSON)
+                        <Text fontSize="12px" color={themeColors.text.muted}>
+                          N/A
                         </Text>
                       ) : totalOverrides > 0 ? (
                         <Box
@@ -714,26 +790,30 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                           <Icon name="edit" size={12} />
                           Edit
                         </Button>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          borderColor={themeColors.brand.accent}
-                          color={themeColors.brand.accent}
-                          onClick={() => setDiffModalConfig(c)}
-                          title="Compare changes (?resolveConfig=true)"
-                        >
-                          Diff
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          borderColor="#16a34a"
-                          color="#16a34a"
-                          onClick={() => setDeployModalConfig(c)}
-                          title="Deploy configuration (?applyConfiguration=true)"
-                        >
-                          Deploy
-                        </Button>
+                        {c.configType !== 'default' && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            borderColor={themeColors.brand.accent}
+                            color={themeColors.brand.accent}
+                            onClick={() => setDiffModalConfig(c)}
+                            title="Compare changes (?resolveConfig=true)"
+                          >
+                            Diff
+                          </Button>
+                        )}
+                        {c.configType !== 'default' && (
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            borderColor="#16a34a"
+                            color="#16a34a"
+                            onClick={() => setDeployModalConfig(c)}
+                            title="Deploy configuration (?applyConfiguration=true)"
+                          >
+                            Deploy
+                          </Button>
+                        )}
                         <Button
                           size="xs"
                           variant="outline"

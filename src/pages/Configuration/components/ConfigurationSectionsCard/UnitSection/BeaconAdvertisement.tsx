@@ -14,12 +14,14 @@ interface BeaconAdvertisementProps {
   data: UnitSectionData;
   onChange: (updated: UnitSectionData) => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const BeaconAdvertisement: React.FC<BeaconAdvertisementProps> = ({
   data,
   onChange,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   const isBeaconEnabled = Boolean(data.beaconAdvertisement?.enabled);
 
@@ -51,7 +53,7 @@ export const BeaconAdvertisement: React.FC<BeaconAdvertisementProps> = ({
           <Flex gap={3} wrap="wrap">
             <Box flex="1" minW="140px">
               <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                device-name <Text as="span" color="#dc2626">*</Text>
+                device-name {!isDefaultConfig && <Text as="span" color="#dc2626">*</Text>}
               </Text>
               <Input
                 size="sm"
@@ -73,7 +75,7 @@ export const BeaconAdvertisement: React.FC<BeaconAdvertisementProps> = ({
 
             <Box flex="1" minW="140px">
               <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                device-serial <Text as="span" color="#dc2626">*</Text>
+                device-serial {!isDefaultConfig && <Text as="span" color="#dc2626">*</Text>}
               </Text>
               <Input
                 size="sm"

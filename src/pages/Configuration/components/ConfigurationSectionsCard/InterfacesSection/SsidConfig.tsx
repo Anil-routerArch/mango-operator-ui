@@ -33,6 +33,7 @@ interface SsidConfigProps {
   ssids: SingleSsidConfigItem[];
   onChange: (ssids: SingleSsidConfigItem[]) => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 interface MultiSelectPillsProps {
@@ -211,6 +212,7 @@ export const SsidConfig: React.FC<SsidConfigProps> = ({
   ssids,
   onChange,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   const [selectedSsidId, setSelectedSsidId] = useState<string>(() => ssids[0]?.id || '');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -327,17 +329,19 @@ export const SsidConfig: React.FC<SsidConfigProps> = ({
               <Text fontSize="14px" fontWeight="700" color="#0f172a">
                 #{activeIndex}
               </Text>
-              <SelectDropdown
-                value={activeSsid.resource || ''}
-                onChange={(val) =>
-                  handleUpdateSsid({ ...activeSsid, resource: val as string })
-                }
-                options={[
-                  { value: '', label: 'No Resource Selected' },
-                ]}
-                disabled={disabled}
-                w="200px"
-              />
+              <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
+                <SelectDropdown
+                  value={activeSsid.resource || ''}
+                  onChange={(val) =>
+                    handleUpdateSsid({ ...activeSsid, resource: val as string })
+                  }
+                  options={[
+                    { value: '', label: 'No Resource Selected' },
+                  ]}
+                  disabled={disabled || isDefaultConfig}
+                  w="200px"
+                />
+              </Box>
             </HStack>
 
             {!disabled && (

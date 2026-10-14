@@ -109,6 +109,7 @@ export interface DeviceConfiguration {
   description: string;
   configType?: ConfigurationType; // 'default' (OWGW JSON) or 'modular' (OWPROV visual)
   platform?: PlatformType; // 'ap' | 'switch' | 'olg'
+  deviceGroup?: string; // OWPROV device group (e.g. 'ap', 'switch', 'olg')
   rawConfigurationJson?: string; // Raw uCentral JSON for OWGW Default Configurations
   notes: NoteItem[];
   created: number;

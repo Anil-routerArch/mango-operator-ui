@@ -31,6 +31,7 @@ interface SingleInterfaceProps {
   onManageEthernetPorts: () => void;
   canDelete?: boolean;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const SingleInterface: React.FC<SingleInterfaceProps> = ({
@@ -40,6 +41,7 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
   onManageEthernetPorts,
   canDelete = true,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   const [isReservedModalOpen, setIsReservedModalOpen] = useState(false);
 
@@ -270,19 +272,21 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
 
               {isIpv4Enabled && (
                 <>
-                  <SelectDropdown
-                    size="sm"
-                    value={iface.ipv4.resource || ''}
-                    onChange={(val) =>
-                      onChange({
-                        ...iface,
-                        ipv4: { ...iface.ipv4, resource: String(val) },
-                      })
-                    }
-                    options={[{ value: '', label: 'No Resource Selected' }]}
-                    disabled={disabled}
-                    w="200px"
-                  />
+                  <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
+                    <SelectDropdown
+                      size="sm"
+                      value={iface.ipv4.resource || ''}
+                      onChange={(val) =>
+                        onChange({
+                          ...iface,
+                          ipv4: { ...iface.ipv4, resource: String(val) },
+                        })
+                      }
+                      options={[{ value: '', label: 'No Resource Selected' }]}
+                      disabled={disabled || isDefaultConfig}
+                      w="200px"
+                    />
+                  </Box>
                   <SelectDropdown
                     size="sm"
                     value={iface.ipv4.addressing === 'static' ? 'static' : 'dynamic'}
@@ -847,19 +851,21 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
                 </HStack>
 
                 {isVlanEnabled && (
-                  <SelectDropdown
-                    size="sm"
-                    value={iface.vlan.resource || ''}
-                    onChange={(val) =>
-                      onChange({
-                        ...iface,
-                        vlan: { ...iface.vlan, resource: String(val) },
-                      })
-                    }
-                    options={[{ value: '', label: 'No Resource Selected' }]}
-                    disabled={disabled}
-                    w="200px"
-                  />
+                  <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
+                    <SelectDropdown
+                      size="sm"
+                      value={iface.vlan.resource || ''}
+                      onChange={(val) =>
+                        onChange({
+                          ...iface,
+                          vlan: { ...iface.vlan, resource: String(val) },
+                        })
+                      }
+                      options={[{ value: '', label: 'No Resource Selected' }]}
+                      disabled={disabled || isDefaultConfig}
+                      w="200px"
+                    />
+                  </Box>
                 )}
               </Flex>
 
@@ -904,19 +910,21 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
 
                 {isTunnelEnabled && (
                   <>
-                    <SelectDropdown
-                      size="sm"
-                      value={iface.tunnel.resource || ''}
-                      onChange={(val) =>
-                        onChange({
-                          ...iface,
-                          tunnel: { ...iface.tunnel, resource: String(val) },
-                        })
-                      }
-                      options={[{ value: '', label: 'No Resource Selected' }]}
-                      disabled={disabled}
-                      w="200px"
-                    />
+                    <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
+                      <SelectDropdown
+                        size="sm"
+                        value={iface.tunnel.resource || ''}
+                        onChange={(val) =>
+                          onChange({
+                            ...iface,
+                            tunnel: { ...iface.tunnel, resource: String(val) },
+                          })
+                        }
+                        options={[{ value: '', label: 'No Resource Selected' }]}
+                        disabled={disabled || isDefaultConfig}
+                        w="200px"
+                      />
+                    </Box>
                     <SelectDropdown
                       size="sm"
                       value={iface.tunnel.proto || 'mesh'}
@@ -965,6 +973,7 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
             ssids={iface.ssids}
             onChange={(ssids) => onChange({ ...iface, ssids })}
             disabled={disabled}
+            isDefaultConfig={isDefaultConfig}
           />
         ) : (
           <Box pt={4} textAlign="center">

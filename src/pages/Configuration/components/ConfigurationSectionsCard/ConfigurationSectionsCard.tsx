@@ -25,28 +25,48 @@ import { MetricsSection } from './MetricsSection/index';
 import { UnitSection } from './UnitSection/index';
 import { ThirdPartySection } from './ThirdPartySection/index';
 
-import { getInitialSectionsState, compileStateToUCentralJson } from './utils';
+import { getInitialSectionsState, compileStateToUCentralJson, parseUCentralJsonToSectionsState } from './utils';
 
 interface ConfigurationSectionsCardProps {
   platform?: PlatformType;
+  initialJson?: string;
   initialState?: Partial<ConfigurationSectionsState>;
   onStateChange?: (state: ConfigurationSectionsState, compiledJson: string) => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps> = ({
+  initialJson,
   initialState,
   onStateChange,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
-  const [sectionsState, setSectionsState] = useState<ConfigurationSectionsState>(() => ({
-    ...getInitialSectionsState(),
-    ...initialState,
-  }));
+  const [sectionsState, setSectionsState] = useState<ConfigurationSectionsState>(() => {
+    if (initialJson && initialJson.trim()) {
+      return parseUCentralJsonToSectionsState(initialJson);
+    }
+    return {
+      ...getInitialSectionsState(),
+      ...initialState,
+    };
+  });
 
   const [activeTab, setActiveTab] = useState<SubsectionKey | null>(
     () => sectionsState.activeSections[0] ?? null
   );
+
+  // Sync state if initialJson changes externally without cascading effect render
+  const [prevInitialJson, setPrevInitialJson] = useState(initialJson);
+  if (initialJson !== prevInitialJson) {
+    setPrevInitialJson(initialJson);
+    if (initialJson && initialJson.trim()) {
+      const next = parseUCentralJsonToSectionsState(initialJson);
+      setSectionsState(next);
+      setActiveTab((prev) => (prev && next.activeSections.includes(prev) ? prev : (next.activeSections[0] ?? null)));
+    }
+  }
 
   const currentTab =
     activeTab && sectionsState.activeSections.includes(activeTab)
@@ -112,37 +132,11 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
 
   const handleApplyImportedJson = (importedJsonStr: string) => {
     try {
-      const parsed = JSON.parse(importedJsonStr);
-      const next: ConfigurationSectionsState = { ...sectionsState };
-      const newActive: SubsectionKey[] = [];
-
-      if (parsed.globals) {
-        newActive.push('globals');
-        next.globals.ipv4Network = String(parsed.globals['ipv4-network'] || next.globals.ipv4Network);
-        next.globals.ipv6Network = String(parsed.globals['ipv6-network'] || next.globals.ipv6Network);
-      }
-      if (Array.isArray(parsed.radios)) {
-        newActive.push('radios');
-      }
-      if (Array.isArray(parsed.interfaces)) {
-        newActive.push('interfaces');
-      }
-      if (parsed.services) {
-        newActive.push('services');
-      }
-      if (parsed.metrics) {
-        newActive.push('metrics');
-      }
-      if (parsed.unit) {
-        newActive.push('unit');
-      }
-
-      if (newActive.length > 0) {
-        next.activeSections = Array.from(new Set([...next.activeSections, ...newActive]));
-        setActiveTab(newActive[0]);
-      }
-
+      const next = parseUCentralJsonToSectionsState(importedJsonStr);
       updateState(next);
+      if (next.activeSections.length > 0) {
+        setActiveTab(next.activeSections[0]);
+      }
     } catch {
       // invalid json handled by modal
     }
@@ -408,6 +402,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onChange={(globals) => updateState({ ...sectionsState, globals })}
                 onDeleteSection={() => handleDeleteSection('globals')}
                 disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
               />
             )}
 
@@ -417,6 +412,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onChange={(radios) => updateState({ ...sectionsState, radios })}
                 onDeleteSection={() => handleDeleteSection('radios')}
                 disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
               />
             )}
 
@@ -426,6 +422,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onChange={(interfaces) => updateState({ ...sectionsState, interfaces })}
                 onDeleteSection={() => handleDeleteSection('interfaces')}
                 disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
               />
             )}
 
@@ -435,6 +432,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onChange={(services) => updateState({ ...sectionsState, services })}
                 onDeleteSection={() => handleDeleteSection('services')}
                 disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
               />
             )}
 
@@ -444,6 +442,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onChange={(metrics) => updateState({ ...sectionsState, metrics })}
                 onDeleteSection={() => handleDeleteSection('metrics')}
                 disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
               />
             )}
 
@@ -453,6 +452,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onChange={(unit) => updateState({ ...sectionsState, unit })}
                 onDeleteSection={() => handleDeleteSection('unit')}
                 disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
               />
             )}
 
@@ -462,6 +462,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onChange={(thirdParty) => updateState({ ...sectionsState, thirdParty })}
                 onDeleteSection={() => handleDeleteSection('third-party')}
                 disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
               />
             )}
           </>

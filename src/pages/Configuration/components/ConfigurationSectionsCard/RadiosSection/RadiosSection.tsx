@@ -16,6 +16,7 @@ export interface RadiosSectionProps {
   onChange: (data: RadiosSectionData) => void;
   onDeleteSection: () => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const RadiosSection: React.FC<RadiosSectionProps> = ({
@@ -23,6 +24,7 @@ export const RadiosSection: React.FC<RadiosSectionProps> = ({
   onChange,
   onDeleteSection,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   const [selectedRadioId, setSelectedRadioId] = useState<string>(
     () => data.bands[0]?.id || ''
@@ -94,6 +96,7 @@ export const RadiosSection: React.FC<RadiosSectionProps> = ({
         onChange={(meta) => onChange({ ...data, meta })}
         onDeleteSection={onDeleteSection}
         disabled={disabled}
+        isDefaultConfig={isDefaultConfig}
       />
 
       {/* Radios Container Card */}
@@ -172,6 +175,7 @@ export const RadiosSection: React.FC<RadiosSectionProps> = ({
             onDelete={() => handleDeleteRadio(activeRadio.id)}
             canDelete={data.bands.length > 1}
             disabled={disabled}
+            isDefaultConfig={isDefaultConfig}
           />
         )}
       </Box>

@@ -29,6 +29,7 @@ export interface ServicesSectionProps {
   onChange: (data: ServicesSectionData) => void;
   onDeleteSection: () => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const ServicesSection: React.FC<ServicesSectionProps> = ({
@@ -36,8 +37,30 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
   onChange,
   onDeleteSection,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   const activeSubs = data.activeSubsections || [];
+
+  const servicesOptions = React.useMemo(() => {
+    if (!isDefaultConfig) return SERVICES_OPTIONS;
+    return SERVICES_OPTIONS.map((opt) => {
+      if (opt.value === 'open-flow') {
+        return {
+          ...opt,
+          disabled: true,
+          disabledReason: 'open-flow is not supported by OpenWiFi Gateway (OWGW) uCentral schema',
+        };
+      }
+      if (opt.value === 'airtime-policies') {
+        return {
+          ...opt,
+          disabled: true,
+          disabledReason: 'airtime-policies is not supported by OpenWiFi Gateway (OWGW) uCentral schema (OWGW requires airtime-fairness)',
+        };
+      }
+      return opt;
+    });
+  }, [isDefaultConfig]);
 
   const handleSubsectionsChange = (newSubs: string[]) => {
     onChange({
@@ -54,10 +77,11 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
           meta={data.meta}
           onChange={(meta) => onChange({ ...data, meta })}
           onDeleteSection={onDeleteSection}
-          subsectionsOptions={SERVICES_OPTIONS}
+          subsectionsOptions={servicesOptions}
           activeSubsections={activeSubs}
           onSubsectionsChange={handleSubsectionsChange}
           disabled={disabled}
+          isDefaultConfig={isDefaultConfig}
         />
 
         {/* If LLDP is active, show it next to General */}
@@ -77,11 +101,11 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({
         {activeSubs.includes('igmp') && <Igmp data={data} onChange={onChange} disabled={disabled} />}
         {activeSubs.includes('gps') && <Gps data={data} onChange={onChange} disabled={disabled} />}
         {activeSubs.includes('online-check') && <OnlineCheck data={data} onChange={onChange} disabled={disabled} />}
-        {activeSubs.includes('open-flow') && <OpenFlow data={data} onChange={onChange} disabled={disabled} />}
+        {activeSubs.includes('open-flow') && <OpenFlow data={data} onChange={onChange} disabled={disabled} isDefaultConfig={isDefaultConfig} />}
         {activeSubs.includes('wifi-steering') && <WifiSteering data={data} onChange={onChange} disabled={disabled} />}
         {activeSubs.includes('quality-of-service') && <QualityOfService data={data} onChange={onChange} disabled={disabled} />}
         {activeSubs.includes('facebook-wifi') && <FacebookWifi data={data} onChange={onChange} disabled={disabled} />}
-        {activeSubs.includes('airtime-policies') && <AirtimePolicies data={data} onChange={onChange} disabled={disabled} />}
+        {activeSubs.includes('airtime-policies') && <AirtimePolicies data={data} onChange={onChange} disabled={disabled} isDefaultConfig={isDefaultConfig} />}
         {activeSubs.includes('data-plane') && <DataPlane data={data} onChange={onChange} disabled={disabled} />}
         {activeSubs.includes('ieee8021x') && <Ieee8021x data={data} onChange={onChange} disabled={disabled} />}
         {activeSubs.includes('radius-proxy') && <RadiusProxy data={data} onChange={onChange} disabled={disabled} />}

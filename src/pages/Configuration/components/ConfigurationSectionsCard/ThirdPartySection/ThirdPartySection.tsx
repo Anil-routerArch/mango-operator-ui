@@ -16,6 +16,7 @@ export interface ThirdPartySectionProps {
   onChange: (updated: ThirdPartySectionData) => void;
   onDeleteSection: () => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const ThirdPartySection: React.FC<ThirdPartySectionProps> = ({
@@ -23,6 +24,7 @@ export const ThirdPartySection: React.FC<ThirdPartySectionProps> = ({
   onChange,
   onDeleteSection,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   const [jsonError, setJsonError] = useState<string | null>(null);
 
@@ -91,7 +93,7 @@ export const ThirdPartySection: React.FC<ThirdPartySectionProps> = ({
             </Text>
           </Box>
 
-          {!disabled && (
+          {!disabled && !isDefaultConfig && (
             <Box
               as="button"
               w="28px"
@@ -126,7 +128,10 @@ export const ThirdPartySection: React.FC<ThirdPartySectionProps> = ({
                     meta: { ...data.meta, name: e.target.value },
                   })
                 }
-                disabled={disabled}
+                disabled={disabled || isDefaultConfig}
+                bg={disabled || isDefaultConfig ? '#f8fafc' : '#ffffff'}
+                cursor={isDefaultConfig ? 'not-allowed' : undefined}
+                title={isDefaultConfig ? 'Fixed section name in uCentral schema' : undefined}
                 borderRadius="4px"
                 borderColor="#cbd5e1"
               />
@@ -145,7 +150,11 @@ export const ThirdPartySection: React.FC<ThirdPartySectionProps> = ({
                     meta: { ...data.meta, description: e.target.value },
                   })
                 }
-                disabled={disabled}
+                placeholder={isDefaultConfig ? 'N/A for default configs' : 'Optional description'}
+                disabled={disabled || isDefaultConfig}
+                bg={disabled || isDefaultConfig ? '#f8fafc' : '#ffffff'}
+                cursor={isDefaultConfig ? 'not-allowed' : undefined}
+                title={isDefaultConfig ? 'Section descriptions are not supported in uCentral JSON default configurations' : undefined}
                 borderRadius="4px"
                 borderColor="#cbd5e1"
               />
@@ -169,7 +178,10 @@ export const ThirdPartySection: React.FC<ThirdPartySectionProps> = ({
                     },
                   })
                 }
-                disabled={disabled}
+                disabled={disabled || isDefaultConfig}
+                bg={disabled || isDefaultConfig ? '#f8fafc' : '#ffffff'}
+                cursor={isDefaultConfig ? 'not-allowed' : undefined}
+                title={isDefaultConfig ? 'Weight is an OWPROV profile concept and is not applicable to uCentral JSON default configurations' : undefined}
                 borderRadius="4px"
                 borderColor="#cbd5e1"
               />

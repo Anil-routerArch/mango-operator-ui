@@ -20,6 +20,7 @@ export interface UnitSectionProps {
   onChange: (data: UnitSectionData) => void;
   onDeleteSection: () => void;
   disabled?: boolean;
+  isDefaultConfig?: boolean;
 }
 
 export const UnitSection: React.FC<UnitSectionProps> = ({
@@ -27,6 +28,7 @@ export const UnitSection: React.FC<UnitSectionProps> = ({
   onChange,
   onDeleteSection,
   disabled = false,
+  isDefaultConfig = false,
 }) => {
   return (
     <SimpleGrid columns={{ base: 1, lg: 2 }} gap={4} alignItems="start">
@@ -36,6 +38,7 @@ export const UnitSection: React.FC<UnitSectionProps> = ({
         onChange={(meta) => onChange({ ...data, meta })}
         onDeleteSection={onDeleteSection}
         disabled={disabled}
+        isDefaultConfig={isDefaultConfig}
       />
 
       {/* Unit Settings Card matching OWPROV */}
@@ -65,18 +68,18 @@ export const UnitSection: React.FC<UnitSectionProps> = ({
             <Flex gap={3} wrap="wrap">
               <Box flex="1" minW="160px">
                 <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                  name <Text as="span" color="#dc2626">*</Text>
+                  name {!isDefaultConfig && <Text as="span" color="#dc2626">*</Text>}
                 </Text>
                 <Input
                   size="sm"
                   value={data.name}
                   onChange={(e) => onChange({ ...data, name: e.target.value })}
-                  placeholder="Unit name"
+                  placeholder={isDefaultConfig ? 'Optional generic name (e.g. OpenWiFi AP)' : 'Unit name'}
                   disabled={disabled}
                   borderRadius="4px"
-                  borderColor={!data.name ? '#dc2626' : undefined}
+                  borderColor={!isDefaultConfig && !data.name ? '#dc2626' : undefined}
                 />
-                {!data.name && (
+                {!isDefaultConfig && !data.name && (
                   <Text fontSize="10px" color="#dc2626" mt={0.5}>
                     Required
                   </Text>
@@ -85,18 +88,18 @@ export const UnitSection: React.FC<UnitSectionProps> = ({
 
               <Box flex="1" minW="160px">
                 <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                  location <Text as="span" color="#dc2626">*</Text>
+                  location {!isDefaultConfig && <Text as="span" color="#dc2626">*</Text>}
                 </Text>
                 <Input
                   size="sm"
                   value={data.location}
                   onChange={(e) => onChange({ ...data, location: e.target.value })}
-                  placeholder="Location description"
+                  placeholder={isDefaultConfig ? 'Optional location' : 'Location description'}
                   disabled={disabled}
                   borderRadius="4px"
-                  borderColor={!data.location ? '#dc2626' : undefined}
+                  borderColor={!isDefaultConfig && !data.location ? '#dc2626' : undefined}
                 />
-                {!data.location && (
+                {!isDefaultConfig && !data.location && (
                   <Text fontSize="10px" color="#dc2626" mt={0.5}>
                     Required
                   </Text>
@@ -114,7 +117,7 @@ export const UnitSection: React.FC<UnitSectionProps> = ({
                   size="sm"
                   value={data.hostname || ''}
                   onChange={(e) => onChange({ ...data, hostname: e.target.value })}
-                  placeholder="e.g. ap-floor-1"
+                  placeholder={isDefaultConfig ? 'Leave empty to use device serial number' : 'e.g. ap-floor-1'}
                   disabled={disabled}
                   borderRadius="4px"
                 />
@@ -160,7 +163,7 @@ export const UnitSection: React.FC<UnitSectionProps> = ({
             </Flex>
 
             {/* Beacon Advertisement */}
-            <BeaconAdvertisement data={data} onChange={onChange} disabled={disabled} />
+            <BeaconAdvertisement data={data} onChange={onChange} disabled={disabled} isDefaultConfig={isDefaultConfig} />
           </VStack>
         </Box>
       </Box>
