@@ -11,7 +11,6 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
-import { SAMPLE_AP_CONFIG_JSON } from '../mockData/mockConfigurations';
 import type { DeviceConfiguration, PlatformType } from '../types/configuration';
 import {
   ConfigurationSectionsCard,
@@ -58,7 +57,7 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
 
   // JSON state synchronized from ConfigurationSectionsCard (or initial config)
   const [configurationJson, setConfigurationJson] = useState<string>(
-    initialConfig?.rawConfigurationJson || (isEditMode ? '' : SAMPLE_AP_CONFIG_JSON)
+    initialConfig?.rawConfigurationJson || ''
   );
 
   const [jsonError, setJsonError] = useState<string | null>(null);
@@ -71,8 +70,8 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
   // Real-time JSON validation
   const validateJson = (text: string): boolean => {
     if (!text.trim()) {
-      setJsonError('Configuration JSON is required');
-      return false;
+      setJsonError(null);
+      return true;
     }
     try {
       JSON.parse(text);
@@ -211,7 +210,8 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
     name.trim().length > 0 &&
     deviceTypes.length > 0 &&
     !jsonError &&
-    configurationJson.trim().length > 0;
+    configurationJson.trim().length > 0 &&
+    configurationJson.trim() !== '{}';
 
   return (
     <Box

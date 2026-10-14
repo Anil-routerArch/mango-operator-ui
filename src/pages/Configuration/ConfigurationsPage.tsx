@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Button,
@@ -11,114 +11,21 @@ import { Header } from '@/layout/Header';
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
-import { useConfigurationUiStore } from '@/stores/configurationUiStore';
 import {
   getDefaultConfigurations,
   deleteDefaultConfiguration,
+  getModularConfigurations,
+  deleteModularConfiguration,
+  getVariableBlocksSelect,
+  useGetEntities,
+  useGetVenues,
   type DefaultConfigurationApiResponse,
+  type ModularConfigurationApiResponse,
 } from '@/api';
-import { MOCK_CONFIGURATIONS, MOCK_PROFILES } from './mockData/mockConfigurations';
-import { ConfigurationEditorPage } from './ConfigurationEditorPage';
-import { DiffPreviewModal } from './components/DiffPreviewModal';
-import { DeployConfigModal } from './components/DeployConfigModal';
 import { SelectConfigTypeModal } from './components/SelectConfigTypeModal';
 import { DefaultConfigModal } from './components/DefaultConfigModal';
+import { ModularConfigModal } from './components/ModularConfigModal';
 import type { DeviceConfiguration } from './types/configuration';
-
-const createBlankConfiguration = (): DeviceConfiguration => ({
-  id: `cfg-${Date.now().toString(36)}`,
-  name: 'New MDU Configuration',
-  description: 'Master device configuration template',
-  notes: [],
-  created: Math.floor(Date.now() / 1000),
-  modified: Math.floor(Date.now() / 1000),
-  devicetypes: ['*'],
-  configuration: [],
-  inuse: [],
-  variables: ['2739c5f8-3b89-4c4a-8cea-e0d4c03bcaef', '5de6444a-751b-4891-9bbe-3009ac645003'],
-  devicerules: {
-    firmwareUpgrade: 'inherit',
-    rcOnly: 'inherit',
-    rrm: 'inherit',
-  },
-  tags: ['mdu'],
-  subscriberonly: false,
-  entity: '',
-  venue: '',
-  subscriber: '',
-  version: 1,
-  status: 'draft',
-  validation: 'passed',
-  assignments: [],
-  sections: {
-    general: {
-      name: 'New MDU Configuration',
-      description: 'Master device configuration template',
-      timezone: 'UTC-5 (EST)',
-      country: 'US',
-    },
-    radios: {
-      bands: [
-        {
-          band: '5 GHz',
-          enabled: true,
-          profileId: '2739c5f8-3b89-4c4a-8cea-e0d4c03bcaef',
-          profileName: 'Radio resource',
-          inheritedSettingsCount: 9,
-          fields: [
-            { key: 'enabled', label: 'Enabled', effectiveValue: true, source: 'Radio resource', overridden: false, profileDefaultValue: true },
-            { key: 'channel', label: 'Channel', effectiveValue: 'auto', source: 'Radio resource', overridden: false, profileDefaultValue: 'auto' },
-            { key: 'tx-power', label: 'TX Power', effectiveValue: 0, source: 'Radio resource', overridden: false, profileDefaultValue: 0 },
-          ],
-        },
-        {
-          band: '2.4 GHz',
-          enabled: true,
-          profileId: 'prof-legacy-24g',
-          profileName: 'Standard 2.4 GHz Radio',
-          inheritedSettingsCount: 8,
-          fields: [
-            { key: 'enabled', label: 'Enabled', effectiveValue: true, source: 'Standard 2.4 GHz Radio', overridden: false, profileDefaultValue: true },
-            { key: 'channel', label: 'Channel', effectiveValue: 'auto', source: 'Standard 2.4 GHz Radio', overridden: false, profileDefaultValue: 'auto' },
-          ],
-        },
-        {
-          band: '6 GHz',
-          enabled: false,
-          inheritedSettingsCount: 0,
-          fields: [
-            { key: 'enabled', label: 'Enabled', effectiveValue: false, source: 'Default', overridden: false, profileDefaultValue: false },
-          ],
-        },
-      ],
-    },
-    interfaces: {
-      ssids: [
-        {
-          name: 'Resident Private Wi-Fi',
-          ssid: 'Resident-WiFi',
-          security: 'WPA2-PSK',
-          vlan: 100,
-          profileId: '5de6444a-751b-4891-9bbe-3009ac645003',
-          profileName: 'Resident SSID',
-          overridden: false,
-        },
-      ],
-    },
-    services: {
-      ssh: true,
-      lldp: true,
-    },
-    metrics: {
-      interval: 60,
-      reporting: true,
-    },
-    unit: {
-      leds: true,
-      poeOut: false,
-    },
-  },
-});
 
 const mapOwgwDefaultConfigToDeviceConfig = (cfg: DefaultConfigurationApiResponse): DeviceConfiguration => {
   const configStr =
@@ -178,6 +85,69 @@ const mapOwgwDefaultConfigToDeviceConfig = (cfg: DefaultConfigurationApiResponse
   };
 };
 
+const mapOwprovModularConfigToDeviceConfig = (cfg: ModularConfigurationApiResponse): DeviceConfiguration => {
+  return {
+    id: cfg.id,
+    name: cfg.name,
+    description: cfg.description || 'OWPROV Modular Configuration',
+    notes: (cfg.notes || []).map((n) => ({
+      note: n.note,
+      created: n.created || Math.floor(Date.now() / 1000),
+      author: n.author,
+    })),
+    created: cfg.created || Math.floor(Date.now() / 1000),
+    modified: cfg.modified || Math.floor(Date.now() / 1000),
+    devicetypes: cfg.deviceTypes && cfg.deviceTypes.length > 0 ? cfg.deviceTypes : ['*'],
+    configuration: (cfg.configuration || []).map((b) => ({
+      name: b.name,
+      description: b.description || '',
+      weight: b.weight,
+      configuration: typeof b.configuration === 'string' ? b.configuration : JSON.stringify(b.configuration),
+    })),
+    inuse: cfg.inUse || [],
+    variables: cfg.variables || [],
+    devicerules: {
+      firmwareUpgrade: (cfg.deviceRules?.firmwareUpgrade as 'inherit' | 'yes' | 'no') || 'inherit',
+      rcOnly: (cfg.deviceRules?.rcOnly as 'inherit' | 'yes' | 'no') || 'inherit',
+      rrm: (cfg.deviceRules?.rrm as 'inherit' | 'yes' | 'no') || 'inherit',
+    },
+    tags: cfg.tags || ['owprov', 'modular-config', cfg.deviceGroup || 'ap'],
+    subscriberonly: Boolean(cfg.subscriberOnly),
+    entity: cfg.entity || '',
+    venue: cfg.venue || '',
+    subscriber: cfg.subscriber || '',
+    version: 1,
+    status: 'active',
+    validation: 'passed',
+    assignments: [],
+    configType: 'modular',
+    platform: (cfg.deviceGroup as 'ap' | 'switch' | 'olg') || 'ap',
+    deviceGroup: cfg.deviceGroup || 'ap',
+    sections: {
+      general: {
+        name: cfg.name,
+        description: cfg.description || '',
+        timezone: 'UTC',
+        country: 'US',
+      },
+      radios: { bands: [] },
+      interfaces: { ssids: [] },
+      services: {
+        ssh: true,
+        lldp: true,
+      },
+      metrics: {
+        interval: 60,
+        reporting: true,
+      },
+      unit: {
+        leds: true,
+        poeOut: false,
+      },
+    },
+  };
+};
+
 export interface ConfigurationsPageProps {
   embedded?: boolean;
   isCreateOpen?: boolean;
@@ -189,48 +159,104 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
   embedded = false,
   isCreateOpen = false,
   onCloseCreate,
-  onNavigateToProfile,
 }) => {
-  const {
-    selectedConfigId,
-    setSelectedConfigId,
-    isCreatingConfig,
-    setIsCreatingConfig,
-  } = useConfigurationUiStore();
 
-  const [configurations, setConfigurations] = useState<DeviceConfiguration[]>(MOCK_CONFIGURATIONS);
+  const [configurations, setConfigurations] = useState<DeviceConfiguration[]>([]);
+  const [isLoadingConfigs, setIsLoadingConfigs] = useState<boolean>(true);
   const [search, setSearch] = useState('');
   const [scopeFilter, setScopeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [formatFilter, setFormatFilter] = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
 
+  // Live Entities and Venues from OWPROV for resolving names
+  const { data: entities = [] } = useGetEntities();
+  const { data: venues = [] } = useGetVenues();
+
+  const entityNameMap = useMemo(() => new Map(entities.map((e) => [e.id, e.name])), [entities]);
+  const venueNameMap = useMemo(() => new Map(venues.map((v) => [v.id, v.name])), [venues]);
+
+  // Collect all unique referenced variable UUIDs across loaded configurations
+  const referencedVariableIds = useMemo(() => {
+    const set = new Set<string>();
+    configurations.forEach((c) => {
+      c.variables?.forEach((id) => {
+        if (id && id.trim()) set.add(id.trim());
+      });
+    });
+    return Array.from(set);
+  }, [configurations]);
+
+  const [variableNameMap, setVariableNameMap] = useState<Map<string, string>>(new Map());
+
+  // Fetch only the referenced variable blocks using targeted select query
+  useEffect(() => {
+    if (referencedVariableIds.length === 0) return;
+    let isMounted = true;
+    getVariableBlocksSelect(referencedVariableIds)
+      .then((blocks) => {
+        if (isMounted && blocks.length > 0) {
+          setVariableNameMap((prev) => {
+            const next = new Map(prev);
+            blocks.forEach((b) => {
+              if (b.id && b.name) {
+                next.set(b.id, b.name);
+              }
+            });
+            return next;
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to resolve variable block names:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [referencedVariableIds]);
+
   const [isSelectTypeModalOpen, setIsSelectTypeModalOpen] = useState(false);
   const [isDefaultConfigModalOpen, setIsDefaultConfigModalOpen] = useState(false);
   const [editingDefaultConfig, setEditingDefaultConfig] = useState<DeviceConfiguration | null>(null);
 
-  const [diffModalConfig, setDiffModalConfig] = useState<DeviceConfiguration | null>(null);
-  const [deployModalConfig, setDeployModalConfig] = useState<DeviceConfiguration | null>(null);
+  const [isModularConfigModalOpen, setIsModularConfigModalOpen] = useState(false);
+  const [editingModularConfig, setEditingModularConfig] = useState<DeviceConfiguration | null>(null);
 
-  // Load live default configurations from OWGW on mount
+  // Load live default configurations from OWGW and modular configurations from OWPROV on mount
   useEffect(() => {
     let isMounted = true;
-    getDefaultConfigurations()
-      .then((owgwConfigs) => {
-        if (!isMounted || !owgwConfigs || !Array.isArray(owgwConfigs)) return;
-        const mapped = owgwConfigs.map(mapOwgwDefaultConfigToDeviceConfig);
-        setConfigurations((prev) => {
-          // Merge: replace existing mock/owgw entries matching name or prepend new ones
-          const nonOwgw = prev.filter(
-            (p) => !p.id.startsWith('owgw-') && !mapped.some((m) => m.name === p.name)
-          );
-          return [...mapped, ...nonOwgw];
-        });
+
+    Promise.allSettled([
+      getDefaultConfigurations(),
+      getModularConfigurations(),
+    ])
+      .then(([defaultRes, modularRes]) => {
+        if (!isMounted) return;
+        const liveConfigs: DeviceConfiguration[] = [];
+
+        // 1. Live OWGW Default Configurations
+        if (defaultRes.status === 'fulfilled' && Array.isArray(defaultRes.value)) {
+          liveConfigs.push(...defaultRes.value.map(mapOwgwDefaultConfigToDeviceConfig));
+        } else if (defaultRes.status === 'rejected') {
+          console.warn('Could not fetch default configurations from OWGW:', defaultRes.reason);
+        }
+
+        // 2. Live OWPROV Modular Configurations
+        if (modularRes.status === 'fulfilled' && Array.isArray(modularRes.value)) {
+          liveConfigs.push(...modularRes.value.map(mapOwprovModularConfigToDeviceConfig));
+        } else if (modularRes.status === 'rejected') {
+          console.warn('Could not fetch modular configurations from OWPROV:', modularRes.reason);
+        }
+
+        setConfigurations(liveConfigs);
       })
-      .catch((err) => {
-        // OWGW may be offline or in mock dev environment; keep fallback configurations
-        console.warn('Could not fetch default configurations from OWGW:', err);
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingConfigs(false);
+        }
       });
+
     return () => {
       isMounted = false;
     };
@@ -250,57 +276,17 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
     });
   };
 
-  const draftNewConfig = useMemo(() => {
-    if (!isCreatingConfig) return null;
-    return createBlankConfiguration();
-  }, [isCreatingConfig]);
-
-  // If creating new config
-  if (isCreatingConfig && draftNewConfig) {
-    return (
-      <ConfigurationEditorPage
-        config={draftNewConfig}
-        isNewConfig
-        onBack={() => setIsCreatingConfig(false)}
-        onSaveSuccess={(newSaved) => {
-          setConfigurations([newSaved, ...configurations]);
-          setIsCreatingConfig(false);
-        }}
-        onViewProfile={(profId) => {
-          setIsCreatingConfig(false);
-          onNavigateToProfile?.(profId);
-        }}
-        onManageProfiles={() => {
-          setIsCreatingConfig(false);
-          onNavigateToProfile?.();
-        }}
-      />
-    );
-  }
-
-  // If a configuration is selected, show the full editor
-  if (selectedConfigId) {
-    const activeConfig = configurations.find((c) => c.id === selectedConfigId);
-    if (activeConfig) {
-      return (
-        <ConfigurationEditorPage
-          config={activeConfig}
-          onBack={() => setSelectedConfigId(null)}
-          onSaveSuccess={(updated) => {
-            setConfigurations((prev) =>
-              prev.map((c) => (c.id === updated.id ? updated : c))
-            );
-          }}
-          onViewProfile={(profId) => {
-            onNavigateToProfile?.(profId);
-          }}
-          onManageProfiles={() => {
-            onNavigateToProfile?.();
-          }}
-        />
-      );
-    }
-  }
+  const handleSaveModularConfig = (saved: DeviceConfiguration) => {
+    setConfigurations((prev) => {
+      const idx = prev.findIndex((c) => c.id === saved.id || c.name === saved.name);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = saved;
+        return next;
+      }
+      return [saved, ...prev];
+    });
+  };
 
   // Filter configurations
   const filteredConfigs = configurations.filter((c) => {
@@ -311,7 +297,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
     const matchesScope =
       scopeFilter === 'all' ||
       (scopeFilter === 'default' && c.configType === 'default') ||
-      (scopeFilter === 'global' && c.configType !== 'default' && !c.entity && !c.venue) ||
+      (scopeFilter === 'unassigned' && c.configType !== 'default' && !c.entity && !c.venue) ||
       (scopeFilter === 'property' && Boolean(c.entity) && !c.venue) ||
       (scopeFilter === 'venue' && Boolean(c.venue));
 
@@ -337,6 +323,12 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
         await deleteDefaultConfiguration(target.name);
       } catch (err) {
         console.warn('Failed to delete default configuration on OWGW:', err);
+      }
+    } else {
+      try {
+        await deleteModularConfiguration(id);
+      } catch (err) {
+        console.warn('Failed to delete modular configuration on OWPROV:', err);
       }
     }
     setConfigurations((prev) => prev.filter((c) => c.id !== id));
@@ -449,8 +441,8 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
               options={[
                 { value: 'all', label: 'All Scopes' },
                 { value: 'default', label: 'Default' },
-                { value: 'global', label: 'Global Scope' },
-                { value: 'property', label: 'Property Scope' },
+                { value: 'unassigned', label: 'Unassigned' },
+                { value: 'property', label: 'Entity Scope' },
                 { value: 'venue', label: 'Venue Scope' },
               ]}
             />
@@ -499,9 +491,6 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
               <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
                 Device Rules
               </Box>
-              <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
-                Overrides
-              </Box>
               <Box as="th" p="12px 16px" textAlign="right" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
                 Actions
               </Box>
@@ -511,18 +500,14 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
           <Box as="tbody">
             {filteredConfigs.length === 0 ? (
               <Box as="tr">
-                <td colSpan={8} style={{ padding: '32px', textAlign: 'center' }}>
+                <td colSpan={7} style={{ padding: '36px', textAlign: 'center' }}>
                   <Text fontSize="13px" color={themeColors.text.muted}>
-                    No configurations found matching filters.
+                    {isLoadingConfigs ? 'Loading configurations...' : 'No configurations found.'}
                   </Text>
                 </td>
               </Box>
             ) : (
               filteredConfigs.map((c) => {
-                const totalOverrides = c.sections.radios.bands.flatMap((b) =>
-                  b.fields.filter((f) => f.overridden)
-                ).length;
-
                 return (
                   <Box
                     as="tr"
@@ -551,7 +536,8 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                                   setEditingDefaultConfig(c);
                                   setIsDefaultConfigModalOpen(true);
                                 } else {
-                                  setSelectedConfigId(c.id);
+                                  setEditingModularConfig(c);
+                                  setIsModularConfigModalOpen(true);
                                 }
                               }}
                             >
@@ -672,7 +658,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                           bg="#f3e8ff"
                           color="#7e22ce"
                         >
-                          Venue: {c.venueName || 'Building B'}
+                          Venue: {venueNameMap.get(c.venue) || c.venueName || (c.venue.length > 8 ? `${c.venue.slice(0, 8)}...` : c.venue)}
                         </Box>
                       ) : c.entity ? (
                         <Box
@@ -685,21 +671,12 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                           bg="#dcfce7"
                           color="#166534"
                         >
-                          Property: {c.entityName || 'Sunrise Apartments'}
+                          Entity: {entityNameMap.get(c.entity) || c.entityName || (c.entity.length > 8 ? `${c.entity.slice(0, 8)}...` : c.entity)}
                         </Box>
                       ) : (
-                        <Box
-                          display="inline-block"
-                          fontSize="11px"
-                          fontWeight="600"
-                          px={2}
-                          py={0.5}
-                          borderRadius="4px"
-                          bg="#f1f5f9"
-                          color={themeColors.text.secondary}
-                        >
-                          Global
-                        </Box>
+                        <Text fontSize="12px" color={themeColors.text.muted}>
+                          —
+                        </Text>
                       )}
                     </Box>
 
@@ -711,22 +688,22 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                       ) : (
                         <HStack gap={1.5} wrap="wrap" maxW="240px">
                           {c.variables.map((vId) => {
-                            const profile = MOCK_PROFILES.find((p) => p.id === vId);
+                            const humanName = variableNameMap.get(vId);
                             return (
                               <Box
                                 key={vId}
-                                fontSize="10px"
+                                fontSize="11px"
                                 fontWeight="600"
-                                px={1.5}
+                                px={2}
                                 py={0.5}
                                 borderRadius="4px"
                                 bg="#eff6ff"
                                 color={themeColors.brand.accent}
                                 border="1px solid"
                                 borderColor="#bfdbfe"
-                                title={`UUID: ${vId}`}
+                                title={`Variable Block UUID: ${vId}`}
                               >
-                                {profile?.name || vId.substring(0, 8)}
+                                {humanName || `${vId.substring(0, 8)}...`}
                               </Box>
                             );
                           })}
@@ -747,31 +724,6 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                       )}
                     </Box>
 
-                    <Box as="td" p="12px 16px">
-                      {c.configType === 'default' ? (
-                        <Text fontSize="12px" color={themeColors.text.muted}>
-                          N/A
-                        </Text>
-                      ) : totalOverrides > 0 ? (
-                        <Box
-                          display="inline-block"
-                          fontSize="11px"
-                          fontWeight="600"
-                          px={2}
-                          py={0.5}
-                          borderRadius="4px"
-                          bg="#fef3c7"
-                          color="#b45309"
-                        >
-                          {totalOverrides} Override{totalOverrides > 1 ? 's' : ''}
-                        </Box>
-                      ) : (
-                        <Text fontSize="11px" color={themeColors.text.muted}>
-                          Inherited
-                        </Text>
-                      )}
-                    </Box>
-
                     <Box as="td" p="12px 16px" textAlign="right">
                       <HStack gap={1} justify="flex-end">
                         <Button
@@ -783,37 +735,14 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                               setEditingDefaultConfig(c);
                               setIsDefaultConfigModalOpen(true);
                             } else {
-                              setSelectedConfigId(c.id);
+                              setEditingModularConfig(c);
+                              setIsModularConfigModalOpen(true);
                             }
                           }}
                         >
                           <Icon name="edit" size={12} />
                           Edit
                         </Button>
-                        {c.configType !== 'default' && (
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            borderColor={themeColors.brand.accent}
-                            color={themeColors.brand.accent}
-                            onClick={() => setDiffModalConfig(c)}
-                            title="Compare changes (?resolveConfig=true)"
-                          >
-                            Diff
-                          </Button>
-                        )}
-                        {c.configType !== 'default' && (
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            borderColor="#16a34a"
-                            color="#16a34a"
-                            onClick={() => setDeployModalConfig(c)}
-                            title="Deploy configuration (?applyConfiguration=true)"
-                          >
-                            Deploy
-                          </Button>
-                        )}
                         <Button
                           size="xs"
                           variant="outline"
@@ -849,14 +778,15 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
             setEditingDefaultConfig(null);
             setIsDefaultConfigModalOpen(true);
           } else {
-            setIsCreatingConfig(true);
+            setEditingModularConfig(null);
+            setIsModularConfigModalOpen(true);
           }
         }}
       />
 
       {/* OWGW Default Configuration Modal (Create & Edit) */}
       <DefaultConfigModal
-        key={editingDefaultConfig?.id || (isDefaultConfigModalOpen ? 'open-new' : 'closed')}
+        key={editingDefaultConfig?.id || (isDefaultConfigModalOpen ? 'open-new-default' : 'closed-default')}
         isOpen={isDefaultConfigModalOpen}
         onClose={() => {
           setIsDefaultConfigModalOpen(false);
@@ -866,30 +796,17 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
         initialConfig={editingDefaultConfig}
       />
 
-      {/* Modals */}
-      {diffModalConfig && (
-        <DiffPreviewModal
-          isOpen={Boolean(diffModalConfig)}
-          onClose={() => setDiffModalConfig(null)}
-          configName={diffModalConfig.name}
-        />
-      )}
-      {deployModalConfig && (
-        <DeployConfigModal
-          isOpen={Boolean(deployModalConfig)}
-          onClose={() => setDeployModalConfig(null)}
-          config={deployModalConfig}
-          onConfirmDeploy={() => {
-            setConfigurations((prev) =>
-              prev.map((c) =>
-                c.id === deployModalConfig.id
-                  ? { ...c, version: c.version + 1 }
-                  : c
-              )
-            );
-          }}
-        />
-      )}
+      {/* OWPROV Modular Configuration Modal (Create & Edit) */}
+      <ModularConfigModal
+        key={editingModularConfig?.id || (isModularConfigModalOpen ? 'open-new-modular' : 'closed-modular')}
+        isOpen={isModularConfigModalOpen}
+        onClose={() => {
+          setIsModularConfigModalOpen(false);
+          setEditingModularConfig(null);
+        }}
+        onSave={handleSaveModularConfig}
+        initialConfig={editingModularConfig}
+      />
     </Box>
   );
 };

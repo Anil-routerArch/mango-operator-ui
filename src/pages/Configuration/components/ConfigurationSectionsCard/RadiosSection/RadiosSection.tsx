@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
   Box,
   Flex,
+  Text,
   VStack,
 } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
@@ -77,7 +78,6 @@ export const RadiosSection: React.FC<RadiosSectionProps> = ({
   };
 
   const handleDeleteRadio = (id: string) => {
-    if (data.bands.length <= 1) return;
     const filtered = data.bands.filter((b) => b.id !== id);
     onChange({
       ...data,
@@ -108,75 +108,109 @@ export const RadiosSection: React.FC<RadiosSectionProps> = ({
         overflow="hidden"
       >
         {/* Radio Bands Tab Bar */}
-        <Flex
-          px={3}
-          pt={2}
-          bg="#f8fafc"
-          borderBottom="1px solid"
-          borderColor={themeColors.panel.divider}
-          align="center"
-          gap={1}
-          overflowX="auto"
-        >
-          {data.bands.map((radio) => {
-            const isTabActive = activeRadio?.id === radio.id;
-            return (
+        {data.bands.length > 0 && (
+          <Flex
+            px={3}
+            pt={2}
+            bg="#f8fafc"
+            borderBottom="1px solid"
+            borderColor={themeColors.panel.divider}
+            align="center"
+            gap={1}
+            overflowX="auto"
+          >
+            {data.bands.map((radio) => {
+              const isTabActive = activeRadio?.id === radio.id;
+              return (
+                <Box
+                  key={radio.id}
+                  as="button"
+                  px={3.5}
+                  py={2}
+                  fontSize="12px"
+                  fontWeight="700"
+                  cursor="pointer"
+                  borderTop="2px solid"
+                  borderColor={isTabActive ? themeColors.brand.accent : 'transparent'}
+                  color={isTabActive ? themeColors.brand.accent : themeColors.text.secondary}
+                  bg={isTabActive ? '#ffffff' : 'transparent'}
+                  borderRadius="4px 4px 0 0"
+                  borderLeft={isTabActive ? '1px solid' : 'none'}
+                  borderRight={isTabActive ? '1px solid' : 'none'}
+                  borderLeftColor={themeColors.panel.divider}
+                  borderRightColor={themeColors.panel.divider}
+                  onClick={() => setSelectedRadioId(radio.id)}
+                >
+                  {radio.band} Radio
+                </Box>
+              );
+            })}
+
+            {/* Plus button to open Add Radio modal */}
+            {!disabled && (
               <Box
-                key={radio.id}
                 as="button"
-                px={3.5}
-                py={2}
-                fontSize="12px"
-                fontWeight="700"
+                w="26px"
+                h="26px"
+                borderRadius="4px"
+                bg="#2563eb"
+                color="#ffffff"
+                display="grid"
+                placeItems="center"
                 cursor="pointer"
-                borderTop="2px solid"
-                borderColor={isTabActive ? themeColors.brand.accent : 'transparent'}
-                color={isTabActive ? themeColors.brand.accent : themeColors.text.secondary}
-                bg={isTabActive ? '#ffffff' : 'transparent'}
-                borderRadius="4px 4px 0 0"
-                borderLeft={isTabActive ? '1px solid' : 'none'}
-                borderRight={isTabActive ? '1px solid' : 'none'}
-                borderLeftColor={themeColors.panel.divider}
-                borderRightColor={themeColors.panel.divider}
-                onClick={() => setSelectedRadioId(radio.id)}
+                _hover={{ bg: '#1d4ed8' }}
+                onClick={() => setIsAddModalOpen(true)}
+                title="Add Radio band"
+                ml={1}
               >
-                {radio.band} Radio
+                <Icon name="plus" size={14} />
               </Box>
-            );
-          })}
+            )}
+          </Flex>
+        )}
 
-          {/* Plus button to open Add Radio modal */}
-          {!disabled && (
-            <Box
-              as="button"
-              w="26px"
-              h="26px"
-              borderRadius="4px"
-              bg="#2563eb"
-              color="#ffffff"
-              display="grid"
-              placeItems="center"
-              cursor="pointer"
-              _hover={{ bg: '#1d4ed8' }}
-              onClick={() => setIsAddModalOpen(true)}
-              title="Add Radio band"
-              ml={1}
-            >
-              <Icon name="plus" size={14} />
-            </Box>
-          )}
-        </Flex>
-
-        {/* Active Radio Form Body */}
-        {activeRadio && (
-          <SingleRadio
-            radio={activeRadio}
-            onChange={handleUpdateActiveRadio}
-            onDelete={() => handleDeleteRadio(activeRadio.id)}
-            canDelete={data.bands.length > 1}
-            disabled={disabled}
-            isDefaultConfig={isDefaultConfig}
-          />
+        {/* Active Radio Form Body or Empty State */}
+        {data.bands.length === 0 ? (
+          <Box p={8} textAlign="center" bg="#ffffff">
+            <Text fontSize="14px" fontWeight="600" color={themeColors.text.title} mb={2}>
+              No Radio Bands Configured
+            </Text>
+            <Text fontSize="12px" color={themeColors.text.secondary} mb={4}>
+              No frequency bands have been added yet. Click below to add a radio band.
+            </Text>
+            {!disabled && (
+              <Box
+                as="button"
+                display="inline-flex"
+                alignItems="center"
+                gap={1.5}
+                px={4}
+                py={2}
+                borderRadius="4px"
+                bg="#2563eb"
+                color="#ffffff"
+                fontSize="13px"
+                fontWeight="600"
+                cursor="pointer"
+                _hover={{ bg: '#1d4ed8' }}
+                onClick={() => setIsAddModalOpen(true)}
+              >
+                <Icon name="plus" size={14} />
+                Add Radio Band
+              </Box>
+            )}
+          </Box>
+        ) : (
+          activeRadio && (
+            <SingleRadio
+              radio={activeRadio}
+              onChange={handleUpdateActiveRadio}
+              onDelete={() => handleDeleteRadio(activeRadio.id)}
+              canDelete={true}
+              disabled={disabled}
+              isDefaultConfig={isDefaultConfig}
+            />
+          )
         )}
       </Box>
 

@@ -1,6 +1,7 @@
 import type {
   ConfigurationSectionsState,
   SubsectionKey,
+  SectionMeta,
   SingleRadioConfigItem,
   SingleSsidConfigItem,
   InterfaceEthernetItem,
@@ -170,50 +171,7 @@ export const getInitialSectionsState = (): ConfigurationSectionsState => ({
   },
   radios: {
     meta: { name: 'Radios', description: 'Wi-Fi radio frequency bands', weight: 1 },
-    bands: [
-      {
-        id: 'radio-2g',
-        band: '2G',
-        bandwidth: 5,
-        country: 'US',
-        channelMode: 'HT',
-        channelWidth: 20,
-        channel: 'auto',
-        mimo: 'None',
-        txPower: 20,
-        legacyRates: false,
-        maximumClients: 64,
-        multipleBssid: false,
-        allowDfs: true,
-        beaconRate: 'None',
-        beaconInterval: 100,
-        hostapdIfaceRaw: '',
-        multicast: 'None',
-        ema: false,
-        requireMode: 'None',
-      },
-      {
-        id: 'radio-5g',
-        band: '5G',
-        bandwidth: 5,
-        country: 'US',
-        channelMode: 'HE',
-        channelWidth: 80,
-        channel: 'auto',
-        mimo: 'None',
-        txPower: 20,
-        legacyRates: false,
-        maximumClients: 64,
-        multipleBssid: false,
-        allowDfs: true,
-        beaconRate: 'None',
-        beaconInterval: 100,
-        hostapdIfaceRaw: '',
-        multicast: 'None',
-        ema: false,
-        requireMode: 'None',
-      },
-    ],
+    bands: [],
   },
   interfaces: {
     meta: { name: 'Interfaces', description: '', weight: 1 },
@@ -727,9 +685,57 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
 
   return JSON.stringify(doc, null, 2);
 };
+export interface ModularConfigBlock {
+  name: string;
+  description: string;
+  weight: number;
+  configuration: string;
+}
+
+export const compileStateToModularConfigurationElements = (
+  state: ConfigurationSectionsState
+): ModularConfigBlock[] => {
+  const blocks: ModularConfigBlock[] = [];
+  const fullJsonStr = compileStateToUCentralJson(state);
+  let parsedFull: Record<string, unknown>;
+  try {
+    parsedFull = JSON.parse(fullJsonStr);
+  } catch {
+    parsedFull = {};
+  }
+
+  for (const section of state.activeSections) {
+    const meta =
+      section === 'globals'
+        ? state.globals.meta
+        : section === 'unit'
+        ? state.unit.meta
+        : section === 'metrics'
+        ? state.metrics.meta
+        : section === 'services'
+        ? state.services.meta
+        : section === 'radios'
+        ? state.radios.meta
+        : section === 'interfaces'
+        ? state.interfaces.meta
+        : state.thirdParty.meta;
+
+    const jsonKey = section;
+    if (parsedFull[jsonKey] !== undefined) {
+      blocks.push({
+        name: meta?.name || section.charAt(0).toUpperCase() + section.slice(1),
+        description: meta?.description || '',
+        weight: Number.isFinite(meta?.weight) ? meta.weight : 1,
+        configuration: JSON.stringify({ [jsonKey]: parsedFull[jsonKey] }, null, 2),
+      });
+    }
+  }
+
+  return blocks;
+};
 
 export const parseUCentralJsonToSectionsState = (
-  raw: string | Record<string, unknown> | null | undefined
+  raw: unknown
 ): ConfigurationSectionsState => {
   const base = getInitialSectionsState();
   if (!raw) return base;
@@ -741,13 +747,48 @@ export const parseUCentralJsonToSectionsState = (
     } catch {
       return base;
     }
-  } else if (typeof raw === 'object') {
-    doc = raw;
+  } else if (typeof raw === 'object' && raw !== null) {
+    doc = raw as Record<string, unknown>;
   } else {
     return base;
   }
 
   if (!doc || typeof doc !== 'object') return base;
+
+  // Handle array of OWPROV modular configuration blocks
+  if (Array.isArray(doc)) {
+    const mergedDoc: Record<string, unknown> = {};
+    for (const block of doc) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as { name?: string; description?: string; weight?: number; configuration?: unknown };
+      let parsedBlock: Record<string, unknown> | null;
+      if (typeof b.configuration === 'string') {
+        try {
+          parsedBlock = JSON.parse(b.configuration);
+        } catch {
+          parsedBlock = null;
+        }
+      } else if (typeof b.configuration === 'object' && b.configuration !== null) {
+        parsedBlock = b.configuration as Record<string, unknown>;
+      } else {
+        parsedBlock = block as Record<string, unknown>;
+      }
+
+      if (parsedBlock && typeof parsedBlock === 'object') {
+        Object.assign(mergedDoc, parsedBlock);
+        const sectionKeys = ['globals', 'unit', 'metrics', 'services', 'radios', 'interfaces', 'third-party'] as const;
+        for (const k of sectionKeys) {
+          if (k in parsedBlock) {
+            const stateKey = k === 'third-party' ? 'thirdParty' : k;
+            if (b.name) (base[stateKey] as { meta: SectionMeta }).meta.name = b.name;
+            if (b.description !== undefined) (base[stateKey] as { meta: SectionMeta }).meta.description = b.description;
+            if (b.weight !== undefined) (base[stateKey] as { meta: SectionMeta }).meta.weight = Number(b.weight) || 1;
+          }
+        }
+      }
+    }
+    doc = mergedDoc;
+  }
 
   const detectedSections: SubsectionKey[] = [];
 
