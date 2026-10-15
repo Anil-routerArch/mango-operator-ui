@@ -1686,16 +1686,22 @@ The Configuration Profiles module manages reusable, section-level configuration 
 
 ### 22.1 Product-to-Backend Architecture
 1. **Direct Mapping to `VariableBlock`:** Configuration Profiles in the MDU UI are explicitly the product-facing manifestation of OWPROV `VariableBlock` entities (`variables2` database table). The UI introduces no separate intermediate metadata store.
-2. **Scope Hierarchy (`entity` vs `venue`):**
-   - **Property Scope (`entity` UUID):** The Profile is scoped to the Property and is accessible to all Configurations authored for that Property and its descendant Venues.
-   - **Venue Scope (`venue` UUID):** The Profile is scoped to a specific Venue and is accessible only within that Venue and its child Venues.
-3. **Wire Format Structure:** A `VariableBlock` encapsulates common metadata (`name`, `description`, `entity`, `venue`) and an array of variable items:
+2. **Scope Hierarchy & Field Coexistence (`entity` vs `venue`):**
+   - In OWPROV's hierarchy, every Venue is organized under a parent Entity (Property).
+   - **Property-Scoped Profile:** Authored with `entity` set to the Property UUID, while `venue` remains empty string `""`. Accessible to all Configurations authored for that Property and its descendant Venues.
+   - **Venue-Scoped Profile:** Authored with `venue` set to the target Venue UUID, and `entity` set to the parent Property UUID. The non-empty `venue` field establishes that the Profile is scoped strictly to that Venue and its nested child Venues.
+3. **Scope Eligibility for Profile References:**
+   - When an operator authors or edits a Configuration, the UI strictly enforces scope eligibility in the Profile selector dropdown:
+     - **Property Configuration:** Can only reference Profiles scoped to that Property (`entity === config.entity && (!venue || venue === "")`).
+     - **Venue Configuration:** Can reference Profiles scoped to that specific Venue (`venue === config.venue`) or inherited from its ancestor Property (`entity === config.entity && (!venue || venue === "")`).
+     - **Cross-Property Isolation:** Profiles belonging to different Properties are filtered out and cannot be selected.
+4. **Wire Format Structure:** A `VariableBlock` encapsulates common metadata (`name`, `description`, `entity`, `venue`) and an array of variable items:
    ```json
    {
      "name": "Corporate 5G Radio Profile",
      "description": "Standard 5GHz high-density RF configuration",
      "entity": "00000000-0000-0000-0000-000000000001",
-     "venue": "11111111-1111-1111-1111-111111111111",
+     "venue": "",
      "variables": [
        {
          "prefix": "radio",
@@ -1706,7 +1712,7 @@ The Configuration Profiles module manages reusable, section-level configuration 
      ]
    }
    ```
-4. **Dynamic Compilation via `APConfig`:** Profiles are resolved dynamically when generating live configurations or rendering configuration previews via OWPROV's `APConfig` compiler. Updating a Profile updates the underlying `VariableBlock`; this change is immediately reflected in subsequent device configuration generation without pushing changes live until explicitly deployed over `OWGW`.
+5. **Dynamic Compilation via `APConfig`:** Profiles are resolved dynamically when generating live configurations or rendering configuration previews via OWPROV's `APConfig` compiler. Updating a Profile updates the underlying `VariableBlock`; this change is immediately reflected in subsequent device configuration generation without pushing changes live until explicitly deployed over `OWGW`.
 
 ### 22.2 Operator UX Streamlining & Clutter Suppression
 To eliminate UI cognitive overload and provide an operator-first management experience:
@@ -1820,6 +1826,13 @@ The UI provides tailored form builders, validation rules, default states, and wi
 * **Type Definition:** `src/pages/Configuration/types/passpoint.ts`
 * **Configurable Parameters:** `venue-name`, `venue-url`, `venue-group`, `venue-type`, `auth-type`, `domain-name` (string[]), `anqp-domain` (number), `roaming-consortium` (string[] RCOIs), `wan-metrics` (object)
 
+### 23.9 Sensitive Credential Handling & Masking Policy
+To ensure that operational security boundaries are strictly maintained across all Configuration Profile types:
+* **Masked Display:** Inputs for sensitive fields (including RADIUS shared secrets, local user passwords, and Wi-Fi pre-shared keys) must be rendered using masked controls (`type="password"`) equipped with an explicit visibility toggle button.
+* **Masked Summary Views:** Credentials must never be rendered in plaintext in table cells, inspection drawers, or summary cards.
+* **Telemetry & Log Isolation:** Sensitive values must be strictly excluded from browser console logging, analytics payloads, and URL query strings.
+* **Preservation on Edit:** When editing an existing Profile, untouched secrets are retained in memory. The UI does not force the operator to re-enter unchanged credentials, nor does it send empty placeholder strings back to the backend.
+
 ---
 
 ## 24. Configuration Profiles Catalog Table & Management
@@ -1839,7 +1852,7 @@ The Profile catalog table renders the following fields:
 ### 24.2 Dependency-Safe Deletion Guard
 Deleting a Profile leverages native OWPROV `VariableBlock` lifecycle checks:
 * If `variableBlock.configurations` contains one or more configuration UUIDs, deletion is blocked by the UI with a detailed modal listing the blocking Configurations.
-* If a deletion request reaches the backend, OWPROV authoritatively returns `400 Bad Request` (`VariableBlockInUse`).
+* If a deletion request reaches the backend while references remain in `configurations`, OWPROV authoritatively rejects the request with `400 Bad Request` and error code `StillInUse` (`RESTAPI::Errors::StillInUse`).
 
 ---
 
@@ -1861,7 +1874,12 @@ Deleting a Profile leverages native OWPROV `VariableBlock` lifecycle checks:
 * Provides structured breadcrumbs: `Configuration` → `Profiles` → `<Profile Name>`.
 * Renders the clean section form builder, omitting low-level registry clutter.
 * Form dirty tracking detects unsaved changes and prompts before navigation.
-* On save, validates schema constraints and executes `PUT /api/v1/variable/{id}`.
+* **Pre-Save Impact Confirmation Workflow:**
+  * When saving an existing Profile, the UI checks its `configurations` array.
+  * If `configurations.length > 0`, the UI intercepts the save action and opens an **Impact Confirmation Dialog**.
+  * The dialog displays the count and names of all referencing Configurations and queries `GET /api/v1/configuration/{id}?computedAffected=true` across those configurations to summarize potentially affected devices.
+  * The dialog alerts the operator: *"Modifying this profile updates the shared configuration block in OWPROV. Referencing configurations will compile these changes on their next deployment."*
+  * Upon operator confirmation, the UI executes `PUT /api/v1/variable/{id}`.
 
 ---
 
@@ -1873,6 +1891,7 @@ Deleting a Profile leverages native OWPROV `VariableBlock` lifecycle checks:
   * `withExtendedInfo=true` (boolean, required): Ingests entity/venue name associations and configuration membership.
   * `limit=500` (number): Maximum records per batch.
   * `offset=0` (number): Pagination offset.
+* **Batch Ingestion Contract:** To guarantee fleet-wide data completeness, the UI executes an iterative ingestion loop (`getAllVariableBlocks`), fetching subsequent pages until all records are retrieved without silent boundary truncation.
 * **Response `200 OK`:**
   ```json
   {
@@ -1935,11 +1954,11 @@ Deleting a Profile leverages native OWPROV `VariableBlock` lifecycle checks:
 ### 26.5 Delete Variable Block
 * **Endpoint:** `DELETE /api/v1/variable/{id}`
 * **Response `200 OK`:** Empty object `{}` indicating successful deletion.
-* **Response `400 Bad Request`:**
+* **Response `400 Bad Request` (StillInUse):**
   ```json
   {
     "ErrorCode": 400,
-    "ErrorText": "Variable block is currently in use by configurations."
+    "ErrorText": "Still in use"
   }
   ```
 
@@ -2015,6 +2034,8 @@ export interface RadioProfileFormState {
 ### 28.3 Dependency Enforcement & Deletion Safety
 - **TC-PRF-007 (In-Use Deletion Guard):** Attempt to delete a profile that has referencing configurations in its `configurations` array. Verify modal prevents deletion and displays blocking configurations.
 - **TC-PRF-008 (Unreferenced Profile Deletion):** Delete an unreferenced profile. Verify `DELETE /api/v1/variable/{id}` completes and removes row from table.
+- **TC-PRF-009 (Pre-Save Impact Preview):** Edit an in-use profile referenced by multiple configurations. Click Save. Verify the Impact Confirmation Dialog opens displaying the referencing configuration names and affected device count before `PUT /api/v1/variable/{id}` is dispatched.
+- **TC-PRF-010 (RADIUS Secret Masking & Preservation):** Open an existing RADIUS profile in the editor. Verify the shared secret field renders masked (`type="password"` with visibility toggle). Save the form without modifying the secret field. Verify the existing secret value is preserved in the submission payload.
 
 ---
 
@@ -2057,6 +2078,12 @@ When an operator links a section to a Configuration Profile:
   ```
 * During live compilation (`APConfig`), OWPROV retrieves the `VariableBlock` by UUID, extracts its `value`, and injects it into the resolved configuration tree.
 
+### 29.3 Lossless Configuration Editing Contract
+Configurations in OWPROV can contain arbitrary sections and vendor directives beyond standard form builders. To prevent accidental data loss:
+* **In-Memory Retention:** When loading an existing configuration via `GET /api/v1/configuration/{id}`, the full array of sections in `configuration[]` (including unrecognized or third-party sections) is held in memory.
+* **Targeted Mutation:** When the operator edits a specific section via UI forms, only that section's payload is modified. All other sections and unrecognized properties remain untouched.
+* **Raw JSON Inspection & Safe Fallback:** Operators have access to raw JSON inspection, ensuring that unmanaged or specialized sections can be inspected without data truncation.
+
 ---
 
 ## 30. Recursive Variable Block Extraction & Batch Name Resolution
@@ -2081,10 +2108,15 @@ const allVarIds = Array.from(
 );
 ```
 
-### 30.3 Batch API Name Resolution & Fallback Strategy
-1. **Primary Batch Query:** The UI batches all unique UUIDs and queries `GET /api/v1/variable?select=uuid1,uuid2` via `getVariableBlocksSelect(ids)`.
-2. **Graceful Fallback:** If the batch `?select=` query fails or returns empty, the UI automatically falls back to `getAllVariableBlocks()` to resolve human-readable names.
-3. **Interactive Pill UI Presentation:** In the Configurations table, referenced profiles render as styled, interactive pills. Hovering over a pill displays a tooltip with the profile's section prefix and full UUID.
+### 30.3 Batch API Name Resolution & Error Isolation
+1. **Batch Query Dispatch:** The UI aggregates all unique variable UUIDs and dispatches `GET /api/v1/variable?select=uuid1,uuid2` via `getVariableBlocksSelect(ids)`.
+2. **Error Isolation & Missing Reference Handling:** If OWPROV returns an error (such as `400 Bad Request` with `UnknownId` caused by a deleted VariableBlock record) or if any requested UUID is omitted from the response:
+   - The UI isolates the unresolvable UUID(s).
+   - Successfully resolved profiles render as standard interactive pills.
+   - Missing or deleted UUIDs render as an **"Unresolved Profile"** warning pill (`[⚠️ Missing Profile: <uuid>]` with a warning badge and tooltip: *"Referenced Profile ID not found or deleted"*).
+   - The UI maintains table stability and does not crash or omit the configuration row.
+3. **Graceful Cache Fallback:** If the select query fails due to network or compatibility reasons, the system gracefully falls back to local cache or `getAllVariableBlocks()` with pagination.
+4. **Interactive Pill UI Presentation:** In the Configurations table, referenced profiles render as styled, interactive pills with hover tooltips showing section prefix and full UUID.
 
 ---
 
@@ -2108,8 +2140,10 @@ To ensure complete referential integrity across the OpenWifi ecosystem:
 ### 31.2 OWPROV Backend Membership Tracking
 When `variables[]` is populated in the configuration payload, the OWPROV C++ backend's `ManageMembership` / `AddMembership` routines automatically:
 * Register the Configuration's UUID in each referenced `VariableBlock`'s `configurations` array in the database.
-* Mark `variableBlock.inUse = true`.
-* Guarantee that subsequent profile deletion attempts enforce native deletion guards (`CFG-017`, `CFG-022`, `TC-PRF-007`).
+* When an operator attempts to delete a VariableBlock, OWPROV checks `!Existing.configurations.empty()` and rejects deletion with `StillInUse` (`RESTAPI::Errors::StillInUse`) if references remain (`CFG-017`, `CFG-022`, `TC-PRF-007`).
+
+### 31.3 Concurrency & Stale Data Handling
+When an operator opens a Configuration for editing, the UI fetches a fresh copy of the record. If another operator modifies the Configuration concurrently and a save attempt encounters a conflict or unexpected state, the UI prompts the operator with a reload dialog to prevent silently overwriting concurrent changes.
 
 ---
 
@@ -2163,6 +2197,38 @@ When `variables[]` is populated in the configuration payload, the OWPROV C++ bac
   }
   ```
 
+### 33.1 List Modular Configurations
+* **Endpoint:** `GET /api/v1/configuration?withExtendedInfo=true&limit=500&offset=0`
+* **Batch Ingestion Contract:** To guarantee fleet-wide data completeness, the UI executes an iterative ingestion loop (`getModularConfigurations`), collecting subsequent pages until all records are retrieved without silent truncation at the 500-record boundary.
+* **Response `200 OK`:**
+  ```json
+  {
+    "configurations": [
+      {
+        "id": "b42c67f1-857e-4054-9988-82ef1dfc0b20",
+        "name": "Building A Standard Config",
+        "description": "Standard venue configuration",
+        "deviceGroup": "ap",
+        "deviceTypes": ["ap"],
+        "entity": "00000000-0000-0000-0000-000000000001",
+        "venue": "11111111-1111-1111-1111-111111111111",
+        "variables": ["39d0617b-5d1d-4eb9-a720-6d43e5c944eb"],
+        "configuration": [
+          {
+            "name": "Radio Config",
+            "weight": 100,
+            "configuration": {
+              "__variableBlock": ["39d0617b-5d1d-4eb9-a720-6d43e5c944eb"]
+            }
+          }
+        ],
+        "created": 1697360000,
+        "modified": 1697361200
+      }
+    ]
+  }
+  ```
+
 ### 33.2 Create Modular Configuration
 * **Endpoint:** `POST /api/v1/configuration/0`
 * **Request Body:** `ModularConfigurationPayload`
@@ -2176,6 +2242,14 @@ When `variables[]` is populated in the configuration payload, the OWPROV C++ bac
 ### 33.4 Delete Modular Configuration
 * **Endpoint:** `DELETE /api/v1/configuration/{id}`
 * **Response `200 OK`:** Empty object `{}` indicating successful deletion. Automatically cleans up membership in referencing VariableBlocks.
+* **Response `400 Bad Request` (StillInUse):**
+  ```json
+  {
+    "ErrorCode": 400,
+    "ErrorText": "Still in use"
+  }
+  ```
+  * **UI Handling:** When OWPROV returns `StillInUse` (or if `inUse` is non-empty), the UI intercepts deletion and displays an error dialog: *"Configuration cannot be deleted because it is currently assigned to one or more scopes or devices. Please detach or reassign the configuration before deleting."*
 
 ### 33.5 Get Affected Devices
 * **Endpoint:** `GET /api/v1/configuration/{id}?computedAffected=true`
@@ -2241,16 +2315,22 @@ export interface ModularConfigurationApiResponse {
 - **TC-CFG-002 (Batch Name Resolution):** In Configurations table, verify `GET /api/v1/variable?select=...` is dispatched with extracted UUIDs. Verify pills render human-readable Profile names instead of raw UUIDs.
 - **TC-CFG-003 (Batch Resolution Fallback):** Mock network failure on `GET /api/v1/variable?select=...`. Verify UI catches error, falls back to `getAllVariableBlocks()`, and successfully renders profile names.
 - **TC-CFG-004 (Interactive Variable Pill Tooltip):** Hover over a rendered Profile pill. Verify tooltip displays section prefix and full Variable UUID.
+- **TC-CFG-011 (Profile Scope Eligibility Rejection in UI):** When authoring a Configuration at Property A, open the profile selection dropdown. Verify profiles belonging to Property B are omitted and cannot be selected.
+- **TC-CFG-012 (Unresolved / Deleted Profile Isolation):** Load a configuration referencing a deleted or missing VariableBlock UUID. Verify the configuration table renders row stably with an "Unresolved Profile" warning pill rather than crashing.
 
-### 35.2 Two-Way Synchronization on Save
+### 35.2 Two-Way Synchronization on Save & Lossless Editing
 - **TC-CFG-005 (Save-Time Variables Array Population):** Author a configuration referencing 2 profiles (`radio` and `ssid`). Click Save. Intercept `POST /api/v1/configuration/0`. Verify the payload contains `variables: ["<radio-uuid>", "<ssid-uuid>"]`.
 - **TC-CFG-006 (Update Variables Synchronization):** Edit an existing configuration, removing one profile reference and adding another. Click Save. Verify `PUT /api/v1/configuration/{id}` payload updates `variables[]` to match the exact set of referenced profiles.
 - **TC-CFG-007 (OWPROV Reverse Membership Verification):** After saving configuration, query `GET /api/v1/variable/{id}` for the referenced profile. Verify `configurations` array contains the new configuration UUID.
+- **TC-CFG-014 (Lossless Configuration Editing):** Load a configuration containing custom or unrecognized JSON sections. Edit only the Radio section and save. Verify untouched custom sections are preserved verbatim in the submitted payload.
 
 ### 35.3 Configuration Lifecycle & Impact
 - **TC-CFG-008 (Configuration Creation):** Create modular configuration with name, AP device group, scope, and sections. Verify record appears in table.
 - **TC-CFG-009 (Affected Devices Query):** Select configuration. Open deployment or impact modal. Verify `GET /api/v1/configuration/{id}?computedAffected=true` is called and displays accurate device count.
-- **TC-CFG-010 (Configuration Deletion):** Delete configuration. Verify `DELETE /api/v1/configuration/{id}` executes and refreshes table. Verify the configuration UUID is automatically removed from referenced VariableBlocks.
+- **TC-CFG-010 (Configuration Deletion):** Delete an unassigned configuration. Verify `DELETE /api/v1/configuration/{id}` executes and refreshes table. Verify the configuration UUID is automatically removed from referenced VariableBlocks.
+- **TC-CFG-013 (Assigned Configuration Deletion Guard):** Attempt to delete an assigned configuration (`inUse` non-empty). Verify deletion is blocked with an explanatory dialog and `StillInUse` error handling.
+- **TC-CFG-015 (List Pagination Fleet Scaling):** Ingest more than 500 configurations or profiles. Verify iterative batch ingestion loops collect all records across page boundaries without silent truncation.
+- **TC-CFG-016 (Concurrent Edit Conflict Warning):** When a concurrent modification is detected on save, verify the UI provides a reload prompt rather than overwriting changes silently.
 
 
 
