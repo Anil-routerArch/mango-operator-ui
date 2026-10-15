@@ -244,18 +244,6 @@ export const UsersPage: React.FC = () => {
     setCurrentPage(1);
   }, [search, roleFilter, statusFilter]);
 
-  // If a selected user (e.g. navigated from Policies tab) is hidden by active filters, clear filters to reveal them
-  useEffect(() => {
-    if (selectedUserId && manageableUsers.length > 0) {
-      const inManageable = manageableUsers.some((u) => u.id === selectedUserId);
-      const inFiltered = filteredUsers.some((u) => u.id === selectedUserId);
-      if (inManageable && !inFiltered) {
-        setSearch('');
-        setRoleFilter('All Roles');
-        setStatusFilter('All Status');
-      }
-    }
-  }, [selectedUserId, manageableUsers, filteredUsers]);
 
   // Ensure current page shows the selected user when selectedUserId changes
   useEffect(() => {
@@ -368,7 +356,12 @@ export const UsersPage: React.FC = () => {
         <PoliciesTab
           isCreatePolicyOpen={isCreatePolicyOpen}
           onCloseCreatePolicy={() => setIsCreatePolicyOpen(false)}
-          onNavigateToUsers={() => setMainTab('users')}
+          onNavigateToUsers={() => {
+            setSearch('');
+            setRoleFilter('All Roles');
+            setStatusFilter('All Status');
+            setMainTab('users');
+          }}
         />
       ) : (
         <>
