@@ -205,6 +205,9 @@ export const UsersPage: React.FC = () => {
 
   // Auto-select first user when manageable users list loads
   useEffect(() => {
+    // Never overwrite or clear selection while data is still loading
+    if (isLoading) return;
+
     if (manageableUsers.length > 0) {
       const exists = manageableUsers.some((u) => u.id === selectedUserId);
       if (!exists) {
@@ -213,7 +216,7 @@ export const UsersPage: React.FC = () => {
     } else if (selectedUserId !== null) {
       setSelectedUserId(null);
     }
-  }, [manageableUsers, selectedUserId, setSelectedUserId]);
+  }, [isLoading, manageableUsers, selectedUserId, setSelectedUserId]);
 
   const selectedUser = useMemo(() => {
     return manageableUsers.find((u) => u.id === selectedUserId) || manageableUsers[0] || null;
@@ -240,6 +243,19 @@ export const UsersPage: React.FC = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [search, roleFilter, statusFilter]);
+
+  // If a selected user (e.g. navigated from Policies tab) is hidden by active filters, clear filters to reveal them
+  useEffect(() => {
+    if (selectedUserId && manageableUsers.length > 0) {
+      const inManageable = manageableUsers.some((u) => u.id === selectedUserId);
+      const inFiltered = filteredUsers.some((u) => u.id === selectedUserId);
+      if (inManageable && !inFiltered) {
+        setSearch('');
+        setRoleFilter('All Roles');
+        setStatusFilter('All Status');
+      }
+    }
+  }, [selectedUserId, manageableUsers, filteredUsers]);
 
   // Ensure current page shows the selected user when selectedUserId changes
   useEffect(() => {

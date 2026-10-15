@@ -495,7 +495,12 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   }, [policies, selectedPolicyId, filteredPolicies]);
 
   // Fetch real-time policy overview from mango-mdu-service
-  const { data: policyOverview, isLoading: isOverviewLoading } = useGetPolicyOverview(selectedPolicy?.id);
+  const {
+    data: policyOverview,
+    isLoading: isOverviewLoading,
+    isError: isOverviewError,
+    refetch: refetchOverview,
+  } = useGetPolicyOverview(selectedPolicy?.id);
 
   const overviewStats = useMemo(() => {
     if (!policyOverview) {
@@ -1515,7 +1520,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     Policy impact
                   </Text>
                   <Text fontSize="11px" color="#1e40af" mt={0.5}>
-                    {overviewStats.usedByUsers} users across {overviewStats.scopedAssignmentsCount} scoped assignments will be affected by permission changes.
+                    {isOverviewError
+                      ? 'Policy impact metrics are currently unavailable.'
+                      : `${overviewStats.usedByUsers} users across ${overviewStats.scopedAssignmentsCount} scoped assignments will be affected by permission changes.`}
                   </Text>
                 </Box>
               </Flex>
@@ -1566,6 +1573,42 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
           ) : (
             /* Overview Subtab */
             <VStack gap={4} align="stretch">
+              {isOverviewError && (
+                <Flex
+                  align="center"
+                  justify="space-between"
+                  bg="#fffbeb"
+                  border="1px solid #fef3c7"
+                  borderRadius="6px"
+                  py={2}
+                  px={3}
+                  fontSize="12px"
+                  color="#92400e"
+                >
+                  <HStack gap={2}>
+                    <Icon name="info" size={15} color="#d97706" />
+                    <Text fontWeight="500">
+                      Real-time policy metrics unavailable (service unreachable).
+                    </Text>
+                  </HStack>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    color="#b45309"
+                    _hover={{ bg: '#fef3c7' }}
+                    h="24px"
+                    px={2}
+                    fontSize="11px"
+                    onClick={() => refetchOverview()}
+                  >
+                    <HStack gap={1}>
+                      <Icon name="refresh" size={12} />
+                      <Text>Retry</Text>
+                    </HStack>
+                  </Button>
+                </Flex>
+              )}
+
               {/* Section 1: Usage summary */}
               <Box>
                 <Text fontSize="12px" fontWeight="700" color="#0f172a" mb={2}>
@@ -1589,8 +1632,8 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Users
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {overviewStats.usedByUsers}
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewError ? '—' : overviewStats.usedByUsers}
                       </Text>
                     </Box>
                   </Flex>
@@ -1612,8 +1655,8 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Scoped assignments
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {overviewStats.scopedAssignmentsCount}
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewError ? '—' : overviewStats.scopedAssignmentsCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1635,8 +1678,8 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Properties
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {overviewStats.propertiesCount}
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewError ? '—' : overviewStats.propertiesCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1658,8 +1701,8 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Venues
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {overviewStats.venuesCount}
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewError ? '—' : overviewStats.venuesCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1754,7 +1797,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     fontSize="11px"
                     fontWeight="600"
                   >
-                    {overviewStats.usedByUsers}
+                    {isOverviewError ? '—' : overviewStats.usedByUsers}
                   </Flex>
                 </HStack>
 
@@ -1777,13 +1820,12 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         borderColor={themeColors.panel.divider}
                         _last={{ borderBottom: 'none' }}
                         fontSize="12px"
-                        cursor="pointer"
-                        _hover={{ bg: '#f8fafc' }}
+                        cursor={u.id ? 'pointer' : 'default'}
+                        _hover={u.id ? { bg: '#f8fafc' } : undefined}
                         transition="background-color 0.15s ease"
                         onClick={() => {
-                          if (u.id) {
-                            setSelectedUserId(u.id);
-                          }
+                          if (!u.id) return;
+                          setSelectedUserId(u.id);
                           setUserSubTab('profile');
                           if (onNavigateToUsers) {
                             onNavigateToUsers();
@@ -1844,6 +1886,33 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       </Flex>
                     ))}
                   </Box>
+                ) : isOverviewError ? (
+                  <Box
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    p={4}
+                    textAlign="center"
+                    bg="#ffffff"
+                  >
+                    <Text fontSize="12px" color="#64748b" mb={2}>
+                      Unable to load assigned users from MDU service.
+                    </Text>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      borderColor="#cbd5e1"
+                      color="#475569"
+                      h="26px"
+                      fontSize="11px"
+                      onClick={() => refetchOverview()}
+                    >
+                      <HStack gap={1.5}>
+                        <Icon name="refresh" size={12} />
+                        <Text>Retry request</Text>
+                      </HStack>
+                    </Button>
+                  </Box>
                 ) : (
                   <Box
                     border="1px solid"
@@ -1859,7 +1928,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   </Box>
                 )}
 
-                {overviewStats.usedByUsers > 0 && (
+                {!isOverviewError && overviewStats.usedByUsers > 0 && (
                   <Box mt={2}>
                     <Text
                       as="span"
