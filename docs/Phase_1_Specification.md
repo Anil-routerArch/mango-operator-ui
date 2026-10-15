@@ -1992,7 +1992,6 @@ export interface VariableBlockApiResponse {
   inventory?: string;
   configurations?: string[];
   managementPolicy?: string;
-  deviceGroup?: string;
   variables?: VariableItem[];
   [key: string]: unknown;
 }
@@ -2066,7 +2065,7 @@ Modular Configurations represent composite device configuration payloads authore
 
 ### 29.1 Section Modular Composition
 A Modular Configuration consists of:
-* Top-level metadata (`name`, `description`, `deviceGroup`, `deviceTypes`).
+* Top-level metadata (`name`, `description`, `deviceTypes`). Note: `deviceGroup` may optionally be included in creation payloads as a schema validation hint, but is not persisted or returned by OWPROV.
 * Scope assignment (`entity` for Property, or `venue` for Venue).
 * Array of configuration subsections (`configuration[]`), where each element contains `name`, `weight`, and `configuration`.
 * Preserved root `variables[]` array containing the UUIDs of `VariableBlock` records assigned to this configuration.
@@ -2144,6 +2143,7 @@ In accordance with OWPROV's configuration model and lossless editing guarantees:
 * **Configuration Name:** Clickable link opening the configuration detail/editor modal.
 * **Description:** Freeform explanatory text.
 * **Scope:** Property or Venue badge showing the operational boundary.
+* **Platform / Device Type:** Derived directly from `deviceTypes[0]` (e.g., AP, Switch, OLG).
 * **Variables / Profiles Used:** Interactive styled pills with hover tooltips for all referenced profiles.
 * **Validation State:** Badge showing configuration validity.
 * **Last Modified:** Relative timestamp.
@@ -2159,38 +2159,8 @@ In accordance with OWPROV's configuration model and lossless editing guarantees:
 
 ### 33.1 List Modular Configurations
 * **Endpoint:** `GET /api/v1/configuration?withExtendedInfo=true&limit=500&offset=0`
-* **Response `200 OK`:**
-  ```json
-  {
-    "configurations": [
-      {
-        "id": "b42c67f1-857e-4054-9988-82ef1dfc0b20",
-        "name": "Building A Standard Config",
-        "description": "Standard venue configuration",
-        "deviceGroup": "ap",
-        "deviceTypes": ["ap"],
-        "entity": "00000000-0000-0000-0000-000000000001",
-        "venue": "11111111-1111-1111-1111-111111111111",
-        "variables": ["39d0617b-5d1d-4eb9-a720-6d43e5c944eb"],
-        "configuration": [
-          {
-            "name": "Radio Config",
-            "weight": 100,
-            "configuration": {
-              "__variableBlock": ["39d0617b-5d1d-4eb9-a720-6d43e5c944eb"]
-            }
-          }
-        ],
-        "created": 1697360000,
-        "modified": 1697361200
-      }
-    ]
-  }
-  ```
-
-### 33.1 List Modular Configurations
-* **Endpoint:** `GET /api/v1/configuration?withExtendedInfo=true&limit=500&offset=0`
 * **Batch Ingestion Contract:** To guarantee fleet-wide data completeness, the UI executes an iterative ingestion loop (`getModularConfigurations`), collecting subsequent pages until all records are retrieved without silent truncation at the 500-record boundary.
+* **Platform Category Derivation:** OWPROV does not persist or return a `deviceGroup` field. The UI derives the platform category (`ap`, `switch`, `olg`) directly from `deviceTypes[0]`.
 * **Response `200 OK`:**
   ```json
   {
@@ -2199,7 +2169,6 @@ In accordance with OWPROV's configuration model and lossless editing guarantees:
         "id": "b42c67f1-857e-4054-9988-82ef1dfc0b20",
         "name": "Building A Standard Config",
         "description": "Standard venue configuration",
-        "deviceGroup": "ap",
         "deviceTypes": ["ap"],
         "entity": "00000000-0000-0000-0000-000000000001",
         "venue": "11111111-1111-1111-1111-111111111111",
@@ -2222,12 +2191,12 @@ In accordance with OWPROV's configuration model and lossless editing guarantees:
 
 ### 33.2 Create Modular Configuration
 * **Endpoint:** `POST /api/v1/configuration/0`
-* **Request Body:** `ModularConfigurationPayload`
+* **Request Body:** `ModularConfigurationPayload` (Optionally includes `deviceGroup` as a temporary schema validation hint).
 * **Response `200 OK`:** Created `ModularConfigurationApiResponse` object with generated `id`.
 
 ### 33.3 Update Modular Configuration
 * **Endpoint:** `PUT /api/v1/configuration/{id}`
-* **Request Body:** `Partial<ModularConfigurationPayload>` with synchronized `variables[]` array.
+* **Request Body:** `Partial<ModularConfigurationPayload>` with preserved `variables[]` array and updated configuration sections.
 * **Response `200 OK`:** Updated `ModularConfigurationApiResponse`.
 
 ### 33.4 Delete Modular Configuration
@@ -2266,8 +2235,8 @@ export interface ModularConfigElementPayload {
 export interface ModularConfigurationPayload {
   name: string;
   description?: string;
-  deviceGroup: 'ap' | 'switch' | 'olg' | string;
-  deviceTypes: string[];
+  deviceGroup?: 'ap' | 'switch' | 'olg' | string; // Optional creation hint for OWPROV schema validation
+  deviceTypes: string[]; // Authoritative persisted platform type (e.g. ["ap"], ["switch"])
   deviceRules?: DeviceRulesPayload;
   notes?: Array<{ note: string }>;
   entity?: string;
@@ -2282,12 +2251,13 @@ export interface ModularConfigurationApiResponse {
   id: string;
   name: string;
   description?: string;
-  deviceGroup?: string;
-  deviceTypes?: string[];
+  deviceTypes: string[]; // Persisted by OWPROV; UI derives platform category (e.g. 'ap', 'switch') via deviceTypes[0]
   deviceRules?: DeviceRulesPayload;
   notes?: Array<{ note: string; created?: number; author?: string }>;
   entity?: string;
   venue?: string;
+  subscriber?: string;
+  subscriberOnly?: boolean;
   created?: number;
   modified?: number;
   inUse?: string[];
