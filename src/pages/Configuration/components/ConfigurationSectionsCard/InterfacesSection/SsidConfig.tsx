@@ -12,7 +12,6 @@ import { themeColors } from '@/theme';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { ToggleSwitch } from '../ToggleSwitch';
 import {
-  CAPTIVE_PORTAL_OPTIONS,
   ENCRYPTION_OPTIONS,
   ENCRYPTION_PROTOS_REQUIRE_IEEE,
   ENCRYPTION_PROTOS_REQUIRE_KEY,
@@ -28,6 +27,10 @@ import {
 } from './interfacesConstants';
 import { MultiPskModal } from './MultiPskModal';
 import type { SingleSsidConfigItem } from '../types';
+import { PassPointSection } from '../../PassPointSection';
+import { DEFAULT_PASSPOINT_CONFIG } from '../../../types/passpoint';
+import { CaptivePortalSection } from '../../CaptivePortalSection';
+import { DEFAULT_CAPTIVE_PORTAL_CONFIG } from '../../../types/captive';
 
 interface SsidConfigProps {
   ssids: SingleSsidConfigItem[];
@@ -613,102 +616,21 @@ export const SsidConfig: React.FC<SsidConfigProps> = ({
           </Box>
 
           {/* Pass Point Section */}
-          <Box mb={4}>
-            <Flex align="center" gap={3} my={2}>
-              <Text
-                fontSize="13px"
-                fontWeight="700"
-                color={themeColors.text.title}
-                borderBottom="1px solid #0f172a"
-              >
-                Pass Point
-              </Text>
-              <ToggleSwitch
-                checked={Boolean(activeSsid.passPoint?.enabled)}
-                onChange={(val) =>
-                  handleUpdateSsid({
-                    ...activeSsid,
-                    passPoint: { ...activeSsid.passPoint, enabled: val },
-                  })
-                }
-                disabled={disabled}
-              />
-            </Flex>
-
-            {activeSsid.passPoint?.enabled && (
-              <Box p={3} bg="#f8fafc" border="1px solid" borderColor="#e2e8f0" borderRadius="6px" mt={2}>
-                <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} gap={3}>
-                  <Box>
-                    <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                      venue-name
-                    </Text>
-                    <Input
-                      size="sm"
-                      placeholder="eng:Example passpoint_venue"
-                      value={activeSsid.passPoint.venueName?.join(', ') || ''}
-                      onChange={(e) =>
-                        handleUpdateSsid({
-                          ...activeSsid,
-                          passPoint: {
-                            ...activeSsid.passPoint,
-                            venueName: e.target.value ? e.target.value.split(',').map((x) => x.trim()) : [],
-                          },
-                        })
-                      }
-                      disabled={disabled}
-                      borderRadius="4px"
-                      borderColor="#cbd5e1"
-                    />
-                  </Box>
-
-                  <Box>
-                    <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                      venue-url
-                    </Text>
-                    <Input
-                      size="sm"
-                      placeholder="http://www.example.com/info-fra"
-                      value={activeSsid.passPoint.venueUrl?.join(', ') || ''}
-                      onChange={(e) =>
-                        handleUpdateSsid({
-                          ...activeSsid,
-                          passPoint: {
-                            ...activeSsid.passPoint,
-                            venueUrl: e.target.value ? e.target.value.split(',').map((x) => x.trim()) : [],
-                          },
-                        })
-                      }
-                      disabled={disabled}
-                      borderRadius="4px"
-                      borderColor="#cbd5e1"
-                    />
-                  </Box>
-
-                  <Box>
-                    <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                      domain-name
-                    </Text>
-                    <Input
-                      size="sm"
-                      placeholder="test.com"
-                      value={activeSsid.passPoint.domainName?.join(', ') || ''}
-                      onChange={(e) =>
-                        handleUpdateSsid({
-                          ...activeSsid,
-                          passPoint: {
-                            ...activeSsid.passPoint,
-                            domainName: e.target.value ? e.target.value.split(',').map((x) => x.trim()) : [],
-                          },
-                        })
-                      }
-                      disabled={disabled}
-                      borderRadius="4px"
-                      borderColor="#cbd5e1"
-                    />
-                  </Box>
-                </SimpleGrid>
-              </Box>
-            )}
+          <Box mb={4} p={3.5} bg="#ffffff" border="1px solid" borderColor="#e2e8f0" borderRadius="6px">
+            <PassPointSection
+              config={
+                activeSsid.passPoint
+                  ? { ...DEFAULT_PASSPOINT_CONFIG, ...activeSsid.passPoint }
+                  : DEFAULT_PASSPOINT_CONFIG
+              }
+              onChange={(newPp) =>
+                handleUpdateSsid({
+                  ...activeSsid,
+                  passPoint: newPp,
+                })
+              }
+              isDisabled={disabled}
+            />
           </Box>
 
           {/* Advanced Settings Section */}
@@ -1185,120 +1107,21 @@ export const SsidConfig: React.FC<SsidConfigProps> = ({
           </Box>
 
           {/* Captive Portal Section */}
-          <Box mb={4}>
-            <Flex align="center" gap={3} mt={3} mb={2}>
-              <Text fontSize="13px" fontWeight="700" color={themeColors.text.title}>
-                Captive Portal
-              </Text>
-              <SelectDropdown
-                value={activeSsid.captivePortal?.mode || 'none'}
-                onChange={(val) =>
-                  handleUpdateSsid({
-                    ...activeSsid,
-                    captivePortal: { ...activeSsid.captivePortal, mode: String(val) },
-                  })
-                }
-                options={CAPTIVE_PORTAL_OPTIONS}
-                disabled={disabled}
-                w="140px"
-              />
-            </Flex>
-
-            {activeSsid.captivePortal?.mode && activeSsid.captivePortal.mode !== 'none' && (
-              <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} gap={4} p={3} bg="#f8fafc" borderRadius="6px" border="1px solid #e2e8f0" mt={2}>
-                <Box>
-                  <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                    walled-garden-fqdn
-                  </Text>
-                  <Input
-                    size="sm"
-                    placeholder="Example: *.google.com"
-                    value={activeSsid.captivePortal.walledGardenFqdn?.join(', ') || ''}
-                    onChange={(e) =>
-                      handleUpdateSsid({
-                        ...activeSsid,
-                        captivePortal: {
-                          ...activeSsid.captivePortal,
-                          walledGardenFqdn: e.target.value ? e.target.value.split(',').map((x) => x.trim()) : [],
-                        },
-                      })
-                    }
-                    disabled={disabled}
-                    borderRadius="4px"
-                    borderColor="#cbd5e1"
-                  />
-                </Box>
-
-                <Box>
-                  <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                    walled-garden-ipaddr
-                  </Text>
-                  <Input
-                    size="sm"
-                    placeholder="Example: 192.168.0.1"
-                    value={activeSsid.captivePortal.walledGardenIpaddr?.join(', ') || ''}
-                    onChange={(e) =>
-                      handleUpdateSsid({
-                        ...activeSsid,
-                        captivePortal: {
-                          ...activeSsid.captivePortal,
-                          walledGardenIpaddr: e.target.value ? e.target.value.split(',').map((x) => x.trim()) : [],
-                        },
-                      })
-                    }
-                    disabled={disabled}
-                    borderRadius="4px"
-                    borderColor="#cbd5e1"
-                  />
-                </Box>
-
-                <Box>
-                  <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                    idle-timeout
-                  </Text>
-                  <Input
-                    size="sm"
-                    type="number"
-                    value={activeSsid.captivePortal.idleTimeout ?? ''}
-                    onChange={(e) =>
-                      handleUpdateSsid({
-                        ...activeSsid,
-                        captivePortal: {
-                          ...activeSsid.captivePortal,
-                          idleTimeout: e.target.value ? Number(e.target.value) : undefined,
-                        },
-                      })
-                    }
-                    disabled={disabled}
-                    borderRadius="4px"
-                    borderColor="#cbd5e1"
-                  />
-                </Box>
-
-                <Box>
-                  <Text fontSize="11px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                    session-timeout
-                  </Text>
-                  <Input
-                    size="sm"
-                    type="number"
-                    value={activeSsid.captivePortal.sessionTimeout ?? ''}
-                    onChange={(e) =>
-                      handleUpdateSsid({
-                        ...activeSsid,
-                        captivePortal: {
-                          ...activeSsid.captivePortal,
-                          sessionTimeout: e.target.value ? Number(e.target.value) : undefined,
-                        },
-                      })
-                    }
-                    disabled={disabled}
-                    borderRadius="4px"
-                    borderColor="#cbd5e1"
-                  />
-                </Box>
-              </SimpleGrid>
-            )}
+          <Box mb={4} p={3.5} bg="#ffffff" border="1px solid" borderColor="#e2e8f0" borderRadius="6px">
+            <CaptivePortalSection
+              config={
+                activeSsid.captivePortal
+                  ? { ...DEFAULT_CAPTIVE_PORTAL_CONFIG, ...activeSsid.captivePortal }
+                  : { ...DEFAULT_CAPTIVE_PORTAL_CONFIG }
+              }
+              onChange={(newCap) =>
+                handleUpdateSsid({
+                  ...activeSsid,
+                  captivePortal: newCap,
+                })
+              }
+              isDisabled={disabled}
+            />
           </Box>
 
           {/* Access Control List Section */}

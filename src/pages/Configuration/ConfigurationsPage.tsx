@@ -17,11 +17,13 @@ import {
   getModularConfigurations,
   deleteModularConfiguration,
   getVariableBlocksSelect,
+  getAllVariableBlocks,
   useGetEntities,
   useGetVenues,
   type DefaultConfigurationApiResponse,
   type ModularConfigurationApiResponse,
 } from '@/api';
+import { extractVariableBlockUuids } from './utils/variableExtractor';
 import { SelectConfigTypeModal } from './components/SelectConfigTypeModal';
 import { DefaultConfigModal } from './components/DefaultConfigModal';
 import { ModularConfigModal } from './components/ModularConfigModal';
@@ -42,7 +44,7 @@ const mapOwgwDefaultConfigToDeviceConfig = (cfg: DefaultConfigurationApiResponse
     devicetypes: cfg.modelIds && cfg.modelIds.length > 0 ? cfg.modelIds : ['*'],
     configuration: [],
     inuse: [],
-    variables: [],
+    variables: extractVariableBlockUuids(cfg.configuration),
     devicerules: {
       firmwareUpgrade: 'inherit',
       rcOnly: 'inherit',
@@ -105,7 +107,12 @@ const mapOwprovModularConfigToDeviceConfig = (cfg: ModularConfigurationApiRespon
       configuration: typeof b.configuration === 'string' ? b.configuration : JSON.stringify(b.configuration),
     })),
     inuse: cfg.inUse || [],
-    variables: cfg.variables || [],
+    variables: Array.from(
+      new Set([
+        ...(cfg.variables || []),
+        ...extractVariableBlockUuids(cfg.configuration),
+      ])
+    ),
     devicerules: {
       firmwareUpgrade: (cfg.deviceRules?.firmwareUpgrade as 'inherit' | 'yes' | 'no') || 'inherit',
       rcOnly: (cfg.deviceRules?.rcOnly as 'inherit' | 'yes' | 'no') || 'inherit',
@@ -159,6 +166,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
   embedded = false,
   isCreateOpen = false,
   onCloseCreate,
+  onNavigateToProfile,
 }) => {
 
   const [configurations, setConfigurations] = useState<DeviceConfiguration[]>([]);
@@ -189,26 +197,59 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
 
   const [variableNameMap, setVariableNameMap] = useState<Map<string, string>>(new Map());
 
-  // Fetch only the referenced variable blocks using targeted select query
+  // Fetch only the referenced variable blocks using targeted select query, with fallback
   useEffect(() => {
     if (referencedVariableIds.length === 0) return;
     let isMounted = true;
+
     getVariableBlocksSelect(referencedVariableIds)
       .then((blocks) => {
-        if (isMounted && blocks.length > 0) {
-          setVariableNameMap((prev) => {
-            const next = new Map(prev);
-            blocks.forEach((b) => {
-              if (b.id && b.name) {
-                next.set(b.id, b.name);
-              }
-            });
-            return next;
-          });
+        if (!isMounted) return;
+        const resolvedMap = new Map<string, string>();
+        blocks.forEach((b) => {
+          if (b.id && b.name) {
+            resolvedMap.set(b.id, b.name);
+          }
+        });
+
+        // Check if all referenced IDs were found in select response
+        const hasMissing = referencedVariableIds.some((id) => !resolvedMap.has(id));
+        if (hasMissing) {
+          getAllVariableBlocks()
+            .then((allBlocks) => {
+              if (!isMounted) return;
+              setVariableNameMap((prev) => {
+                const next = new Map(prev);
+                allBlocks.forEach((b) => {
+                  if (b.id && b.name) next.set(b.id, b.name);
+                });
+                return next;
+              });
+            })
+            .catch(() => {});
         }
+
+        setVariableNameMap((prev) => {
+          const next = new Map(prev);
+          resolvedMap.forEach((name, id) => next.set(id, name));
+          return next;
+        });
       })
-      .catch((err) => {
-        console.warn('Failed to resolve variable block names:', err);
+      .catch(() => {
+        getAllVariableBlocks()
+          .then((allBlocks) => {
+            if (!isMounted) return;
+            setVariableNameMap((prev) => {
+              const next = new Map(prev);
+              allBlocks.forEach((b) => {
+                if (b.id && b.name) next.set(b.id, b.name);
+              });
+              return next;
+            });
+          })
+          .catch((err) => {
+            console.warn('Failed to resolve variable block names:', err);
+          });
       });
 
     return () => {
@@ -701,7 +742,10 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                                 color={themeColors.brand.accent}
                                 border="1px solid"
                                 borderColor="#bfdbfe"
-                                title={`Variable Block UUID: ${vId}`}
+                                cursor={onNavigateToProfile ? 'pointer' : 'default'}
+                                _hover={onNavigateToProfile ? { textDecoration: 'underline', bg: '#dbeafe' } : undefined}
+                                onClick={() => onNavigateToProfile?.(vId)}
+                                title={`Variable Block: ${humanName || vId}\nUUID: ${vId}`}
                               >
                                 {humanName || `${vId.substring(0, 8)}...`}
                               </Box>

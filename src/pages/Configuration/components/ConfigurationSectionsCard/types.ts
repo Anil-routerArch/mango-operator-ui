@@ -1,3 +1,6 @@
+import type { PassPointConfig } from '../../types/passpoint';
+import type { CaptivePortalConfig } from '../../types/captive';
+
 export type SubsectionKey =
   | 'globals'
   | 'unit'
@@ -258,12 +261,7 @@ export interface SingleSsidConfigItem {
     accountingPort?: number;
     accountingSecret?: string;
   };
-  passPoint?: {
-    enabled?: boolean;
-    venueName?: string[];
-    venueUrl?: string[];
-    domainName?: string[];
-  };
+  passPoint?: PassPointConfig;
   advanced: {
     hiddenSsid: boolean;
     services?: string[];
@@ -295,13 +293,7 @@ export interface SingleSsidConfigItem {
     ftmResponder?: boolean;
     stationaryAp?: boolean;
   };
-  captivePortal?: {
-    mode?: string;
-    walledGardenFqdn?: string[];
-    walledGardenIpaddr?: string[];
-    idleTimeout?: number;
-    sessionTimeout?: number;
-  };
+  captivePortal?: CaptivePortalConfig;
   accessControlList?: {
     enabled?: boolean;
     mode?: 'allow' | 'deny';
@@ -334,6 +326,14 @@ export interface DhcpReservedAddressItem {
   publishHostname: boolean;
 }
 
+export interface Ipv4PortForwardItem {
+  id?: string;
+  protocol: 'any' | 'tcp' | 'udp' | string;
+  externalPort: string | number;
+  internalPort: string | number;
+  internalAddress: string;
+}
+
 export interface SingleInterfaceConfigItem {
   id: string;
   name: string;
@@ -364,6 +364,7 @@ export interface SingleInterfaceConfigItem {
     leaseFirst?: number;
     leaseCount?: number;
     leaseTime?: string;
+    portForward?: Ipv4PortForwardItem[];
   };
   ipv6: {
     addressing: 'dynamic' | 'static' | 'none';

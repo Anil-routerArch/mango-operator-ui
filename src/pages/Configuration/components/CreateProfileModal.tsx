@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Box,
   Button,
@@ -11,15 +11,43 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
-import {
-  MOCK_PROPERTIES_LIST,
-  MOCK_VENUES_LIST,
-} from '../mockData/mockConfigurations';
+import { useGetEntities, useGetVenues } from '@/api';
 import type {
   ConfigurationProfile,
   VariablePrefixType,
   ProfileSettingsValue,
 } from '../types/configuration';
+import { PassPointSection } from './PassPointSection';
+import {
+  type PassPointConfig,
+  parseOwprovPasspoint,
+  buildOwprovPasspoint,
+} from '../types/passpoint';
+import { CaptivePortalSection } from './CaptivePortalSection';
+import {
+  type CaptivePortalConfig,
+  DEFAULT_CAPTIVE_PORTAL_CONFIG,
+  parseOwprovCaptive,
+  buildOwprovCaptive,
+} from '../types/captive';
+import { Ipv4Section } from './Ipv4Section';
+import {
+  type Ipv4ConfigData,
+  buildOwprovIpv4,
+  parseOwprovIpv4,
+} from '../types/ipv4';
+import { RadioSection } from './RadioSection';
+import {
+  type RadioConfigData,
+  buildOwprovRadio,
+  parseOwprovRadio,
+} from '../types/radio';
+import { RadiusSection } from './RadiusSection';
+import {
+  type RadiusConfigData,
+  buildOwprovRadius,
+  parseOwprovRadius,
+} from '../types/radius';
 
 export interface CreateProfileModalProps {
   isOpen: boolean;
@@ -115,18 +143,23 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
   const [selectedSection, setSelectedSection] = useState<VariablePrefixType>(
     initialProfile?.prefix || 'interface.ssid'
   );
-  const [scopeType, setScopeType] = useState<'global' | 'property' | 'venue'>(
-    initialProfile?.venue ? 'venue' : initialProfile?.entity ? 'property' : 'global'
+  const { data: entities = [] } = useGetEntities();
+  const { data: venues = [] } = useGetVenues();
+
+  const [scopeType, setScopeType] = useState<'property' | 'venue'>(
+    initialProfile?.venue ? 'venue' : 'property'
   );
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>(
-    initialProfile?.entity || 'prop-sunrise-001'
+    initialProfile?.entity || ''
   );
   const [selectedVenueId, setSelectedVenueId] = useState<string>(
-    initialProfile?.venue || '2211d28a-a985-434a-ad68-ca5ac4559852'
+    initialProfile?.venue || ''
   );
   const [name, setName] = useState<string>(initialProfile?.name || '');
   const [description, setDescription] = useState<string>(initialProfile?.description || '');
   const [activeTab, setActiveTab] = useState<'main' | 'notes' | 'raw_json'>('main');
+
+
 
   const pValues = initialProfile?.parsedValues || {};
 
@@ -153,15 +186,13 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
   );
 
   // Pass Point / Hotspot 2.0
-  const [passPointEnabled, setPassPointEnabled] = useState<boolean>(false);
-  const [ppVenueName, setPpVenueName] = useState<string>('eng:Example passpoint_venue');
-  const [ppVenueUrl, setPpVenueUrl] = useState<string>('http://www.example.com/info');
-  const [ppVenueGroup, setPpVenueGroup] = useState<number>(1);
-  const [ppVenueType, setPpVenueType] = useState<number>(1);
-  const [ppAuthType, setPpAuthType] = useState<string>('terms-and-conditions');
-  const [ppDomainName, setPpDomainName] = useState<string>('example.com');
-  const [ppAnqpDomain, setPpAnqpDomain] = useState<number>(8888);
-  const [ppRoamingConsortium, setPpRoamingConsortium] = useState<string>('BAA2D00100');
+  const [passPointConfig, setPassPointConfig] = useState<PassPointConfig>(() =>
+    parseOwprovPasspoint(
+      (pValues['pass-point'] || (pValues['passpoint-enabled'] ? pValues : undefined)) as
+        | Record<string, unknown>
+        | undefined
+    )
+  );
 
   // Advanced Settings for SSID
   const [hiddenSsid, setHiddenSsid] = useState<boolean>(false);
@@ -202,15 +233,11 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
   const [stationaryAp, setStationaryAp] = useState<boolean>(false);
 
   // Captive Portal
-  const [captiveAuthMode, setCaptiveAuthMode] = useState<string>('none');
-  const [walledGardenFqdn, setWalledGardenFqdn] = useState<string>('*.google.com');
-  const [walledGardenIp, setWalledGardenIp] = useState<string>('192.168.0.1');
-  const [idleTimeout, setIdleTimeout] = useState<number>(600);
-  const [sessionTimeout, setSessionTimeout] = useState<number>(3600);
-  const [uamServer, setUamServer] = useState<string>('auth.captive.local');
-  const [uamSecret, setUamSecret] = useState<string>('uam_secret_key');
-  const [uamPort, setUamPort] = useState<number>(3990);
-  const [nasid, setNasid] = useState<string>('MDU-AP-01');
+  const [captivePortalConfig, setCaptivePortalConfig] = useState<CaptivePortalConfig>(() => {
+    if (pValues.captive) return parseOwprovCaptive(pValues.captive as Record<string, unknown>);
+    if (pValues['auth-mode']) return parseOwprovCaptive(pValues as Record<string, unknown>);
+    return { ...DEFAULT_CAPTIVE_PORTAL_CONFIG };
+  });
 
   // Access Control List
   const [aclEnabled, setAclEnabled] = useState<boolean>(false);
@@ -226,41 +253,9 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
   const [roamingPmkR1, setRoamingPmkR1] = useState<string>('');
 
   // 2. radio fields
-  const [radioBand, setRadioBand] = useState<string>(
-    pValues.band ? String(pValues.band) : '5G'
+  const [radioConfig, setRadioConfig] = useState<RadioConfigData>(() =>
+    parseOwprovRadio(pValues as Record<string, unknown> | undefined)
   );
-  const [radioChannel, setRadioChannel] = useState<string>(
-    pValues.channel ? String(pValues.channel) : 'auto'
-  );
-  const [channelWidth, setChannelWidth] = useState<string>(
-    pValues['channel-width'] ? String(pValues['channel-width']) : '40'
-  );
-  const [channelMode, setChannelMode] = useState<string>(
-    pValues['channel-mode'] ? String(pValues['channel-mode']) : 'HT'
-  );
-  const [bandwidth, setBandwidth] = useState<string>(
-    pValues.bandwidth ? String(pValues.bandwidth) : '10'
-  );
-  const [country, setCountry] = useState<string>(
-    pValues.country ? String(pValues.country) : 'US'
-  );
-  const [txPower, setTxPower] = useState<number>(
-    pValues['tx-power'] !== undefined ? Number(pValues['tx-power']) : 0
-  );
-  const [allowDfs, setAllowDfs] = useState<boolean>(
-    pValues['allow-dfs'] !== undefined ? Boolean(pValues['allow-dfs']) : true
-  );
-  const [beaconInterval, setBeaconInterval] = useState<number>(
-    pValues['beacon-interval'] !== undefined ? Number(pValues['beacon-interval']) : 100
-  );
-  const [mimo, setMimo] = useState<string>('2x2');
-  const [legacyRates, setLegacyRates] = useState<boolean>(false);
-  const [requireMode, setRequireMode] = useState<string>('None');
-  const [ratesBeacon, setRatesBeacon] = useState<number>(6000);
-  const [ratesMulticast, setRatesMulticast] = useState<number>(6000);
-  const [heMultipleBssid, setHeMultipleBssid] = useState<boolean>(false);
-  const [heEma, setHeEma] = useState<boolean>(false);
-  const [heBssColor, setHeBssColor] = useState<number>(1);
 
   // 3. vlan & ipv4
   const [vlanId, setVlanId] = useState<number>(
@@ -269,14 +264,9 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
   const [vlanDescription, setVlanDescription] = useState<string>(
     pValues.description ? String(pValues.description) : 'Resident isolation VLAN'
   );
-  const [ipv4Addressing, setIpv4Addressing] = useState<string>('dhcp');
-  const [ipv4Subnet, setIpv4Subnet] = useState<string>('192.168.1.0/24');
-  const [ipv4Gateway, setIpv4Gateway] = useState<string>('192.168.1.1');
-  const [sendHostname, setSendHostname] = useState<boolean>(true);
-  const [dhcpEnabled, setDhcpEnabled] = useState<boolean>(true);
-  const [dhcpLeaseFirst, setDhcpLeaseFirst] = useState<number>(10);
-  const [dhcpLeaseCount, setDhcpLeaseCount] = useState<number>(150);
-  const [dhcpLeaseTime, setDhcpLeaseTime] = useState<string>('6h');
+  const [ipv4Config, setIpv4Config] = useState<Ipv4ConfigData>(() =>
+    parseOwprovIpv4(pValues as Record<string, unknown> | undefined)
+  );
 
   // 4. interface.tunnel
   const [tunnelProto, setTunnelProto] = useState<string>('vxlan');
@@ -288,15 +278,9 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
   const [tunnelHealthcheck, setTunnelHealthcheck] = useState<boolean>(true);
 
   // 5. interface.ssid.radius
-  const [nasIdentifier, setNasIdentifier] = useState<string>('Radius-MDU-Cluster');
-  const [chargeableUserId, setChargeableUserId] = useState<boolean>(false);
-  const [radiusAuthHost, setRadiusAuthHost] = useState<string>('192.168.178.192');
-  const [radiusAuthPort, setRadiusAuthPort] = useState<number>(1812);
-  const [radiusAuthSecret, setRadiusAuthSecret] = useState<string>('radius_secret_token');
-  const [radiusAcctHost, setRadiusAcctHost] = useState<string>('192.168.178.192');
-  const [radiusAcctPort, setRadiusAcctPort] = useState<number>(1813);
-  const [radiusAcctSecret, setRadiusAcctSecret] = useState<string>('radius_secret_token');
-  const [localFallbackEnabled, setLocalFallbackEnabled] = useState<boolean>(false);
+  const [radiusConfig, setRadiusConfig] = useState<RadiusConfigData>(() =>
+    parseOwprovRadius(pValues as Record<string, unknown> | undefined)
+  );
 
   // 6. interface.ssid.openroaming
   const [openRoamingName, setOpenRoamingName] = useState<string>('OpenRoaming');
@@ -305,8 +289,8 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
   // notes
   const [newNote, setNewNote] = useState<string>('');
 
-  const filteredVenues = MOCK_VENUES_LIST.filter(
-    (v) => v.propertyId === selectedPropertyId
+  const filteredVenues = venues.filter(
+    (v) => !selectedPropertyId || v.entity === selectedPropertyId
   );
 
   const toggleWifiBand = (band: string) => {
@@ -373,17 +357,8 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
         }));
       }
 
-      if (passPointEnabled) {
-        val['pass-point'] = {
-          'venue-name': [ppVenueName],
-          'venue-url': [ppVenueUrl],
-          'venue-group': ppVenueGroup,
-          'venue-type': ppVenueType,
-          'auth-type': { type: ppAuthType },
-          'domain-name': [ppDomainName],
-          'anqp-domain': ppAnqpDomain,
-          'roaming-consortium': [ppRoamingConsortium],
-        };
+      if (passPointConfig.enabled) {
+        val['pass-point'] = buildOwprovPasspoint(passPointConfig);
       }
 
       if (rateLimitEnabled) {
@@ -403,18 +378,9 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
         };
       }
 
-      if (captiveAuthMode !== 'none') {
-        val.captive = {
-          'auth-mode': captiveAuthMode,
-          'walled-garden-fqdn': [walledGardenFqdn],
-          'walled-garden-ipaddr': [walledGardenIp],
-          'idle-timeout': idleTimeout,
-          'session-timeout': sessionTimeout,
-          'uam-server': captiveAuthMode === 'uam' ? uamServer : undefined,
-          'uam-secret': captiveAuthMode === 'uam' ? uamSecret : undefined,
-          'uam-port': captiveAuthMode === 'uam' ? uamPort : undefined,
-          nasid: captiveAuthMode === 'uam' ? nasid : undefined,
-        };
+      if (captivePortalConfig.authMode !== 'none') {
+        const capData = buildOwprovCaptive(captivePortalConfig);
+        if (capData) val.captive = capData;
       }
 
       if (aclEnabled) {
@@ -442,28 +408,7 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
     }
 
     if (selectedSection === 'radio') {
-      const val: Record<string, unknown> = {
-        'allow-dfs': allowDfs,
-        band: radioBand,
-        bandwidth: Number(bandwidth),
-        'beacon-interval': beaconInterval,
-        channel: radioChannel,
-        'channel-mode': channelMode,
-        'channel-width': Number(channelWidth),
-        country,
-        mimo,
-        'maximum-clients': maximumClients,
-        'tx-power': txPower,
-        'legacy-rates': legacyRates,
-      };
-      if (requireMode !== 'None') val['require-mode'] = requireMode;
-      val.rates = { beacon: ratesBeacon, multicast: ratesMulticast };
-      val.he = {
-        'multiple-bssid': heMultipleBssid,
-        ema: heEma,
-        'bss-color': heBssColor,
-      };
-      return val;
+      return buildOwprovRadio(radioConfig);
     }
 
     if (selectedSection === 'interface.vlan') {
@@ -474,34 +419,16 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
     }
 
     if (selectedSection === 'interface.ipv4') {
-      const val: Record<string, unknown> = {
-        addressing: ipv4Addressing,
-        subnet: ipv4Subnet,
-        gateway: ipv4Gateway,
-        'send-hostname': sendHostname,
-      };
-      if (dhcpEnabled) {
-        val.dhcp = {
-          'lease-first': dhcpLeaseFirst,
-          'lease-count': dhcpLeaseCount,
-          'lease-time': dhcpLeaseTime,
-        };
-      }
-      return val;
+      return buildOwprovIpv4(ipv4Config);
     }
 
     if (selectedSection === 'interface.captive') {
-      return {
-        'auth-mode': captiveAuthMode === 'none' ? 'click' : captiveAuthMode,
-        'walled-garden-fqdn': [walledGardenFqdn],
-        'walled-garden-ipaddr': [walledGardenIp],
-        'idle-timeout': idleTimeout,
-        'session-timeout': sessionTimeout,
-        'uam-server': uamServer,
-        'uam-secret': uamSecret,
-        'uam-port': uamPort,
-        nasid,
-      };
+      const capData = buildOwprovCaptive(
+        captivePortalConfig.authMode === 'none'
+          ? { ...captivePortalConfig, authMode: 'click-to-continue' }
+          : captivePortalConfig
+      );
+      return capData || { 'auth-mode': 'click-to-continue' };
     }
 
     if (selectedSection === 'interface.tunnel') {
@@ -521,31 +448,7 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
     }
 
     if (selectedSection === 'interface.ssid.radius') {
-      return {
-        'nas-identifier': nasIdentifier,
-        'chargeable-user-id': chargeableUserId,
-        authentication: {
-          host: radiusAuthHost,
-          port: radiusAuthPort,
-          secret: radiusAuthSecret,
-        },
-        accounting: {
-          host: radiusAcctHost,
-          port: radiusAcctPort,
-          secret: radiusAcctSecret,
-        },
-        'dynamic-authorization': {
-          host: radiusAcctHost,
-          port: radiusAcctPort,
-          secret: radiusAcctSecret,
-        },
-        local: localFallbackEnabled
-          ? {
-              'server-identity': 'uCentral',
-              users: [{ 'user-name': 'resident', password: 'Password123!', 'vlan-id': 100 }],
-            }
-          : undefined,
-      };
+      return buildOwprovRadius(radiusConfig);
     }
 
     if (selectedSection === 'interface.ssid.openroaming') {
@@ -554,15 +457,19 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
         'bss-mode': 'ap',
         'wifi-bands': ['2G', '5G', '6G'],
         'pass-point': {
-          'venue-name': [ppVenueName],
-          'venue-url': [ppVenueUrl],
-          'venue-group': ppVenueGroup,
-          'venue-type': ppVenueType,
-          'auth-type': { type: 'terms-and-conditions' },
-          'domain-name': ['openroaming.org'],
-          'anqp-domain': 8888,
+          'venue-name': passPointConfig.venueName.length > 0 ? passPointConfig.venueName : ['eng:Example passpoint_venue'],
+          'venue-url': passPointConfig.venueUrl.length > 0 ? passPointConfig.venueUrl : ['http://www.example.com/info-fra'],
+          'venue-group': passPointConfig.venueGroup,
+          'venue-type': passPointConfig.venueType,
+          'auth-type': { type: passPointConfig.authType.type || 'terms-and-conditions' },
+          'domain-name': passPointConfig.domainName.length > 0 ? passPointConfig.domainName : ['openroaming.org'],
+          'anqp-domain': passPointConfig.anqpDomain || 8888,
           'roaming-consortium': [openRoamingConsortium],
-          'wan-metrics': { type: 'up', downlink: 20000, uplink: 20000 },
+          'wan-metrics': {
+            type: passPointConfig.wanMetrics.type || 'up',
+            downlink: passPointConfig.wanMetrics.downlink || 20000,
+            uplink: passPointConfig.wanMetrics.uplink || 20000,
+          },
         },
       };
     }
@@ -573,28 +480,31 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
     };
   };
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     if (!name.trim()) return;
 
-    const prop = MOCK_PROPERTIES_LIST.find((p) => p.id === selectedPropertyId);
-    const ven = MOCK_VENUES_LIST.find((v) => v.id === selectedVenueId);
+    const effectivePropId = selectedPropertyId || entities[0]?.id || '';
+    const prop = entities.find((p) => p.id === effectivePropId);
+    const effectiveVenId = selectedVenueId || filteredVenues[0]?.id || venues[0]?.id || '';
+    const ven = venues.find((v) => v.id === effectiveVenId);
 
     const valObj = buildVariableValue();
     const serialized = JSON.stringify(valObj);
+    const nowSec = Math.floor(Date.now() / 1000);
 
     const savedProfile: ConfigurationProfile = {
       id: initialProfile?.id || `var-${Date.now().toString(36)}`,
       name: name.trim(),
       description: description.trim(),
       notes: initialProfile?.notes || [],
-      created: initialProfile?.created || Math.floor(Date.now() / 1000),
-      modified: Math.floor(Date.now() / 1000),
+      created: initialProfile?.created || nowSec,
+      modified: nowSec,
       deviceGroup,
       prefix: selectedSection,
-      entity: scopeType === 'global' ? '' : selectedPropertyId,
-      entityName: scopeType === 'global' ? 'Global Scope' : prop?.name,
-      venue: scopeType === 'venue' ? selectedVenueId : '',
-      venueName: scopeType === 'venue' ? ven?.name : '',
+      entity: scopeType === 'property' ? effectivePropId : '',
+      entityName: scopeType === 'property' ? prop?.name || '' : '',
+      venue: scopeType === 'venue' ? effectiveVenId : '',
+      venueName: scopeType === 'venue' ? ven?.name || '' : '',
       subscriber: '',
       inventory: '',
       configurations: initialProfile?.configurations || [],
@@ -613,7 +523,22 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
 
     onSave(savedProfile);
     onClose();
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    name,
+    description,
+    deviceGroup,
+    selectedSection,
+    scopeType,
+    selectedPropertyId,
+    selectedVenueId,
+    entities,
+    venues,
+    filteredVenues,
+    initialProfile,
+    onSave,
+    onClose,
+  ]);
 
   return (
     <Box
@@ -732,23 +657,13 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
             <HStack gap={3} mb={3}>
               <Button
                 size="xs"
-                variant={scopeType === 'global' ? 'solid' : 'outline'}
-                bg={scopeType === 'global' ? themeColors.brand.accent : '#ffffff'}
-                color={scopeType === 'global' ? '#ffffff' : themeColors.text.primary}
-                borderColor={scopeType === 'global' ? themeColors.brand.accent : themeColors.panel.border}
-                onClick={() => setScopeType('global')}
-              >
-                Global (Universal)
-              </Button>
-              <Button
-                size="xs"
                 variant={scopeType === 'property' ? 'solid' : 'outline'}
                 bg={scopeType === 'property' ? themeColors.brand.accent : '#ffffff'}
                 color={scopeType === 'property' ? '#ffffff' : themeColors.text.primary}
                 borderColor={scopeType === 'property' ? themeColors.brand.accent : themeColors.panel.border}
                 onClick={() => setScopeType('property')}
               >
-                Property Scope (Entity)
+                Entity Scope
               </Button>
               <Button
                 size="xs"
@@ -762,33 +677,31 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
               </Button>
             </HStack>
 
-            {scopeType !== 'global' && (
-              <Flex gap={3} wrap="wrap">
+            <Flex gap={3} wrap="wrap">
+              <Box flex="1" minW="180px">
+                <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>
+                  {scopeType === 'property' ? 'Target Entity' : 'Entity (Filter)'} <Text as="span" color="red.500">*</Text>
+                </Text>
+                <SelectDropdown
+                  value={selectedPropertyId || entities[0]?.id || ''}
+                  onChange={setSelectedPropertyId}
+                  options={entities.map((p) => ({ value: p.id, label: p.name }))}
+                />
+              </Box>
+
+              {scopeType === 'venue' && (
                 <Box flex="1" minW="180px">
                   <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>
-                    Target Property <Text as="span" color="red.500">*</Text>
+                    Target Venue <Text as="span" color="red.500">*</Text>
                   </Text>
                   <SelectDropdown
-                    value={selectedPropertyId}
-                    onChange={setSelectedPropertyId}
-                    options={MOCK_PROPERTIES_LIST.map((p) => ({ value: p.id, label: p.name }))}
+                    value={selectedVenueId || filteredVenues[0]?.id || ''}
+                    onChange={setSelectedVenueId}
+                    options={filteredVenues.map((v) => ({ value: v.id, label: v.name }))}
                   />
                 </Box>
-
-                {scopeType === 'venue' && (
-                  <Box flex="1" minW="180px">
-                    <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>
-                      Target Venue <Text as="span" color="red.500">*</Text>
-                    </Text>
-                    <SelectDropdown
-                      value={selectedVenueId}
-                      onChange={setSelectedVenueId}
-                      options={filteredVenues.map((v) => ({ value: v.id, label: v.name }))}
-                    />
-                  </Box>
-                )}
-              </Flex>
-            )}
+              )}
+            </Flex>
           </Box>
 
           {/* Tab Navigation: Main | Notes | Raw JSON */}
@@ -1007,64 +920,12 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
                     </Box>
                   </Flex>
 
-                  {/* Pass Point Collapsible Toggle */}
-                  <Box p={3} bg="#f8fafc" borderRadius="6px" border="1px solid" borderColor={themeColors.panel.divider} mb={4}>
-                    <Flex justify="space-between" align="center">
-                      <HStack gap={2}>
-                        <Text fontSize="13px" fontWeight="700" color={themeColors.text.title}>
-                          Pass Point
-                        </Text>
-                        <FieldInfoTooltip tooltip="Hotspot 2.0 / Passpoint Release 2 configuration" />
-                      </HStack>
-                      <ToggleSwitch checked={passPointEnabled} onChange={setPassPointEnabled} />
-                    </Flex>
-                    {passPointEnabled && (
-                      <VStack gap={3} align="stretch" mt={3} pt={3} borderTop="1px solid" borderColor={themeColors.panel.divider}>
-                        <Flex gap={3} wrap="wrap">
-                          <Box flex="1" minW="180px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>venue-name</Text>
-                            <Input size="sm" value={ppVenueName} onChange={(e) => setPpVenueName(e.target.value)} bg="#ffffff" />
-                          </Box>
-                          <Box flex="1" minW="180px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>venue-url</Text>
-                            <Input size="sm" value={ppVenueUrl} onChange={(e) => setPpVenueUrl(e.target.value)} bg="#ffffff" />
-                          </Box>
-                          <Box flex="1" minW="140px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>domain-name</Text>
-                            <Input size="sm" value={ppDomainName} onChange={(e) => setPpDomainName(e.target.value)} bg="#ffffff" />
-                          </Box>
-                        </Flex>
-                        <Flex gap={3} wrap="wrap">
-                          <Box w="120px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>venue-group</Text>
-                            <Input size="sm" type="number" value={ppVenueGroup} onChange={(e) => setPpVenueGroup(Number(e.target.value))} bg="#ffffff" />
-                          </Box>
-                          <Box w="120px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>venue-type</Text>
-                            <Input size="sm" type="number" value={ppVenueType} onChange={(e) => setPpVenueType(Number(e.target.value))} bg="#ffffff" />
-                          </Box>
-                          <Box w="140px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>anqp-domain</Text>
-                            <Input size="sm" type="number" value={ppAnqpDomain} onChange={(e) => setPpAnqpDomain(Number(e.target.value))} bg="#ffffff" />
-                          </Box>
-                          <Box flex="1" minW="160px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>auth-type</Text>
-                            <SelectDropdown
-                              value={ppAuthType}
-                              onChange={setPpAuthType}
-                              options={[
-                                { value: 'terms-and-conditions', label: 'Terms and Conditions' },
-                                { value: 'online-enrollment', label: 'Online Enrollment' },
-                              ]}
-                            />
-                          </Box>
-                          <Box flex="1" minW="140px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>roaming-consortium</Text>
-                            <Input size="sm" value={ppRoamingConsortium} onChange={(e) => setPpRoamingConsortium(e.target.value)} bg="#ffffff" />
-                          </Box>
-                        </Flex>
-                      </VStack>
-                    )}
+                  {/* Pass Point Section */}
+                  <Box p={3.5} bg="#ffffff" borderRadius="6px" border="1px solid" borderColor={themeColors.panel.border} mb={4}>
+                    <PassPointSection
+                      config={passPointConfig}
+                      onChange={setPassPointConfig}
+                    />
                   </Box>
 
                   {/* Advanced Settings */}
@@ -1253,68 +1114,12 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
                   </Box>
 
                   {/* Captive Portal Dropdown */}
-                  <Box p={3} bg="#f8fafc" borderRadius="6px" border="1px solid" borderColor={themeColors.panel.divider} mb={3}>
-                    <Flex justify="space-between" align="center">
-                      <HStack gap={2}>
-                        <Text fontSize="13px" fontWeight="700" color={themeColors.text.title}>Captive Portal</Text>
-                        <FieldInfoTooltip tooltip="Guest splash page and authentication" />
-                      </HStack>
-                      <Box w="140px">
-                        <SelectDropdown
-                          value={captiveAuthMode}
-                          onChange={setCaptiveAuthMode}
-                          options={[
-                            { value: 'none', label: 'None' },
-                            { value: 'click', label: 'Click' },
-                            { value: 'radius', label: 'Radius' },
-                            { value: 'credentials', label: 'Credentials' },
-                            { value: 'uam', label: 'UAM' },
-                          ]}
-                        />
-                      </Box>
-                    </Flex>
-                    {captiveAuthMode !== 'none' && (
-                      <VStack gap={3} align="stretch" mt={3} pt={3} borderTop="1px solid" borderColor={themeColors.panel.divider}>
-                        <Flex gap={3} wrap="wrap">
-                          <Box flex="1" minW="180px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>walled-garden-fqdn</Text>
-                            <Input size="sm" value={walledGardenFqdn} onChange={(e) => setWalledGardenFqdn(e.target.value)} bg="#ffffff" />
-                          </Box>
-                          <Box flex="1" minW="140px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>walled-garden-ipaddr</Text>
-                            <Input size="sm" value={walledGardenIp} onChange={(e) => setWalledGardenIp(e.target.value)} bg="#ffffff" />
-                          </Box>
-                          <Box w="120px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>idle-timeout (s)</Text>
-                            <Input size="sm" type="number" value={idleTimeout} onChange={(e) => setIdleTimeout(Number(e.target.value))} bg="#ffffff" />
-                          </Box>
-                          <Box w="120px">
-                            <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>session-timeout (s)</Text>
-                            <Input size="sm" type="number" value={sessionTimeout} onChange={(e) => setSessionTimeout(Number(e.target.value))} bg="#ffffff" />
-                          </Box>
-                        </Flex>
-                        {captiveAuthMode === 'uam' && (
-                          <Flex gap={3} wrap="wrap">
-                            <Box flex="1">
-                              <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>uam-server</Text>
-                              <Input size="sm" value={uamServer} onChange={(e) => setUamServer(e.target.value)} bg="#ffffff" />
-                            </Box>
-                            <Box flex="1">
-                              <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>uam-secret</Text>
-                              <Input size="sm" value={uamSecret} onChange={(e) => setUamSecret(e.target.value)} bg="#ffffff" />
-                            </Box>
-                            <Box w="100px">
-                              <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>uam-port</Text>
-                              <Input size="sm" type="number" value={uamPort} onChange={(e) => setUamPort(Number(e.target.value))} bg="#ffffff" />
-                            </Box>
-                            <Box w="120px">
-                              <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>nasid</Text>
-                              <Input size="sm" value={nasid} onChange={(e) => setNasid(e.target.value)} bg="#ffffff" />
-                            </Box>
-                          </Flex>
-                        )}
-                      </VStack>
-                    )}
+                  {/* Captive Portal Settings */}
+                  <Box p={3.5} bg="#f8fafc" borderRadius="6px" border="1px solid" borderColor={themeColors.panel.divider} mb={3}>
+                    <CaptivePortalSection
+                      config={captivePortalConfig}
+                      onChange={setCaptivePortalConfig}
+                    />
                   </Box>
 
                   {/* Access Control List Toggle */}
@@ -1393,216 +1198,10 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
               {/* ---------------- SECTION 2: radio ---------------- */}
               {selectedSection === 'radio' && (
                 <Box p={4} border="1px solid" borderColor={themeColors.panel.border} borderRadius="6px" bg="#ffffff">
-                  <Text fontSize="14px" fontWeight="700" color={themeColors.text.title} mb={3} textDecoration="underline">
-                    radio
-                  </Text>
-
-                  <Flex gap={3} mb={3} wrap="wrap">
-                    <Box flex="1" minW="140px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        band <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <SelectDropdown
-                        value={radioBand}
-                        onChange={setRadioBand}
-                        options={[
-                          { value: '5G', label: '5 GHz (5G)' },
-                          { value: '2G', label: '2.4 GHz (2G)' },
-                          { value: '5G-lower', label: '5G Lower' },
-                          { value: '5G-upper', label: '5G Upper' },
-                          { value: '6G', label: '6 GHz (6G)' },
-                        ]}
-                      />
-                    </Box>
-
-                    <Box flex="1" minW="130px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        channel <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <SelectDropdown
-                        value={radioChannel}
-                        onChange={setRadioChannel}
-                        options={[
-                          { value: 'auto', label: 'Auto (ACS / RRM)' },
-                          { value: '36', label: '36 (5180 MHz)' },
-                          { value: '40', label: '40 (5200 MHz)' },
-                          { value: '44', label: '44 (5220 MHz)' },
-                          { value: '48', label: '48 (5240 MHz)' },
-                          { value: '149', label: '149 (5745 MHz)' },
-                          { value: '153', label: '153 (5765 MHz)' },
-                          { value: '157', label: '157 (5785 MHz)' },
-                          { value: '161', label: '161 (5805 MHz)' },
-                        ]}
-                      />
-                    </Box>
-
-                    <Box flex="1" minW="130px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        channel-width <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <SelectDropdown
-                        value={channelWidth}
-                        onChange={setChannelWidth}
-                        options={[
-                          { value: '20', label: '20 MHz' },
-                          { value: '40', label: '40 MHz' },
-                          { value: '80', label: '80 MHz' },
-                          { value: '160', label: '160 MHz' },
-                        ]}
-                      />
-                    </Box>
-
-                    <Box flex="1" minW="130px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        bandwidth <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <SelectDropdown
-                        value={bandwidth}
-                        onChange={setBandwidth}
-                        options={[
-                          { value: '5', label: '5 MHz' },
-                          { value: '10', label: '10 MHz' },
-                          { value: '20', label: '20 MHz' },
-                        ]}
-                      />
-                    </Box>
-                  </Flex>
-
-                  <Flex gap={3} mb={3} wrap="wrap">
-                    <Box flex="1" minW="150px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        channel-mode <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <SelectDropdown
-                        value={channelMode}
-                        onChange={setChannelMode}
-                        options={[
-                          { value: 'HT', label: 'HT (802.11n)' },
-                          { value: 'VHT', label: 'VHT (802.11ac)' },
-                          { value: 'HE', label: 'HE (Wi-Fi 6)' },
-                          { value: 'EHT', label: 'EHT (Wi-Fi 7)' },
-                        ]}
-                      />
-                    </Box>
-
-                    <Box flex="1" minW="120px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        mimo
-                      </Text>
-                      <SelectDropdown
-                        value={mimo}
-                        onChange={setMimo}
-                        options={[
-                          { value: '1x1', label: '1x1' },
-                          { value: '2x2', label: '2x2' },
-                          { value: '3x3', label: '3x3' },
-                          { value: '4x4', label: '4x4' },
-                          { value: '8x8', label: '8x8' },
-                        ]}
-                      />
-                    </Box>
-
-                    <Box flex="1" minW="120px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        tx-power (dBm) <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <Input
-                        size="sm"
-                        type="number"
-                        value={txPower}
-                        onChange={(e) => setTxPower(Number(e.target.value))}
-                        placeholder="0 = Auto"
-                      />
-                    </Box>
-
-                    <Box flex="1" minW="120px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        country <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <SelectDropdown
-                        value={country}
-                        onChange={setCountry}
-                        options={[
-                          { value: 'US', label: 'United States (US)' },
-                          { value: 'CA', label: 'Canada (CA)' },
-                          { value: 'GB', label: 'United Kingdom (GB)' },
-                          { value: 'DE', label: 'Germany (DE)' },
-                          { value: 'FR', label: 'France (FR)' },
-                          { value: 'IN', label: 'India (IN)' },
-                          { value: 'AU', label: 'Australia (AU)' },
-                        ]}
-                      />
-                    </Box>
-                  </Flex>
-
-                  <Flex gap={4} mb={3} wrap="wrap" align="center">
-                    <Box flex="1" minW="120px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        beacon-interval
-                      </Text>
-                      <Input
-                        size="sm"
-                        type="number"
-                        value={beaconInterval}
-                        onChange={(e) => setBeaconInterval(Number(e.target.value))}
-                      />
-                    </Box>
-                    <Box flex="1" minW="120px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        maximum-clients
-                      </Text>
-                      <Input
-                        size="sm"
-                        type="number"
-                        value={maximumClients}
-                        onChange={(e) => setMaximumClients(Number(e.target.value))}
-                      />
-                    </Box>
-                    <Box pt={4}>
-                      <ToggleSwitch checked={allowDfs} onChange={setAllowDfs} label="allow-dfs" />
-                    </Box>
-                    <Box pt={4}>
-                      <ToggleSwitch checked={legacyRates} onChange={setLegacyRates} label="legacy-rates" />
-                    </Box>
-                  </Flex>
-
-                  {/* Advanced Radio Settings */}
-                  <Box p={3} bg="#f8fafc" borderRadius="6px" border="1px solid" borderColor={themeColors.panel.divider}>
-                    <Text fontSize="12px" fontWeight="700" color={themeColors.text.title} mb={2}>
-                      Wi-Fi Rates & 802.11ax Advanced Parameters
-                    </Text>
-                    <Flex gap={3} mb={3} wrap="wrap">
-                      <Box w="140px">
-                        <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>require-mode</Text>
-                        <SelectDropdown
-                          value={requireMode}
-                          onChange={setRequireMode}
-                          options={[
-                            { value: 'None', label: 'None' },
-                            { value: 'HT', label: 'HT' },
-                            { value: 'VHT', label: 'VHT' },
-                            { value: 'HE', label: 'HE' },
-                          ]}
-                        />
-                      </Box>
-                      <Box w="130px">
-                        <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>beacon-rate (kbps)</Text>
-                        <Input size="sm" type="number" value={ratesBeacon} onChange={(e) => setRatesBeacon(Number(e.target.value))} bg="#ffffff" />
-                      </Box>
-                      <Box w="130px">
-                        <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>multicast-rate (kbps)</Text>
-                        <Input size="sm" type="number" value={ratesMulticast} onChange={(e) => setRatesMulticast(Number(e.target.value))} bg="#ffffff" />
-                      </Box>
-                      <Box w="110px">
-                        <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>bss-color</Text>
-                        <Input size="sm" type="number" value={heBssColor} onChange={(e) => setHeBssColor(Number(e.target.value))} bg="#ffffff" />
-                      </Box>
-                    </Flex>
-                    <Flex gap={4}>
-                      <ToggleSwitch checked={heMultipleBssid} onChange={setHeMultipleBssid} label="he.multiple-bssid" />
-                      <ToggleSwitch checked={heEma} onChange={setHeEma} label="he.ema" />
-                    </Flex>
-                  </Box>
+                  <RadioSection
+                    config={radioConfig}
+                    onChange={setRadioConfig}
+                  />
                 </Box>
               )}
 
@@ -1641,74 +1240,10 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
               {/* ---------------- SECTION 4: interface.ipv4 ---------------- */}
               {selectedSection === 'interface.ipv4' && (
                 <Box p={4} border="1px solid" borderColor={themeColors.panel.border} borderRadius="6px" bg="#ffffff">
-                  <Text fontSize="14px" fontWeight="700" color={themeColors.text.title} mb={3} textDecoration="underline">
-                    interface.ipv4
-                  </Text>
-                  <Flex gap={3} mb={3} wrap="wrap">
-                    <Box w="160px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        addressing <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <SelectDropdown
-                        value={ipv4Addressing}
-                        onChange={setIpv4Addressing}
-                        options={[
-                          { value: 'dhcp', label: 'DHCP Client (Dynamic)' },
-                          { value: 'static', label: 'Static IP' },
-                        ]}
-                      />
-                    </Box>
-                    <Box flex="1" minW="180px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        subnet
-                      </Text>
-                      <Input
-                        size="sm"
-                        value={ipv4Subnet}
-                        onChange={(e) => setIpv4Subnet(e.target.value)}
-                        placeholder="192.168.1.1/24"
-                      />
-                    </Box>
-                    <Box flex="1" minW="160px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        gateway
-                      </Text>
-                      <Input
-                        size="sm"
-                        value={ipv4Gateway}
-                        onChange={(e) => setIpv4Gateway(e.target.value)}
-                        placeholder="192.168.1.1"
-                      />
-                    </Box>
-                    <Box pt={5}>
-                      <ToggleSwitch checked={sendHostname} onChange={setSendHostname} label="send-hostname" />
-                    </Box>
-                  </Flex>
-
-                  <Box p={3} bg="#f8fafc" borderRadius="6px" border="1px solid" borderColor={themeColors.panel.divider}>
-                    <Flex justify="space-between" align="center" mb={2}>
-                      <Text fontSize="12px" fontWeight="700" color={themeColors.text.title}>
-                        Embedded DHCP Server
-                      </Text>
-                      <ToggleSwitch checked={dhcpEnabled} onChange={setDhcpEnabled} />
-                    </Flex>
-                    {dhcpEnabled && (
-                      <Flex gap={3} mt={2}>
-                        <Box flex="1">
-                          <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>lease-first offset</Text>
-                          <Input size="sm" type="number" value={dhcpLeaseFirst} onChange={(e) => setDhcpLeaseFirst(Number(e.target.value))} bg="#ffffff" />
-                        </Box>
-                        <Box flex="1">
-                          <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>lease-count</Text>
-                          <Input size="sm" type="number" value={dhcpLeaseCount} onChange={(e) => setDhcpLeaseCount(Number(e.target.value))} bg="#ffffff" />
-                        </Box>
-                        <Box flex="1">
-                          <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>lease-time</Text>
-                          <Input size="sm" value={dhcpLeaseTime} onChange={(e) => setDhcpLeaseTime(e.target.value)} bg="#ffffff" />
-                        </Box>
-                      </Flex>
-                    )}
-                  </Box>
+                  <Ipv4Section
+                    config={ipv4Config}
+                    onChange={setIpv4Config}
+                  />
                 </Box>
               )}
 
@@ -1718,69 +1253,14 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
                   <Text fontSize="14px" fontWeight="700" color={themeColors.text.title} mb={3} textDecoration="underline">
                     interface.captive (Captive Portal Profile)
                   </Text>
-                  <Flex gap={3} mb={3} wrap="wrap">
-                    <Box w="180px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        auth-mode <Text as="span" color="red.500">*</Text>
-                      </Text>
-                      <SelectDropdown
-                        value={captiveAuthMode === 'none' ? 'click' : captiveAuthMode}
-                        onChange={setCaptiveAuthMode}
-                        options={[
-                          { value: 'click', label: 'Click to Continue' },
-                          { value: 'radius', label: 'External RADIUS' },
-                          { value: 'credentials', label: 'User Credentials' },
-                          { value: 'uam', label: 'UAM / CoovaChilli' },
-                        ]}
-                      />
-                    </Box>
-                    <Box flex="1" minW="180px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        walled-garden-fqdn
-                      </Text>
-                      <Input size="sm" value={walledGardenFqdn} onChange={(e) => setWalledGardenFqdn(e.target.value)} />
-                    </Box>
-                    <Box flex="1" minW="140px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        walled-garden-ipaddr
-                      </Text>
-                      <Input size="sm" value={walledGardenIp} onChange={(e) => setWalledGardenIp(e.target.value)} />
-                    </Box>
-                  </Flex>
-                  <Flex gap={3} mb={3}>
-                    <Box flex="1">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        idle-timeout (seconds)
-                      </Text>
-                      <Input size="sm" type="number" value={idleTimeout} onChange={(e) => setIdleTimeout(Number(e.target.value))} />
-                    </Box>
-                    <Box flex="1">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>
-                        session-timeout (seconds)
-                      </Text>
-                      <Input size="sm" type="number" value={sessionTimeout} onChange={(e) => setSessionTimeout(Number(e.target.value))} />
-                    </Box>
-                  </Flex>
-                  {captiveAuthMode === 'uam' && (
-                    <Flex gap={3}>
-                      <Box flex="1">
-                        <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>uam-server</Text>
-                        <Input size="sm" value={uamServer} onChange={(e) => setUamServer(e.target.value)} />
-                      </Box>
-                      <Box flex="1">
-                        <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>uam-secret</Text>
-                        <Input size="sm" value={uamSecret} onChange={(e) => setUamSecret(e.target.value)} />
-                      </Box>
-                      <Box w="90px">
-                        <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>uam-port</Text>
-                        <Input size="sm" type="number" value={uamPort} onChange={(e) => setUamPort(Number(e.target.value))} />
-                      </Box>
-                      <Box w="120px">
-                        <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1}>nasid</Text>
-                        <Input size="sm" value={nasid} onChange={(e) => setNasid(e.target.value)} />
-                      </Box>
-                    </Flex>
-                  )}
+                  <CaptivePortalSection
+                    config={
+                      captivePortalConfig.authMode === 'none'
+                        ? { ...captivePortalConfig, authMode: 'click-to-continue' }
+                        : captivePortalConfig
+                    }
+                    onChange={setCaptivePortalConfig}
+                  />
                 </Box>
               )}
 
@@ -1845,47 +1325,7 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
 
               {/* ---------------- SECTION 7: interface.ssid.radius ---------------- */}
               {selectedSection === 'interface.ssid.radius' && (
-                <Box p={4} border="1px solid" borderColor={themeColors.panel.border} borderRadius="6px" bg="#ffffff">
-                  <Text fontSize="14px" fontWeight="700" color={themeColors.text.title} mb={3} textDecoration="underline">
-                    interface.ssid.radius (Enterprise RADIUS Profile)
-                  </Text>
-                  <Flex gap={3} mb={3} wrap="wrap">
-                    <Box flex="1" minW="180px">
-                      <Text fontSize="12px" fontWeight="600" color={themeColors.text.secondary} mb={1}>nas-identifier</Text>
-                      <Input size="sm" value={nasIdentifier} onChange={(e) => setNasIdentifier(e.target.value)} />
-                    </Box>
-                    <Box pt={5}>
-                      <ToggleSwitch checked={chargeableUserId} onChange={setChargeableUserId} label="chargeable-user-id" />
-                    </Box>
-                    <Box pt={5}>
-                      <ToggleSwitch checked={localFallbackEnabled} onChange={setLocalFallbackEnabled} label="Local RADIUS fallback" />
-                    </Box>
-                  </Flex>
-                  <Text fontSize="12px" fontWeight="700" color={themeColors.text.title} mb={1}>Authentication Server</Text>
-                  <Flex gap={3} mb={3}>
-                    <Box flex="2">
-                      <Input size="sm" value={radiusAuthHost} onChange={(e) => setRadiusAuthHost(e.target.value)} placeholder="Host IP / FQDN" />
-                    </Box>
-                    <Box w="90px">
-                      <Input size="sm" type="number" value={radiusAuthPort} onChange={(e) => setRadiusAuthPort(Number(e.target.value))} placeholder="Port" />
-                    </Box>
-                    <Box flex="2">
-                      <Input size="sm" type="password" value={radiusAuthSecret} onChange={(e) => setRadiusAuthSecret(e.target.value)} placeholder="Secret" />
-                    </Box>
-                  </Flex>
-                  <Text fontSize="12px" fontWeight="700" color={themeColors.text.title} mb={1}>Accounting Server</Text>
-                  <Flex gap={3}>
-                    <Box flex="2">
-                      <Input size="sm" value={radiusAcctHost} onChange={(e) => setRadiusAcctHost(e.target.value)} placeholder="Host IP / FQDN" />
-                    </Box>
-                    <Box w="90px">
-                      <Input size="sm" type="number" value={radiusAcctPort} onChange={(e) => setRadiusAcctPort(Number(e.target.value))} placeholder="Port" />
-                    </Box>
-                    <Box flex="2">
-                      <Input size="sm" type="password" value={radiusAcctSecret} onChange={(e) => setRadiusAcctSecret(e.target.value)} placeholder="Secret" />
-                    </Box>
-                  </Flex>
-                </Box>
+                <RadiusSection config={radiusConfig} onChange={setRadiusConfig} />
               )}
 
               {/* ---------------- SECTION 8: OpenRoaming SSID ---------------- */}

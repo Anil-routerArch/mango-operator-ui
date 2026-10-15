@@ -15,6 +15,7 @@ import { MultiSelectDropdown } from '../SubSectionPicker';
 import { ToggleSwitch } from '../ToggleSwitch';
 import { SsidConfig } from './SsidConfig';
 import { ReservedAddressesModal } from './ReservedAddressesModal';
+import { PortForwardingModal } from '../../PortForwardingModal';
 import {
   DHCPV6_MODES,
   INTERFACE_ROLES,
@@ -44,6 +45,7 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
   isDefaultConfig = false,
 }) => {
   const [isReservedModalOpen, setIsReservedModalOpen] = useState(false);
+  const [isPortForwardModalOpen, setIsPortForwardModalOpen] = useState(false);
 
   const isIpv4Enabled = iface.ipv4?.addressing !== 'none';
   const isIpv6Enabled = iface.ipv6?.addressing !== 'none';
@@ -306,6 +308,23 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
                     disabled={disabled}
                     w="120px"
                   />
+                  <Box
+                    as="button"
+                    px={3}
+                    py={1.5}
+                    borderRadius="8px"
+                    bg="#2563eb"
+                    color="#ffffff"
+                    fontSize="12px"
+                    fontWeight="600"
+                    cursor={disabled ? 'not-allowed' : 'pointer'}
+                    opacity={disabled ? 0.6 : 1}
+                    _hover={disabled ? undefined : { bg: '#1d4ed8' }}
+                    onClick={() => setIsPortForwardModalOpen(true)}
+                  >
+                    IPv4 Port Forwarding
+                    {iface.ipv4.portForward && iface.ipv4.portForward.length > 0 && ` (${iface.ipv4.portForward.length})`}
+                  </Box>
                 </>
               )}
             </Flex>
@@ -1003,6 +1022,7 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
         isOpen={isReservedModalOpen}
         onClose={() => setIsReservedModalOpen(false)}
         interfaceName={iface.name}
+        subnet={iface.ipv4.subnet}
         reservedAddresses={iface.ipv4.dhcp?.reservedAddresses || []}
         onSave={(reservedAddresses) => {
           onChange({
@@ -1013,6 +1033,23 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
                 ...iface.ipv4.dhcp,
                 reservedAddresses,
               },
+            },
+          });
+        }}
+        disabled={disabled}
+      />
+
+      {/* Port Forwarding Modal */}
+      <PortForwardingModal
+        isOpen={isPortForwardModalOpen}
+        onClose={() => setIsPortForwardModalOpen(false)}
+        portForward={iface.ipv4.portForward || []}
+        onSave={(portForward) => {
+          onChange({
+            ...iface,
+            ipv4: {
+              ...iface.ipv4,
+              portForward,
             },
           });
         }}

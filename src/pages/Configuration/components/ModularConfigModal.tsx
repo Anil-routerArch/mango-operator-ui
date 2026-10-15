@@ -28,6 +28,7 @@ import {
   getConfigurationAffectedDevices,
   type ModularConfigurationPayload,
 } from '@/api/modularConfigurations';
+import { extractVariableBlockUuids } from '../utils/variableExtractor';
 
 export interface ModularConfigModalProps {
   isOpen: boolean;
@@ -247,6 +248,8 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
       payloadVenue = '';
     }
 
+    const extractedVarIds = extractVariableBlockUuids(modularBlocks);
+
     const payload: ModularConfigurationPayload = {
       name: configName,
       description: description.trim(),
@@ -260,6 +263,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
       notes: note.trim() ? [{ note: note.trim() }] : undefined,
       entity: payloadEntity,
       venue: payloadVenue,
+      variables: extractedVarIds.length > 0 ? extractedVarIds : undefined,
       configuration: modularBlocks.map((b) => ({
         name: b.name,
         description: b.description,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -11,7 +11,7 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
-import { MOCK_PROFILES } from '../mockData/mockConfigurations';
+import { getAllVariableBlocks } from '@/api/modularConfigurations';
 import type { DeviceConfiguration, SsidInterfaceConfig } from '../types/configuration';
 
 interface SectionProps {
@@ -66,7 +66,35 @@ export const GeneralSectionEditor: React.FC<SectionProps> = ({ config, onUpdate 
 
 export const InterfacesSectionEditor: React.FC<SectionProps> = ({ config, onUpdate }) => {
   const ssids = config.sections.interfaces.ssids;
-  const ssidProfiles = MOCK_PROFILES.filter((p) => p.prefix === 'interface.ssid');
+  const [ssidProfiles, setSsidProfiles] = useState<
+    Array<{ id: string; name: string; parsedValues: Record<string, unknown> }>
+  >([]);
+
+  useEffect(() => {
+    getAllVariableBlocks()
+      .then((blocks) => {
+        const mapped = blocks
+          .filter((b) => b.variables?.[0]?.prefix === 'interface.ssid')
+          .map((b) => {
+            let parsed: Record<string, unknown> = {};
+            try {
+              parsed =
+                typeof b.variables?.[0]?.value === 'string'
+                  ? JSON.parse(b.variables[0].value)
+                  : (b.variables?.[0]?.value as Record<string, unknown>) || {};
+            } catch (err) {
+              console.warn('Could not parse variable value in OtherSectionEditors:', err);
+            }
+            return {
+              id: b.id,
+              name: b.name || 'SSID Variable',
+              parsedValues: parsed,
+            };
+          });
+        setSsidProfiles(mapped);
+      })
+      .catch(() => {});
+  }, []);
 
   const [expandedSsidIdx, setExpandedSsidIdx] = useState<number>(0);
 
@@ -181,7 +209,7 @@ export const InterfacesSectionEditor: React.FC<SectionProps> = ({ config, onUpda
     { value: '', label: 'None (Standalone / Unlinked)' },
     ...ssidProfiles.map((p) => ({
       value: p.id,
-      label: `${p.name} (${p.entityName || 'Global'})`,
+      label: p.name,
     })),
   ];
 

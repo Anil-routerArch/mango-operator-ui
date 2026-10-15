@@ -24,6 +24,7 @@ export interface ModularConfigurationPayload {
   venue?: string;
   subscriber?: string;
   subscriberOnly?: boolean;
+  variables?: string[];
   configuration: ModularConfigElementPayload[];
 }
 
@@ -129,12 +130,96 @@ export const getConfigurationAffectedDevices = async (
   return response.data?.affectedDevices || [];
 };
 
+export interface VariableItem {
+  prefix: string;
+  type: string;
+  value: string | Record<string, unknown>;
+  weight: number;
+}
+
 export interface VariableBlockApiResponse {
   id: string;
   name: string;
   description?: string;
+  created?: number;
+  modified?: number;
+  notes?: Array<{ note: string; created?: number; author?: string }>;
+  entity?: string;
+  entityName?: string;
+  venue?: string;
+  venueName?: string;
+  subscriber?: string;
+  inventory?: string;
+  configurations?: string[];
+  managementPolicy?: string;
+  deviceGroup?: string;
+  variables?: VariableItem[];
   [key: string]: unknown;
 }
+
+/**
+ * Fetch all variable blocks (profiles) from OWPROV
+ * GET /api/v1/variable?withExtendedInfo=true&limit={limit}&offset={offset}
+ */
+export const getAllVariableBlocks = async (
+  limit = 500,
+  offset = 0
+): Promise<VariableBlockApiResponse[]> => {
+  const response = await axiosProv.get<{
+    variableBlocks?: VariableBlockApiResponse[];
+  }>(`variable?withExtendedInfo=true&limit=${limit}&offset=${offset}`);
+  return response.data?.variableBlocks || [];
+};
+
+/**
+ * Fetch a single variable block by ID from OWPROV
+ * GET /api/v1/variable/{id}?withExtendedInfo=true
+ */
+export const getVariableBlockById = async (
+  id: string
+): Promise<VariableBlockApiResponse> => {
+  const response = await axiosProv.get<VariableBlockApiResponse>(
+    `variable/${encodeURIComponent(id)}?withExtendedInfo=true`
+  );
+  return response.data;
+};
+
+/**
+ * Create a new variable block in OWPROV
+ * POST /api/v1/variable/0
+ */
+export const createVariableBlock = async (
+  data: Partial<VariableBlockApiResponse>
+): Promise<VariableBlockApiResponse> => {
+  const response = await axiosProv.post<VariableBlockApiResponse>(
+    'variable/0',
+    data
+  );
+  return response.data;
+};
+
+/**
+ * Update an existing variable block in OWPROV
+ * PUT /api/v1/variable/{id}
+ */
+export const updateVariableBlock = async (
+  id: string,
+  data: Partial<VariableBlockApiResponse>
+): Promise<VariableBlockApiResponse> => {
+  const response = await axiosProv.put<VariableBlockApiResponse>(
+    `variable/${encodeURIComponent(id)}`,
+    data
+  );
+  return response.data;
+};
+
+/**
+ * Delete a variable block from OWPROV
+ * DELETE /api/v1/variable/{id}
+ */
+export const deleteVariableBlock = async (id: string): Promise<void> => {
+  await axiosProv.delete(`variable/${encodeURIComponent(id)}`);
+};
 
 /**
  * Fetch specific variable blocks (profiles) by their UUIDs using OWPROV ?select= batch query.
@@ -154,5 +239,6 @@ export const getVariableBlocksSelect = async (
     return [];
   }
 };
+
 
 

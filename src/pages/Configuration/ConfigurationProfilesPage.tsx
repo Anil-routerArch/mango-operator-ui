@@ -1,21 +1,34 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
   Flex,
   HStack,
   Input,
+  Spinner,
   Text,
+  VStack,
 } from '@chakra-ui/react';
 import { Header } from '@/layout/Header';
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { useConfigurationUiStore } from '@/stores/configurationUiStore';
-import { MOCK_PROFILES, MOCK_CONFIGURATIONS } from './mockData/mockConfigurations';
+import { useGetEntities, useGetVenues } from '@/api';
+import {
+  getAllVariableBlocks,
+  createVariableBlock,
+  updateVariableBlock,
+  deleteVariableBlock,
+  type VariableBlockApiResponse,
+} from '@/api/modularConfigurations';
 import { CreateProfileModal } from './components/CreateProfileModal';
 import { ProfileEditorPage } from './ProfileEditorPage';
-import type { ConfigurationProfile } from './types/configuration';
+import type {
+  ConfigurationProfile,
+  VariablePrefixType,
+  ProfileSettingsValue,
+} from './types/configuration';
 
 export interface ConfigurationProfilesPageProps {
   embedded?: boolean;
@@ -24,22 +37,139 @@ export interface ConfigurationProfilesPageProps {
   onNavigateToConfig?: (configId?: string) => void;
 }
 
+function mapRawVariableToProfile(
+  raw: VariableBlockApiResponse,
+  entityNameMap: Map<string, string>,
+  venueNameMap: Map<string, string>
+): ConfigurationProfile {
+  const firstVar = raw.variables?.[0];
+  let prefix: VariablePrefixType = 'custom';
+  let parsedValues: Record<string, ProfileSettingsValue> = {};
+
+  if (firstVar) {
+    if (firstVar.prefix) {
+      prefix = firstVar.prefix as VariablePrefixType;
+    }
+    if (typeof firstVar.value === 'string') {
+      try {
+        parsedValues = JSON.parse(firstVar.value);
+      } catch {
+        parsedValues = { raw: firstVar.value };
+      }
+    } else if (firstVar.value && typeof firstVar.value === 'object') {
+      parsedValues = firstVar.value as Record<string, ProfileSettingsValue>;
+    }
+  }
+
+  const entId = raw.entity || '';
+  const venId = raw.venue || '';
+
+  return {
+    id: raw.id,
+    name: raw.name || 'Unnamed Variable',
+    description: raw.description || '',
+    notes: (raw.notes || []).map((n) => ({
+      note: typeof n === 'string' ? n : n.note || '',
+      created: typeof n === 'object' ? n.created || 0 : 0,
+      author: typeof n === 'object' ? n.author || '' : '',
+    })),
+    created: raw.created || 0,
+    modified: raw.modified || 0,
+    variables: (raw.variables || []).map((v) => ({
+      prefix: v.prefix || '',
+      type: v.type || 'json',
+      weight: v.weight ?? 0,
+      value: typeof v.value === 'string' ? v.value : JSON.stringify(v.value),
+    })),
+    entity: entId,
+    entityName:
+      entityNameMap.get(entId) ||
+      (raw.entityName as string) ||
+      (entId ? `${entId.slice(0, 8)}...` : ''),
+    venue: venId,
+    venueName:
+      venueNameMap.get(venId) ||
+      (raw.venueName as string) ||
+      (venId ? `${venId.slice(0, 8)}...` : ''),
+    subscriber: raw.subscriber || '',
+    inventory: raw.inventory || '',
+    configurations: raw.configurations || [],
+    deviceGroup: (raw.deviceGroup as string) || 'ap',
+    prefix,
+    parsedValues,
+    status: 'valid',
+    configuredFieldsCount: Object.keys(parsedValues).length,
+  };
+}
+
 export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps> = ({
   embedded = false,
   isCreateOpen = false,
   onCloseCreate,
-  onNavigateToConfig,
 }) => {
   const { selectedProfileId, setSelectedProfileId } = useConfigurationUiStore();
-  const [profiles, setProfiles] = useState<ConfigurationProfile[]>(MOCK_PROFILES);
+  const [profiles, setProfiles] = useState<ConfigurationProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [search, setSearch] = useState('');
   const [sectionFilter, setSectionFilter] = useState('all');
   const [scopeFilter, setScopeFilter] = useState('all');
 
+  // Live entities and venues
+  const { data: entities = [] } = useGetEntities();
+  const { data: venues = [] } = useGetVenues();
+  const entityNameMap = useMemo(
+    () => new Map(entities.map((e) => [e.id, e.name])),
+    [entities]
+  );
+  const venueNameMap = useMemo(
+    () => new Map(venues.map((v) => [v.id, v.name])),
+    [venues]
+  );
+
   const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [editingModalProfile, setEditingModalProfile] = useState<ConfigurationProfile | null>(null);
-
   const isModalOpen = internalModalOpen || Boolean(isCreateOpen);
+
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+    getAllVariableBlocks()
+      .then((blocks) => {
+        if (!isMounted) return;
+        const mapped = blocks.map((b) =>
+          mapRawVariableToProfile(b, entityNameMap, venueNameMap)
+        );
+        setProfiles(mapped);
+      })
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        console.error('Failed to load variables from OWPROV:', err);
+        const msg =
+          (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
+            ?.ErrorDescription ||
+          (err as Error)?.message ||
+          'Failed to load variables from OWPROV.';
+        setError(msg);
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [entityNameMap, venueNameMap, reloadKey]);
+
+  const handleRetry = () => {
+    setIsLoading(true);
+    setError(null);
+    setReloadKey((k) => k + 1);
+  };
 
   const handleOpenCreateModal = () => {
     setEditingModalProfile(null);
@@ -52,16 +182,49 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     onCloseCreate?.();
   };
 
-  const handleSaveProfile = (savedProfile: ConfigurationProfile) => {
-    setProfiles((prev) => {
-      const idx = prev.findIndex((p) => p.id === savedProfile.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = savedProfile;
-        return next;
+  const handleSaveProfile = async (savedProfile: ConfigurationProfile) => {
+    try {
+      const payload: Partial<VariableBlockApiResponse> = {
+        name: savedProfile.name,
+        description: savedProfile.description,
+        entity: savedProfile.venue ? undefined : (savedProfile.entity || undefined),
+        venue: savedProfile.venue || undefined,
+        variables: savedProfile.variables.map((v) => ({
+          prefix: v.prefix,
+          type: v.type || 'json',
+          weight: v.weight || 0,
+          value: typeof v.value === 'string' ? v.value : JSON.stringify(v.value),
+        })),
+        notes: savedProfile.notes,
+      };
+
+      const isExisting = profiles.some((p) => p.id === savedProfile.id);
+      let result: VariableBlockApiResponse;
+      if (isExisting) {
+        result = await updateVariableBlock(savedProfile.id, payload);
+      } else {
+        result = await createVariableBlock(payload);
       }
-      return [savedProfile, ...prev];
-    });
+
+      const mapped = mapRawVariableToProfile(result, entityNameMap, venueNameMap);
+      setProfiles((prev) => {
+        const idx = prev.findIndex((p) => p.id === mapped.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = mapped;
+          return next;
+        }
+        return [mapped, ...prev];
+      });
+    } catch (err: unknown) {
+      console.error('Failed to save variable block:', err);
+      const errorMsg =
+        (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
+          ?.ErrorDescription ||
+        (err as Error)?.message ||
+        'Failed to save variable to OWPROV.';
+      alert(errorMsg);
+    }
   };
 
   // If a profile detail page is opened
@@ -73,10 +236,6 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
           profile={activeProfile}
           onBack={() => setSelectedProfileId(null)}
           onSave={handleSaveProfile}
-          onSelectConfig={(cfgId) => {
-            setSelectedProfileId(null);
-            onNavigateToConfig?.(cfgId);
-          }}
         />
       );
     }
@@ -87,20 +246,58 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     setInternalModalOpen(true);
   };
 
-  const handleDeleteProfile = (profileId: string) => {
-    setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+  const handleDeleteProfile = async (profileId: string) => {
+    const target = profiles.find((p) => p.id === profileId);
+    if (target && target.configurations && target.configurations.length > 0) {
+      alert(
+        `Cannot delete variable "${target.name}": it is currently in use by ${target.configurations.length} configuration(s). Please remove it from those configurations before deleting.`
+      );
+      return;
+    }
+
+    const confirmMsg = `Are you sure you want to delete variable "${target?.name || profileId}"?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await deleteVariableBlock(profileId);
+      setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+    } catch (err: unknown) {
+      console.error('Failed to delete variable from OWPROV:', err);
+      const errorMsg =
+        (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
+          ?.ErrorDescription ||
+        (err as Error)?.message ||
+        'Failed to delete variable from OWPROV.';
+      alert(errorMsg);
+    }
   };
 
-  const handleDuplicateProfile = (profile: ConfigurationProfile) => {
-    const duplicated: ConfigurationProfile = {
-      ...profile,
-      id: `prof-${Date.now().toString(36)}`,
-      name: `${profile.name} (Copy)`,
-      configurations: [],
-      created: Math.floor(Date.now() / 1000),
-      modified: Math.floor(Date.now() / 1000),
-    };
-    setProfiles([duplicated, ...profiles]);
+  const handleDuplicateProfile = async (profile: ConfigurationProfile) => {
+    try {
+      const payload: Partial<VariableBlockApiResponse> = {
+        name: `${profile.name} (Copy)`,
+        description: profile.description,
+        entity: profile.venue ? undefined : (profile.entity || undefined),
+        venue: profile.venue || undefined,
+        variables: profile.variables.map((v) => ({
+          prefix: v.prefix,
+          type: v.type || 'json',
+          weight: v.weight || 0,
+          value: typeof v.value === 'string' ? v.value : JSON.stringify(v.value),
+        })),
+      };
+      const created = await createVariableBlock(payload);
+      const mapped = mapRawVariableToProfile(created, entityNameMap, venueNameMap);
+      setProfiles((prev) => [mapped, ...prev]);
+    } catch (err: unknown) {
+      console.error('Failed to duplicate variable:', err);
+      const errorMsg =
+        (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
+          ?.ErrorDescription ||
+        (err as Error)?.message ||
+        'Failed to duplicate variable.';
+      alert(errorMsg);
+    }
   };
 
   // Filter profiles
@@ -115,7 +312,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
 
     const matchesScope =
       scopeFilter === 'all' ||
-      (scopeFilter === 'global' && !p.entity && !p.venue) ||
+      (scopeFilter === 'unassigned' && !p.entity && !p.venue) ||
       (scopeFilter === 'property' && Boolean(p.entity) && !p.venue) ||
       (scopeFilter === 'venue' && Boolean(p.venue));
 
@@ -132,7 +329,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
       {!embedded && (
         <Header
           title="Configuration Profiles"
-          subtitle="Reusable variable blocks (radios, SSIDs, VLANs) in OWPROV scoped globally, per property, or per venue."
+          subtitle="Reusable variable blocks (radios, SSIDs, VLANs) in OWPROV scoped to entity, venue, or unassigned."
           primaryAction={{
             label: 'Create Profile',
             onClick: handleOpenCreateModal,
@@ -145,7 +342,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         <Flex flex="1" minW="200px" border="1px solid" borderColor={themeColors.kpi.border} borderRadius="6px" bg="#ffffff" p="14px 18px" align="center" gap={4}>
           <Icon name="layers" size={26} color={themeColors.brand.accent} />
           <Box>
-            <Text fontSize="12px" color={themeColors.text.secondary}>Total Profiles (Variables)</Text>
+            <Text fontSize="12px" color={themeColors.text.secondary}>Total Variables</Text>
             <Text fontSize="22px" fontWeight="700" color={themeColors.text.title}>{profiles.length}</Text>
           </Box>
         </Flex>
@@ -161,7 +358,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         <Flex flex="1" minW="200px" border="1px solid" borderColor={themeColors.kpi.border} borderRadius="6px" bg="#ffffff" p="14px 18px" align="center" gap={4}>
           <Icon name="sliders" size={26} color="#16a34a" />
           <Box>
-            <Text fontSize="12px" color={themeColors.text.secondary}>SSID Interface Profiles</Text>
+            <Text fontSize="12px" color={themeColors.text.secondary}>SSID Profiles</Text>
             <Text fontSize="22px" fontWeight="700" color={themeColors.text.title}>{ssidProfilesCount}</Text>
           </Box>
         </Flex>
@@ -169,7 +366,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         <Flex flex="1" minW="200px" border="1px solid" borderColor={themeColors.kpi.border} borderRadius="6px" bg="#ffffff" p="14px 18px" align="center" gap={4}>
           <Icon name="link" size={26} color="#7c3aed" />
           <Box>
-            <Text fontSize="12px" color={themeColors.text.secondary}>Referenced in Configs</Text>
+            <Text fontSize="12px" color={themeColors.text.secondary}>In Use in Configs</Text>
             <Text fontSize="22px" fontWeight="700" color={themeColors.text.title}>{inUseCount}</Text>
           </Box>
         </Flex>
@@ -188,7 +385,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
           <Box flex="2" minW="240px">
             <Input
               size="sm"
-              placeholder="Search profiles by name, prefix, or description..."
+              placeholder="Search variables by name, prefix, or description..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               bg="#ffffff"
@@ -206,6 +403,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
                 { value: 'interface.vlan', label: 'VLAN (interface.vlan)' },
                 { value: 'interface.ipv4', label: 'IPv4 (interface.ipv4)' },
                 { value: 'interface.captive', label: 'Captive (interface.captive)' },
+                { value: 'interface.tunnel', label: 'Tunnel (interface.tunnel)' },
               ]}
             />
           </Box>
@@ -216,9 +414,9 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
               onChange={setScopeFilter}
               options={[
                 { value: 'all', label: 'All Scopes' },
-                { value: 'global', label: 'Global Scope' },
-                { value: 'property', label: 'Property Scope' },
-                { value: 'venue', label: 'Venue Scope' },
+                { value: 'property', label: 'Entity Scoped' },
+                { value: 'venue', label: 'Venue Scoped' },
+                { value: 'unassigned', label: 'Unassigned' },
               ]}
             />
           </Box>
@@ -237,16 +435,13 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
           <Box as="thead" bg="#f8fafc" borderBottom="1px solid" borderColor={themeColors.panel.divider}>
             <Box as="tr">
               <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
-                Profile Name
+                Variable / Profile Name
               </Box>
               <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
                 Section Prefix
               </Box>
               <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
-                Inheritance Scope
-              </Box>
-              <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
-                Referenced By
+                Scope
               </Box>
               <Box as="th" p="12px 16px" textAlign="left" fontSize="12px" fontWeight="600" color={themeColors.text.secondary}>
                 Last Modified
@@ -258,20 +453,40 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
           </Box>
 
           <Box as="tbody">
-            {filteredProfiles.length === 0 ? (
+            {isLoading ? (
               <Box as="tr">
-                <td colSpan={6} style={{ padding: '32px', textAlign: 'center' }}>
+                <td colSpan={5} style={{ padding: '40px', textAlign: 'center' }}>
+                  <VStack gap={3} justify="center">
+                    <Spinner size="md" color={themeColors.brand.accent} />
+                    <Text fontSize="13px" color={themeColors.text.muted}>
+                      Loading variables from OWPROV...
+                    </Text>
+                  </VStack>
+                </td>
+              </Box>
+            ) : error ? (
+              <Box as="tr">
+                <td colSpan={5} style={{ padding: '32px', textAlign: 'center' }}>
+                  <VStack gap={2} justify="center">
+                    <Text fontSize="13px" color="#dc2626" fontWeight="600">
+                      {error}
+                    </Text>
+                    <Button size="xs" variant="outline" onClick={handleRetry}>
+                      Retry
+                    </Button>
+                  </VStack>
+                </td>
+              </Box>
+            ) : filteredProfiles.length === 0 ? (
+              <Box as="tr">
+                <td colSpan={5} style={{ padding: '32px', textAlign: 'center' }}>
                   <Text fontSize="13px" color={themeColors.text.muted}>
-                    No configuration profiles found matching filters.
+                    No variables found in OWPROV matching filters.
                   </Text>
                 </td>
               </Box>
             ) : (
               filteredProfiles.map((p) => {
-                const configNames = p.configurations
-                  .map((id) => MOCK_CONFIGURATIONS.find((c) => c.id === id)?.name || id)
-                  .join(', ');
-
                 return (
                   <Box
                     as="tr"
@@ -295,6 +510,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
                             cursor="pointer"
                             _hover={{ textDecoration: 'underline' }}
                             onClick={() => setSelectedProfileId(p.id)}
+                            title={`Variable ID: ${p.id}`}
                           >
                             {p.name}
                           </Text>
@@ -333,7 +549,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
                           bg="#f3e8ff"
                           color="#7e22ce"
                         >
-                          Venue: {p.venueName || 'Building B'}
+                          Venue: {p.venueName || venueNameMap.get(p.venue) || (p.venue.length > 8 ? `${p.venue.slice(0, 8)}...` : p.venue)}
                         </Box>
                       ) : p.entity ? (
                         <Box
@@ -346,49 +562,17 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
                           bg="#dcfce7"
                           color="#166534"
                         >
-                          Property: {p.entityName || 'Sunrise Apartments'}
+                          Entity: {p.entityName || entityNameMap.get(p.entity) || (p.entity.length > 8 ? `${p.entity.slice(0, 8)}...` : p.entity)}
                         </Box>
                       ) : (
-                        <Box
-                          display="inline-block"
-                          fontSize="11px"
-                          fontWeight="600"
-                          px={2}
-                          py={0.5}
-                          borderRadius="4px"
-                          bg="#f1f5f9"
-                          color={themeColors.text.secondary}
-                        >
-                          Global
-                        </Box>
-                      )}
-                    </Box>
-
-                    <Box as="td" p="12px 16px">
-                      {p.configurations.length > 0 ? (
-                        <HStack gap={1.5}>
-                          <Box
-                            fontSize="11px"
-                            fontWeight="600"
-                            px={2}
-                            py={0.5}
-                            borderRadius="10px"
-                            bg="#eff6ff"
-                            color={themeColors.brand.accent}
-                            title={configNames}
-                          >
-                            {p.configurations.length} {p.configurations.length === 1 ? 'Config' : 'Configs'}
-                          </Box>
-                        </HStack>
-                      ) : (
-                        <Text fontSize="11px" color={themeColors.text.muted}>
-                          Unused
+                        <Text fontSize="12px" color={themeColors.text.muted}>
+                          —
                         </Text>
                       )}
                     </Box>
 
                     <Box as="td" p="12px 16px" fontSize="12px" color={themeColors.text.secondary}>
-                      {new Date(p.modified * 1000).toLocaleDateString()}
+                      {p.modified ? new Date(p.modified * 1000).toLocaleDateString() : '—'}
                     </Box>
 
                     <Box as="td" p="12px 16px" textAlign="right">
@@ -407,7 +591,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
                           variant="outline"
                           borderColor={themeColors.panel.border}
                           onClick={() => handleDuplicateProfile(p)}
-                          title="Duplicate profile"
+                          title="Duplicate variable"
                         >
                           <Icon name="copy" size={12} />
                         </Button>
@@ -418,7 +602,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
                           color="#dc2626"
                           _hover={{ bg: '#fee2e2' }}
                           onClick={() => handleDeleteProfile(p.id)}
-                          title="Delete profile"
+                          title="Delete variable"
                         >
                           <Icon name="trash" size={12} color="#dc2626" />
                         </Button>
@@ -444,3 +628,4 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
 };
 
 export default ConfigurationProfilesPage;
+

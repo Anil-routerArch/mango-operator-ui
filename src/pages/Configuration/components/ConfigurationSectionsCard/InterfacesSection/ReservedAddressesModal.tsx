@@ -18,10 +18,11 @@ import type { DhcpReservedAddressItem } from '../types';
 interface ReservedAddressesModalProps {
   isOpen: boolean;
   onClose: () => void;
-  interfaceName: string;
+  interfaceName?: string;
   reservedAddresses: DhcpReservedAddressItem[];
   onSave: (addresses: DhcpReservedAddressItem[]) => void;
   disabled?: boolean;
+  subnet?: string;
 }
 
 type ReservedSortField = 'macaddr' | 'staticLeaseOffset' | 'leaseTime' | 'publishHostname' | null;
@@ -31,6 +32,7 @@ const ReservedAddressesDialog: React.FC<Omit<ReservedAddressesModalProps, 'isOpe
   reservedAddresses,
   onSave,
   disabled = false,
+  subnet,
 }) => {
   const [draftAddresses, setDraftAddresses] = useState<DhcpReservedAddressItem[]>(() => [
     ...reservedAddresses,
@@ -38,6 +40,13 @@ const ReservedAddressesDialog: React.FC<Omit<ReservedAddressesModalProps, 'isOpe
 
   // Form state
   const [macaddr, setMacaddr] = useState<string>('');
+  const [ipAddress, setIpAddress] = useState<string>(() => {
+    if (subnet && subnet.includes('.')) {
+      const parts = subnet.split('/')[0].split('.');
+      return `${parts.slice(0, 3).join('.')}.2`;
+    }
+    return '';
+  });
   const [staticLeaseOffset, setStaticLeaseOffset] = useState<number>(2);
   const [leaseTime, setLeaseTime] = useState<string>('6h');
   const [publishHostname, setPublishHostname] = useState<boolean>(true);
@@ -48,8 +57,34 @@ const ReservedAddressesDialog: React.FC<Omit<ReservedAddressesModalProps, 'isOpe
   const [pageSize, setPageSize] = useState<number>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
+  const handleIpChange = (val: string) => {
+    setIpAddress(val);
+    if (val.includes('.')) {
+      const parts = val.trim().split('.');
+      const lastOctet = parseInt(parts[parts.length - 1], 10);
+      if (subnet && subnet.includes('.')) {
+        const subParts = subnet.split('/')[0].split('.');
+        const subLastOctet = parseInt(subParts[subParts.length - 1], 10);
+        const diff = lastOctet - subLastOctet;
+        if (diff > 0) setStaticLeaseOffset(diff);
+        else setStaticLeaseOffset(Math.abs(diff) || 1);
+      } else if (!isNaN(lastOctet)) {
+        setStaticLeaseOffset(lastOctet);
+      }
+    } else {
+      const num = parseInt(val, 10);
+      if (!isNaN(num)) setStaticLeaseOffset(num);
+    }
+  };
+
   const handleReset = () => {
     setMacaddr('');
+    if (subnet && subnet.includes('.')) {
+      const parts = subnet.split('/')[0].split('.');
+      setIpAddress(`${parts.slice(0, 3).join('.')}.2`);
+    } else {
+      setIpAddress('');
+    }
     setStaticLeaseOffset(2);
     setLeaseTime('6h');
     setPublishHostname(true);
@@ -114,7 +149,7 @@ const ReservedAddressesDialog: React.FC<Omit<ReservedAddressesModalProps, 'isOpe
     }
   };
 
-  const isAddDisabled = !macaddr.trim();
+  const isAddDisabled = !macaddr.trim() || !ipAddress.trim();
 
   return (
     <Box
@@ -214,14 +249,13 @@ const ReservedAddressesDialog: React.FC<Omit<ReservedAddressesModalProps, 'isOpe
 
               <Box>
                 <Text fontSize="12px" fontWeight="600" color="#334155" mb={1.5}>
-                  static-lease-offset <Text as="span" color="#dc2626">*</Text>
+                  IP Address <Text as="span" color="#dc2626">*</Text>
                 </Text>
                 <Input
                   size="sm"
-                  type="number"
-                  min={1}
-                  value={staticLeaseOffset}
-                  onChange={(e) => setStaticLeaseOffset(Number(e.target.value) || 1)}
+                  value={ipAddress}
+                  onChange={(e) => handleIpChange(e.target.value)}
+                  placeholder={subnet ? `${subnet.split('.').slice(0, 3).join('.')}.2` : '192.168.1.2'}
                   disabled={disabled}
                   borderRadius="8px"
                   borderColor="#cbd5e1"

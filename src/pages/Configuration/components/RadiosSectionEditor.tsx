@@ -11,7 +11,6 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
-import { MOCK_PROFILES } from '../mockData/mockConfigurations';
 import type {
   RadioBandConfig,
   ConfigurationProfile,
@@ -29,7 +28,7 @@ export const RadiosSectionEditor: React.FC<RadiosSectionEditorProps> = ({
   bands,
   onUpdateBands,
   onViewProfile,
-  availableProfiles = MOCK_PROFILES.filter((p) => p.prefix === 'radio'),
+  availableProfiles = [],
 }) => {
   const [expandedBand, setExpandedBand] = useState<string>('5 GHz');
 

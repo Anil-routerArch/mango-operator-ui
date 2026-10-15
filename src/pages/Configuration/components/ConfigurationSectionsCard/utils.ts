@@ -6,6 +6,8 @@ import type {
   SingleSsidConfigItem,
   InterfaceEthernetItem,
 } from './types';
+import { parseOwprovPasspoint, buildOwprovPasspoint } from '../../types/passpoint';
+import { parseOwprovCaptive, buildOwprovCaptive } from '../../types/captive';
 
 export const getInitialSectionsState = (): ConfigurationSectionsState => ({
   activeSections: [],
@@ -516,6 +518,14 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
             }));
           }
         }
+        if (iface.ipv4.portForward && iface.ipv4.portForward.length > 0) {
+          ipv4Obj['port-forward'] = iface.ipv4.portForward.map((pf) => ({
+            protocol: pf.protocol,
+            'external-port': pf.externalPort,
+            'internal-port': pf.internalPort,
+            'internal-address': pf.internalAddress,
+          }));
+        }
         ifaceObj.ipv4 = ipv4Obj;
       }
 
@@ -573,11 +583,10 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
           }
 
           if (s.passPoint?.enabled) {
-            ssidObj['pass-point'] = {
-              ...(s.passPoint.venueName?.length ? { 'venue-name': s.passPoint.venueName } : {}),
-              ...(s.passPoint.venueUrl?.length ? { 'venue-url': s.passPoint.venueUrl } : {}),
-              ...(s.passPoint.domainName?.length ? { 'domain-name': s.passPoint.domainName } : {}),
-            };
+            const ppData = buildOwprovPasspoint(s.passPoint);
+            if (ppData) {
+              ssidObj['pass-point'] = ppData;
+            }
           }
 
           if (s.advanced) {
@@ -633,13 +642,11 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
             };
           }
 
-          if (s.captivePortal?.mode && s.captivePortal.mode !== 'none') {
-            ssidObj.captive = {
-              ...(s.captivePortal.walledGardenFqdn?.length ? { 'walled-garden-fqdn': s.captivePortal.walledGardenFqdn } : {}),
-              ...(s.captivePortal.walledGardenIpaddr?.length ? { 'walled-garden-ipaddr': s.captivePortal.walledGardenIpaddr } : {}),
-              ...(s.captivePortal.idleTimeout !== undefined ? { 'idle-timeout': s.captivePortal.idleTimeout } : {}),
-              ...(s.captivePortal.sessionTimeout !== undefined ? { 'session-timeout': s.captivePortal.sessionTimeout } : {}),
-            };
+          if (s.captivePortal && s.captivePortal.authMode !== 'none') {
+            const capData = buildOwprovCaptive(s.captivePortal);
+            if (capData) {
+              ssidObj.captive = capData;
+            }
           }
 
           if (s.accessControlList?.enabled) {
@@ -1240,6 +1247,18 @@ export const parseUCentralJsonToSectionsState = (
         leaseFirst: Number(dhcpRaw['lease-first'] ?? ipv4Raw['lease-first'] ?? 10),
         leaseCount: Number(dhcpRaw['lease-count'] ?? ipv4Raw['lease-count'] ?? 100),
         leaseTime: String(dhcpRaw['lease-time'] ?? ipv4Raw['lease-time'] ?? '6h'),
+        portForward: (Array.isArray(ipv4Raw['port-forward'])
+          ? (ipv4Raw['port-forward'] as Record<string, unknown>[])
+          : Array.isArray(ipv4Raw.portForward)
+          ? (ipv4Raw.portForward as Record<string, unknown>[])
+          : []
+        ).map((pf, idx) => ({
+          id: `pf-${idx}-${Date.now()}`,
+          protocol: String(pf.protocol ?? 'any'),
+          externalPort: (pf['external-port'] ?? pf.externalPort ?? '') as string | number,
+          internalPort: (pf['internal-port'] ?? pf.internalPort ?? '') as string | number,
+          internalAddress: String(pf['internal-address'] ?? pf.internalAddress ?? ''),
+        })),
       };
 
       const ipv6Raw = (iface.ipv6 as Record<string, unknown> | undefined) || {};
@@ -1308,14 +1327,7 @@ export const parseUCentralJsonToSectionsState = (
           : undefined;
 
         const ppRaw = (s['pass-point'] || s.passPoint) as Record<string, unknown> | undefined;
-        const passPoint = ppRaw
-          ? {
-              enabled: true,
-              venueName: Array.isArray(ppRaw['venue-name'] ?? ppRaw.venueName) ? ((ppRaw['venue-name'] ?? ppRaw.venueName) as unknown[]).map(String) : undefined,
-              venueUrl: Array.isArray(ppRaw['venue-url'] ?? ppRaw.venueUrl) ? ((ppRaw['venue-url'] ?? ppRaw.venueUrl) as unknown[]).map(String) : undefined,
-              domainName: Array.isArray(ppRaw['domain-name'] ?? ppRaw.domainName) ? ((ppRaw['domain-name'] ?? ppRaw.domainName) as unknown[]).map(String) : undefined,
-            }
-          : undefined;
+        const passPoint = ppRaw ? parseOwprovPasspoint(ppRaw) : undefined;
 
         const advRaw = (s.advanced as Record<string, unknown> | undefined) || {};
         const multiPskRaw = Array.isArray(s['multi-psk'])
@@ -1367,13 +1379,7 @@ export const parseUCentralJsonToSectionsState = (
 
         const capRaw = (s.captive || s['captive-portal'] || s.captivePortal) as Record<string, unknown> | undefined;
         const captivePortal = (capRaw && typeof capRaw === 'object')
-          ? {
-              mode: capRaw.mode ? String(capRaw.mode) : 'click-to-continue',
-              walledGardenFqdn: Array.isArray(capRaw['walled-garden-fqdn'] ?? capRaw.walledGardenFqdn) ? ((capRaw['walled-garden-fqdn'] ?? capRaw.walledGardenFqdn) as unknown[]).map(String) : [],
-              walledGardenIpaddr: Array.isArray(capRaw['walled-garden-ipaddr'] ?? capRaw.walledGardenIpaddr) ? ((capRaw['walled-garden-ipaddr'] ?? capRaw.walledGardenIpaddr) as unknown[]).map(String) : [],
-              idleTimeout: capRaw['idle-timeout'] !== undefined ? Number(capRaw['idle-timeout']) : (capRaw.idleTimeout !== undefined ? Number(capRaw.idleTimeout) : undefined),
-              sessionTimeout: capRaw['session-timeout'] !== undefined ? Number(capRaw['session-timeout']) : (capRaw.sessionTimeout !== undefined ? Number(capRaw.sessionTimeout) : undefined),
-            }
+          ? parseOwprovCaptive(capRaw)
           : undefined;
 
         const aclRaw = (s['access-control-list'] || s.accessControlList) as Record<string, unknown> | undefined;

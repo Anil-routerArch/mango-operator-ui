@@ -1,4 +1,6 @@
 import type { SingleInterfaceConfigItem, SingleSsidConfigItem } from '../types';
+import { DEFAULT_PASSPOINT_CONFIG } from '../../../types/passpoint';
+import { DEFAULT_CAPTIVE_PORTAL_CONFIG } from '../../../types/captive';
 
 export const INTERFACE_SERVICES = [
   'dhcp-snooping',
@@ -258,7 +260,7 @@ export const getDefaultSsid = (index: number): SingleSsidConfigItem => ({
     keyCaching: true,
   },
   passPoint: {
-    enabled: false,
+    ...DEFAULT_PASSPOINT_CONFIG,
   },
   advanced: {
     hiddenSsid: false,
@@ -291,11 +293,7 @@ export const getDefaultSsid = (index: number): SingleSsidConfigItem => ({
     ftmResponder: false,
     stationaryAp: false,
   },
-  captivePortal: {
-    mode: 'none',
-    walledGardenFqdn: [],
-    walledGardenIpaddr: [],
-  },
+  captivePortal: { ...DEFAULT_CAPTIVE_PORTAL_CONFIG },
   accessControlList: {
     enabled: false,
     mode: 'allow',

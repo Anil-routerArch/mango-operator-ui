@@ -8,7 +8,8 @@ export type VariablePrefixType =
   | 'interface.captive'
   | 'interface.tunnel'
   | 'interface.ssid.radius'
-  | 'interface.ssid.openroaming';
+  | 'interface.ssid.openroaming'
+  | (string & {});
 
 export type ProfileSettingsValue = string | number | boolean | string[] | Record<string, unknown>;
 
@@ -39,7 +40,7 @@ export interface ConfigurationAssignment {
 // OWPROV Variable Element inside variables table
 export interface VariableBlockElement {
   prefix: VariablePrefixType;
-  type: 'json';
+  type: string;
   value: string; // Serialized JSON string of the configuration section
   weight: number;
 }
