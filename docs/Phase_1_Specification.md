@@ -2113,24 +2113,22 @@ const allVarIds = Array.from(
 );
 ```
 
-### 30.3 Batch API Name Resolution & Error Isolation
-1. **Batch Query Dispatch:** The UI aggregates all unique variable UUIDs and dispatches `GET /api/v1/variable?select=uuid1,uuid2` via `getVariableBlocksSelect(ids)`.
-2. **Error Isolation & Missing Reference Handling:** If OWPROV returns an error (such as `400 Bad Request` with `UnknownId` caused by a deleted VariableBlock record) or if any requested UUID is omitted from the response:
-   - The UI isolates the unresolvable UUID(s).
-   - Successfully resolved profiles render as standard interactive pills.
-   - Missing or deleted UUIDs render as an **"Unresolved Profile"** warning pill (`[⚠️ Missing Profile: <uuid>]` with a warning badge and tooltip: *"Referenced Profile ID not found or deleted"*).
-   - The UI maintains table stability and does not crash or omit the configuration row.
-3. **Graceful Cache Fallback:** If the select query fails due to network or compatibility reasons, the system gracefully falls back to local cache or `getAllVariableBlocks()` with pagination.
-4. **Interactive Pill UI Presentation:** In the Configurations table, referenced profiles render as styled, interactive pills with hover tooltips showing section prefix and full Variable UUID.
+### 30.3 Batch API Name Resolution & Error Handling
+1. **Batch Query Dispatch:** The UI aggregates all unique variable UUIDs across configurations and dispatches `GET /api/v1/variable?select=uuid1,uuid2` via `getVariableBlocksSelect(ids)` to resolve human-readable Profile names.
+2. **Transport / Network Error Isolation:** If the batch query fails due to transport or network issues (e.g., 5xx server errors, connection timeout, network offline), the UI does not mischaracterize referenced profiles as deleted. Instead, the UI renders a neutral fallback pill:
+   - Presentation: `[Profile: <uuid>]`
+   - Tooltip: *"Unable to load profile name (network/server error)"*
+   - Table stability is maintained, and the configuration row remains fully interactive.
+3. **Graceful Cache Fallback:** If cached or previously ingested Profile records from `getAllVariableBlocks()` are available, the UI resolves names from cache.
+4. **Interactive Pill UI Presentation:** Successfully resolved profiles render as styled, interactive pills with hover tooltips showing section prefix and full Variable UUID.
 
 ---
 
-## 31. Configuration Concurrency & Stale Data Handling
+## 31. Backend Concurrency Reality & Root Variables Preservation
 
-### 31.1 Concurrency & Conflict Protection
-When an operator opens a Configuration for editing, the UI fetches a fresh copy of the record via `GET /api/v1/configuration/{id}`.
-* **Pre-Save Timestamp Validation:** Before committing mutations, the UI checks whether the record has been modified concurrently (`modified` timestamp or version change).
-* **Stale Data Notification:** If another operator modifies the Configuration concurrently and a save attempt encounters a conflict, the UI presents a reload dialog prompting the operator to review concurrent changes rather than silently overwriting them.
+### 31.1 Backend Concurrency Model (Last-Write-Wins)
+* **Authoritative Backend Contract:** OWPROV's existing `PUT /api/v1/configuration/{id}` API operates strictly under a **Last-Write-Wins (LWW)** model. OWPROV does not currently evaluate HTTP conditional headers (such as `If-Match` or `ETag`), nor does it reject stale updates with `409 Conflict`.
+* **Current UI Behavior:** When saving an edited Configuration, the UI dispatches the updated payload via `PUT /api/v1/configuration/{id}`. In alignment with OWPROV's current capabilities, no client-side blocking or conflict dialogs are enforced at this time; full atomic optimistic concurrency control is deferred until supported natively by the backend service.
 
 ### 31.2 Authoritative Root Variables Preservation
 In accordance with OWPROV's configuration model and lossless editing guarantees:
@@ -2306,15 +2304,15 @@ export interface ModularConfigurationApiResponse {
 ### 35.1 Variable Scanning & Reference Presentation
 - **TC-CFG-001 (Recursive Variable Block Extraction):** Load configurations where `__variableBlock` is deeply embedded inside nested `configuration[].configuration` JSON strings and arrays. Verify `extractVariableBlockUuids` captures 100% of referenced UUIDs for table display.
 - **TC-CFG-002 (Batch Name Resolution):** In Configurations table, verify `GET /api/v1/variable?select=...` is dispatched with extracted UUIDs. Verify pills render human-readable Profile names instead of raw UUIDs.
-- **TC-CFG-003 (Batch Resolution Fallback):** Mock network failure on `GET /api/v1/variable?select=...`. Verify UI catches error, falls back to `getAllVariableBlocks()`, and successfully renders profile names.
+- **TC-CFG-003 (Batch Resolution Network Failure Isolation):** Mock network failure on `GET /api/v1/variable?select=...`. Verify UI catches error and renders neutral fallback pill `[Profile: <uuid>]` with tooltip *"Unable to load profile name (network/server error)"* without crashing the table.
 - **TC-CFG-004 (Interactive Variable Pill Tooltip):** Hover over a rendered Profile pill. Verify tooltip displays section prefix and full Variable UUID.
 - **TC-CFG-005 (Profile Scope Eligibility Rejection in UI):** When authoring a Configuration at Property A, open the profile selection dropdown. Verify profiles belonging to Property B are omitted and cannot be selected.
-- **TC-CFG-006 (Unresolved / Deleted Profile Isolation):** Load a configuration referencing a deleted or missing VariableBlock UUID. Verify the configuration table renders row stably with an "Unresolved Profile" warning pill rather than crashing.
+- **TC-CFG-006 (Table Stability on Unresolved Reference):** Load a configuration referencing an unresolvable or missing VariableBlock UUID. Verify the configuration table renders row stably with a fallback representation rather than crashing.
 
 ### 35.2 Lossless Configuration Editing & Dependency Preservation
 - **TC-CFG-007 (Lossless Configuration Section Preservation):** Load a configuration containing custom or unrecognized JSON sections. Edit only the Radio section and save. Verify untouched custom sections are preserved verbatim in the submitted payload.
 - **TC-CFG-008 (Root Variables Preservation on Edit):** Load a configuration that has root `variables: ["legacy-uuid-1"]` not referenced in any UI form section. Save an edit to an SSIDs section. Verify `legacy-uuid-1` remains intact in the saved configuration payload without being stripped by the client.
-- **TC-CFG-009 (Concurrent Edit Conflict Warning):** When a concurrent modification is detected on save, verify the UI provides a reload prompt rather than overwriting changes silently.
+- **TC-CFG-009 (Standard Configuration Update):** Edit an existing configuration and click Save. Verify payload is submitted via `PUT /api/v1/configuration/{id}` with updated fields and `200 OK` response updates the UI.
 
 ### 35.3 Configuration Lifecycle & Impact
 - **TC-CFG-010 (Configuration Creation):** Create modular configuration with name, AP device group, scope, and sections. Verify record appears in table.
