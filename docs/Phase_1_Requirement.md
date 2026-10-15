@@ -984,7 +984,11 @@ Configuration resolution occurs dynamically on-demand via OWPROV's **`APConfig`*
 
 - **CFG-058:** Configuration Profile referencing within a Configuration must enforce strict scope eligibility in the UI. When authoring a Configuration at Property scope, the Profile selector must only offer Profiles belonging to that Property (`entity`). When authoring at Venue scope, the selector must only offer Profiles belonging to that Venue or its ancestor Venue/Property hierarchy. Profiles belonging to other Properties must be excluded from selection.
 
-- **CFG-059:** Sensitive credentials across all Configuration Profile sections (including RADIUS shared secrets, local user passwords, and Wi-Fi pre-shared keys) must be masked by default in all view and edit states (`type="password"` with an optional visibility toggle), must never be logged or exposed in query strings, and must be preserved during edits if untouched by the operator without requiring re-entry.
+- **CFG-059:** Sensitive credentials across all Configuration Profile sections (including RADIUS shared secrets, local user passwords, and Wi-Fi pre-shared keys) must be protected using three explicit UI handling states:
+  1. *Unchanged:* The input displays a masked placeholder (`••••••••`), and saving retains the existing secret without requiring re-entry.
+  2. *Replaced:* The operator enters a new value using a masked input field (`type="password"` with visibility toggle), which replaces the old secret in the submission payload.
+  3. *Cleared:* When an operator disables authentication or switches to an open mode (e.g. `Open` Wi-Fi or disabling accounting), the secret property is removed from the payload.
+  Secrets must never be exposed in plaintext in read-only cards, browser logs, or URL query strings.
 
 ## 10.3 Configuration Profiles List
 - **CFG-019:** The Configuration Profiles list must display:
@@ -1029,22 +1033,22 @@ Configuration resolution occurs dynamically on-demand via OWPROV's **`APConfig`*
   - Duplicate
   - Delete
 
-### Recursive Variable Block Extraction & Human-Readable Resolution
+### Recursive Variable Block Extraction & Human-Readable Resolution (Read-Only Table Presentation)
 
 In OWPROV configurations, Profile references may be embedded deeply inside nested JSON structures (e.g., inside interfaces, SSIDs, or radios) as `{"__variableBlock": ["<uuid>"]}`. In legacy or externally created configurations, the top-level `variables[]` array may be empty even when variable blocks are actively referenced in subsections.
 
-To ensure accurate, robust presentation in the Configurations table:
-1. **Recursive Deep Scanning:** The UI recursively traverses the entire `configuration` JSON tree of each record to locate all occurrences of the `"__variableBlock"` key, extracting all referenced UUIDs.
-2. **Set Union & Deduplication:** Extracted UUIDs are merged with any UUIDs present in the configuration's top-level `variables` array, producing a complete, deduplicated set of referenced Profile UUIDs.
+To ensure accurate, robust presentation in the Configurations table without mutating configuration payloads:
+1. **Recursive Deep Scanning (Read-Only):** The UI recursively traverses the entire `configuration` JSON tree of each record to locate all occurrences of the `"__variableBlock"` key, extracting all referenced UUIDs strictly for display and name resolution.
+2. **Set Union & Deduplication:** Extracted UUIDs are merged with any UUIDs present in the configuration's top-level `variables` array, producing a complete, deduplicated set of referenced Profile UUIDs for table display.
 3. **Batch Variable Resolution & Error Isolation:** The UI resolves variable UUIDs into human-readable Profile names via batch API queries (`GET /api/v1/variable?select=uuid1,uuid2`). If individual referenced UUIDs cannot be resolved (due to profile deletion or missing records resulting in backend error responses), the UI isolates the missing UUIDs, continues rendering all successfully resolved profiles, and flags the missing references with a distinct warning badge rather than crashing or dropping the row.
 4. **Interactive Pill Display:** Referenced Profiles are rendered as styled, interactive pills displaying the profile name. Hovering over a pill presents a tooltip with the profile's section prefix and full UUID.
 
 - **CFG-054:** The Configurations list must display referenced profiles as interactive, styled pills with tooltips showing section prefix and UUID.
-- **CFG-055:** The UI must implement recursive deep scanning of configuration JSON to extract all nested `__variableBlock` references, combining them with the top-level `variables` array.
+- **CFG-055:** The UI must implement recursive deep scanning of configuration JSON on read to extract all nested `__variableBlock` references for table display, combining them with the top-level `variables` array without altering the configuration payload on save.
 - **CFG-056:** The UI must resolve referenced variable UUIDs into human-readable Profile names via batch API queries with automatic fallback handling.
 - **CFG-060:** When a referenced Configuration Profile cannot be resolved from the backend (e.g. record deleted), the UI must isolate the missing identifier, display an "Unresolved Profile" warning badge, and maintain table stability without blocking inspection of the Configuration.
 
-## 10.5 Configuration Creation, Editing, and Variable Synchronization
+## 10.5 Configuration Creation and Editing
 
 -   **CFG-026:** Users must be able to create and edit named Configurations.
 -   **CFG-027:** Configurations must provide understandable groups of settings (Radios, Interfaces, SSIDs, Routing, Services).
@@ -1060,16 +1064,6 @@ Configurations authored across heterogeneous tools or previous platform versions
 3. **Raw JSON Inspection & Safe Fallback:** Operators must be able to inspect raw configuration JSON, and the UI must warn operators before applying any destructive transformations.
 
 - **CFG-061:** Configuration editing must adhere to a lossless contract: unrecognized sections, custom JSON directives, and unedited sections within `configuration[]` must be preserved intact upon saving.
-
-### Two-Way Variable Synchronization on Save
-
-To guarantee data integrity and maintain OWPROV's reverse dependency tracking:
-1. When an operator selects a Configuration Profile in the configuration editor, the subsection is populated with the reference block: `{"__variableBlock": ["<uuid>"]}`.
-2. Upon submitting the Configuration (via `POST` or `PUT`), the UI automatically scans the assembled configuration payload, extracts all referenced `__variableBlock` UUIDs, and populates the root `variables` array (`variables: ["<uuid1>", "<uuid2>"]`).
-3. This payload structure triggers the OWPROV C++ backend's `ManageMembership` / `AddMembership` routines, ensuring the Configuration is added to the `VariableBlock.configurations` list in the database.
-4. This two-way synchronization guarantees that OWPROV's native dependency-safe deletion checks (`CFG-017`, `CFG-022`) function correctly and prevent accidental orphan states.
-
-- **CFG-057:** Saving a Configuration must automatically synchronize all embedded `__variableBlock` references into the top-level `variables` payload array to ensure OWPROV backend membership registration and reverse dependency tracking.
 
 ### Configuration Deletion Dependency Guard
 

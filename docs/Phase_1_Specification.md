@@ -26,10 +26,10 @@
 > 1. **Users Tab (Administration):** Identity management, authentication lifecycles, user directory with search/filters/pagination, real-time KPI metrics, detailed profile editing, scoped access infrastructure management (MRAs), and user onboarding.
 > 2. **Policies Tab (Administration):** Management policy catalog, headline policy KPIs, resource permissions visualizer, overview aggregation API, and root-only policy lifecycle administration.
 > 3. **Configuration Profiles Tab (Configuration):** Section-level reusable configuration building blocks mapping directly to OWPROV `VariableBlock` resources, with specialized form builders, validation rules, and JSON wire serializers across eight (8) foundational profile sections (`radio`, `interface.ssid`, `interface.ipv4`, `interface.ssid.radius`, `interface.vlan`, `interface.tunnel`, `interface.captive`, `interface.ssid.openroaming`).
-> 4. **Configurations Tab (Configuration):** Modular multi-section configuration authoring, deep recursive variable block scanning (`__variableBlock`), batch name resolution (`?select=`), automatic two-way backend synchronization (`variables[]`) on save to guarantee reverse membership in `variableBlock.configurations`, and lifecycle management.
+> 4. **Configurations Tab (Configuration):** Modular multi-section configuration authoring, deep recursive variable block scanning (`__variableBlock`) for read-time name resolution (`?select=`), lossless configuration editing with root `variables[]` preservation, and lifecycle management.
 >
 > **Scope of this Document:**  
-> This specification covers the core modules of Phase 1: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab, its resource permissions configuration, and aggregation integrations; **Part 3** details the Configuration Profiles Tab and supported section schemas; **Part 4** details the Modular Configurations Tab, variable extraction algorithms, two-way backend synchronization, and deployment lifecycle. This document provides the authoritative normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
+> This specification covers the core modules of Phase 1: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab, its resource permissions configuration, and aggregation integrations; **Part 3** details the Configuration Profiles Tab and supported section schemas; **Part 4** details the Modular Configurations Tab, read-only variable extraction algorithms, lossless editing guarantees, and deployment lifecycle. This document provides the authoritative normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
 
 ---
 
@@ -1831,7 +1831,10 @@ To ensure that operational security boundaries are strictly maintained across al
 * **Masked Display:** Inputs for sensitive fields (including RADIUS shared secrets, local user passwords, and Wi-Fi pre-shared keys) must be rendered using masked controls (`type="password"`) equipped with an explicit visibility toggle button.
 * **Masked Summary Views:** Credentials must never be rendered in plaintext in table cells, inspection drawers, or summary cards.
 * **Telemetry & Log Isolation:** Sensitive values must be strictly excluded from browser console logging, analytics payloads, and URL query strings.
-* **Preservation on Edit:** When editing an existing Profile, untouched secrets are retained in memory. The UI does not force the operator to re-enter unchanged credentials, nor does it send empty placeholder strings back to the backend.
+* **Explicit Handling States on Edit:**
+  1. *Unchanged (Preserved):* When loading a Profile from OWPROV via `GET /api/v1/variable/{id}`, the existing secret is held in component state while the form field renders a masked placeholder (`••••••••`). If the operator does not edit this field, the existing secret value is preserved in the submission payload without requiring re-entry.
+  2. *Replaced (Modified):* If the operator enters a new credential, the input masks the typed characters, and the new plaintext value replaces the old secret in the `PUT /api/v1/variable/{id}` payload.
+  3. *Cleared (Omitted):* If the operator disables authentication or switches to an unauthenticated mode (e.g. changing encryption to `Open` or turning off RADIUS accounting), the secret property is completely stripped from the JSON payload.
 
 ---
 
@@ -2066,7 +2069,7 @@ A Modular Configuration consists of:
 * Top-level metadata (`name`, `description`, `deviceGroup`, `deviceTypes`).
 * Scope assignment (`entity` for Property, or `venue` for Venue).
 * Array of configuration subsections (`configuration[]`), where each element contains `name`, `weight`, and `configuration`.
-* Root `variables[]` array containing the UUIDs of all referenced `VariableBlock` records.
+* Preserved root `variables[]` array containing the UUIDs of `VariableBlock` records assigned to this configuration.
 
 ### 29.2 Profile Referencing Semantics (`__variableBlock`)
 When an operator links a section to a Configuration Profile:
@@ -2086,19 +2089,21 @@ Configurations in OWPROV can contain arbitrary sections and vendor directives be
 
 ---
 
-## 30. Recursive Variable Block Extraction & Batch Name Resolution
+## 30. Recursive Variable Block Extraction & Batch Name Resolution (Read-Only Table Presentation)
 
 ### 30.1 Deep Recursive Scanner Algorithm
 In legacy, third-party, or manually edited configurations, top-level `variables[]` arrays may be empty while nested subsections contain active `__variableBlock` references.
 
-The UI executes a deep recursive scanner (`extractVariableBlockUuids` in `src/pages/Configuration/utils/variableExtractor.ts`):
+The UI executes a deep recursive scanner (`extractVariableBlockUuids` in `src/pages/Configuration/utils/variableExtractor.ts`) strictly for read-time presentation and name resolution:
 1. Traverses the entire configuration object tree, arrays, and embedded JSON strings.
 2. Identifies all objects containing the key `__variableBlock`.
 3. Handles both array representations (`["<uuid>"]`) and legacy string representations (`"<uuid>"`).
 4. Returns a deduplicated array of all referenced VariableBlock UUIDs.
 
-### 30.2 Merge & Deduplication with Root Variables
-The UI combines UUIDs extracted via recursive scanning with any UUIDs declared in `configuration.variables[]`:
+**Critical Architectural Boundary (Read-Only Table Presentation):** The recursive extraction of `__variableBlock` references is strictly a **read-only client-side presentation utility** used to resolve human-readable profile names for table pills. The UI **never** overwrites, replaces, or synthesizes the root `variables[]` array when saving configurations, avoiding any unintended clobbering of root-level dependencies or third-party references.
+
+### 30.2 Merge & Deduplication with Root Variables for Name Lookup
+To present a comprehensive list of all referenced profiles in the Configurations table, the UI combines UUIDs extracted via recursive scanning with any UUIDs declared in `configuration.variables[]`:
 ```typescript
 const allVarIds = Array.from(
   new Set([
@@ -2116,34 +2121,22 @@ const allVarIds = Array.from(
    - Missing or deleted UUIDs render as an **"Unresolved Profile"** warning pill (`[⚠️ Missing Profile: <uuid>]` with a warning badge and tooltip: *"Referenced Profile ID not found or deleted"*).
    - The UI maintains table stability and does not crash or omit the configuration row.
 3. **Graceful Cache Fallback:** If the select query fails due to network or compatibility reasons, the system gracefully falls back to local cache or `getAllVariableBlocks()` with pagination.
-4. **Interactive Pill UI Presentation:** In the Configurations table, referenced profiles render as styled, interactive pills with hover tooltips showing section prefix and full UUID.
+4. **Interactive Pill UI Presentation:** In the Configurations table, referenced profiles render as styled, interactive pills with hover tooltips showing section prefix and full Variable UUID.
 
 ---
 
-## 31. Two-Way Save-Time Synchronization & OWPROV Membership Registration
+## 31. Configuration Concurrency & Stale Data Handling
 
-### 31.1 Two-Way Synchronization Architecture
-To ensure complete referential integrity across the OpenWifi ecosystem:
-1. When an operator selects a Profile in `ModularConfigModal.tsx`, the section payload receives `{"__variableBlock": [profileId]}`.
-2. On saving (create or edit), the UI runs `extractVariableBlockUuids(assembledSections)` to discover all active `__variableBlock` references.
-3. The UI automatically populates the root `variables` array:
-   ```typescript
-   const extractedVarIds = extractVariableBlockUuids(assembledSections);
-   const payload: ModularConfigurationPayload = {
-     ...formValues,
-     variables: extractedVarIds,
-     configuration: assembledSections
-   };
-   ```
-4. This payload is dispatched via `POST /api/v1/configuration/0` or `PUT /api/v1/configuration/{id}`.
+### 31.1 Concurrency & Conflict Protection
+When an operator opens a Configuration for editing, the UI fetches a fresh copy of the record via `GET /api/v1/configuration/{id}`.
+* **Pre-Save Timestamp Validation:** Before committing mutations, the UI checks whether the record has been modified concurrently (`modified` timestamp or version change).
+* **Stale Data Notification:** If another operator modifies the Configuration concurrently and a save attempt encounters a conflict, the UI presents a reload dialog prompting the operator to review concurrent changes rather than silently overwriting them.
 
-### 31.2 OWPROV Backend Membership Tracking
-When `variables[]` is populated in the configuration payload, the OWPROV C++ backend's `ManageMembership` / `AddMembership` routines automatically:
-* Register the Configuration's UUID in each referenced `VariableBlock`'s `configurations` array in the database.
-* When an operator attempts to delete a VariableBlock, OWPROV checks `!Existing.configurations.empty()` and rejects deletion with `StillInUse` (`RESTAPI::Errors::StillInUse`) if references remain (`CFG-017`, `CFG-022`, `TC-PRF-007`).
-
-### 31.3 Concurrency & Stale Data Handling
-When an operator opens a Configuration for editing, the UI fetches a fresh copy of the record. If another operator modifies the Configuration concurrently and a save attempt encounters a conflict or unexpected state, the UI prompts the operator with a reload dialog to prevent silently overwriting concurrent changes.
+### 31.2 Authoritative Root Variables Preservation
+In accordance with OWPROV's configuration model and lossless editing guarantees:
+* When an existing configuration is retrieved, its root `variables[]` array is preserved exactly as stored in OWPROV.
+* The UI editor does not automatically overwrite, strip, or replace root `variables[]` with client-scanned section IDs. This ensures that manually assigned or third-party variable dependencies outside UI-managed form sections are never discarded.
+* New profile associations created via the modular section editor store their reference within the specific subsection's `{"__variableBlock": ["<uuid>"]}` structure.
 
 ---
 
@@ -2311,26 +2304,24 @@ export interface ModularConfigurationApiResponse {
 ## 35. Acceptance Criteria & QA Test Scenarios (Modular Configurations)
 
 ### 35.1 Variable Scanning & Reference Presentation
-- **TC-CFG-001 (Recursive Variable Block Extraction):** Load configurations where `__variableBlock` is deeply embedded inside nested `configuration[].configuration` JSON strings and arrays. Verify `extractVariableBlockUuids` captures 100% of referenced UUIDs.
+- **TC-CFG-001 (Recursive Variable Block Extraction):** Load configurations where `__variableBlock` is deeply embedded inside nested `configuration[].configuration` JSON strings and arrays. Verify `extractVariableBlockUuids` captures 100% of referenced UUIDs for table display.
 - **TC-CFG-002 (Batch Name Resolution):** In Configurations table, verify `GET /api/v1/variable?select=...` is dispatched with extracted UUIDs. Verify pills render human-readable Profile names instead of raw UUIDs.
 - **TC-CFG-003 (Batch Resolution Fallback):** Mock network failure on `GET /api/v1/variable?select=...`. Verify UI catches error, falls back to `getAllVariableBlocks()`, and successfully renders profile names.
 - **TC-CFG-004 (Interactive Variable Pill Tooltip):** Hover over a rendered Profile pill. Verify tooltip displays section prefix and full Variable UUID.
-- **TC-CFG-011 (Profile Scope Eligibility Rejection in UI):** When authoring a Configuration at Property A, open the profile selection dropdown. Verify profiles belonging to Property B are omitted and cannot be selected.
-- **TC-CFG-012 (Unresolved / Deleted Profile Isolation):** Load a configuration referencing a deleted or missing VariableBlock UUID. Verify the configuration table renders row stably with an "Unresolved Profile" warning pill rather than crashing.
+- **TC-CFG-005 (Profile Scope Eligibility Rejection in UI):** When authoring a Configuration at Property A, open the profile selection dropdown. Verify profiles belonging to Property B are omitted and cannot be selected.
+- **TC-CFG-006 (Unresolved / Deleted Profile Isolation):** Load a configuration referencing a deleted or missing VariableBlock UUID. Verify the configuration table renders row stably with an "Unresolved Profile" warning pill rather than crashing.
 
-### 35.2 Two-Way Synchronization on Save & Lossless Editing
-- **TC-CFG-005 (Save-Time Variables Array Population):** Author a configuration referencing 2 profiles (`radio` and `ssid`). Click Save. Intercept `POST /api/v1/configuration/0`. Verify the payload contains `variables: ["<radio-uuid>", "<ssid-uuid>"]`.
-- **TC-CFG-006 (Update Variables Synchronization):** Edit an existing configuration, removing one profile reference and adding another. Click Save. Verify `PUT /api/v1/configuration/{id}` payload updates `variables[]` to match the exact set of referenced profiles.
-- **TC-CFG-007 (OWPROV Reverse Membership Verification):** After saving configuration, query `GET /api/v1/variable/{id}` for the referenced profile. Verify `configurations` array contains the new configuration UUID.
-- **TC-CFG-014 (Lossless Configuration Editing):** Load a configuration containing custom or unrecognized JSON sections. Edit only the Radio section and save. Verify untouched custom sections are preserved verbatim in the submitted payload.
+### 35.2 Lossless Configuration Editing & Dependency Preservation
+- **TC-CFG-007 (Lossless Configuration Section Preservation):** Load a configuration containing custom or unrecognized JSON sections. Edit only the Radio section and save. Verify untouched custom sections are preserved verbatim in the submitted payload.
+- **TC-CFG-008 (Root Variables Preservation on Edit):** Load a configuration that has root `variables: ["legacy-uuid-1"]` not referenced in any UI form section. Save an edit to an SSIDs section. Verify `legacy-uuid-1` remains intact in the saved configuration payload without being stripped by the client.
+- **TC-CFG-009 (Concurrent Edit Conflict Warning):** When a concurrent modification is detected on save, verify the UI provides a reload prompt rather than overwriting changes silently.
 
 ### 35.3 Configuration Lifecycle & Impact
-- **TC-CFG-008 (Configuration Creation):** Create modular configuration with name, AP device group, scope, and sections. Verify record appears in table.
-- **TC-CFG-009 (Affected Devices Query):** Select configuration. Open deployment or impact modal. Verify `GET /api/v1/configuration/{id}?computedAffected=true` is called and displays accurate device count.
-- **TC-CFG-010 (Configuration Deletion):** Delete an unassigned configuration. Verify `DELETE /api/v1/configuration/{id}` executes and refreshes table. Verify the configuration UUID is automatically removed from referenced VariableBlocks.
+- **TC-CFG-010 (Configuration Creation):** Create modular configuration with name, AP device group, scope, and sections. Verify record appears in table.
+- **TC-CFG-011 (Affected Devices Query):** Select configuration. Open deployment or impact modal. Verify `GET /api/v1/configuration/{id}?computedAffected=true` is called and displays accurate device count.
+- **TC-CFG-012 (Configuration Deletion):** Delete an unassigned configuration. Verify `DELETE /api/v1/configuration/{id}` executes and refreshes table.
 - **TC-CFG-013 (Assigned Configuration Deletion Guard):** Attempt to delete an assigned configuration (`inUse` non-empty). Verify deletion is blocked with an explanatory dialog and `StillInUse` error handling.
-- **TC-CFG-015 (List Pagination Fleet Scaling):** Ingest more than 500 configurations or profiles. Verify iterative batch ingestion loops collect all records across page boundaries without silent truncation.
-- **TC-CFG-016 (Concurrent Edit Conflict Warning):** When a concurrent modification is detected on save, verify the UI provides a reload prompt rather than overwriting changes silently.
+- **TC-CFG-014 (List Pagination Fleet Scaling):** Ingest more than 500 configurations or profiles. Verify iterative batch ingestion loops collect all records across page boundaries without silent truncation.
 
 
 
