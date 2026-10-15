@@ -1688,12 +1688,12 @@ The Configuration Profiles module manages reusable, section-level configuration 
 1. **Direct Mapping to `VariableBlock`:** Configuration Profiles in the MDU UI are explicitly the product-facing manifestation of OWPROV `VariableBlock` entities (`variables2` database table). The UI introduces no separate intermediate metadata store.
 2. **Scope Hierarchy & Field Coexistence (`entity` vs `venue`):**
    - In OWPROV's hierarchy, every Venue is organized under a parent Entity (Property).
-   - **Property-Scoped Profile:** Authored with `entity` set to the Property UUID, while `venue` remains empty string `""`. Accessible to all Configurations authored for that Property and its descendant Venues.
-   - **Venue-Scoped Profile:** Authored with `venue` set to the target Venue UUID, and `entity` set to the parent Property UUID. The non-empty `venue` field establishes that the Profile is scoped strictly to that Venue and its nested child Venues.
+   - **Property-Scoped Profile:** Authored with `entity` set to the Property UUID, while `venue` remains empty string `""`. Accessible to Configurations authored for that Property and its Venues.
+   - **Venue-Scoped Profile:** Authored with `venue` set to the target Venue UUID, and `entity` set to the parent Property UUID. A Venue-scoped Profile is visible and selectable **strictly and exclusively inside that specific Venue (`venue === config.venue`)**. It is **never** inherited by or visible to child venues.
 3. **Scope Eligibility for Profile References:**
    - When an operator authors or edits a Configuration, the UI strictly enforces scope eligibility in the Profile selector dropdown:
      - **Property Configuration:** Can only reference Profiles scoped to that Property (`entity === config.entity && (!venue || venue === "")`).
-     - **Venue Configuration:** Can reference Profiles scoped to that specific Venue (`venue === config.venue`) or inherited from its ancestor Property (`entity === config.entity && (!venue || venue === "")`).
+     - **Venue Configuration:** Can reference Profiles scoped strictly to that specific Venue (`venue === config.venue`) or shared from its parent Property (`entity === config.entity && (!venue || venue === "")`). It cannot reference profiles belonging to other Venues (neither child nor sibling Venues).
      - **Cross-Property Isolation:** Profiles belonging to different Properties are filtered out and cannot be selected.
 4. **Wire Format Structure:** A `VariableBlock` encapsulates common metadata (`name`, `description`, `entity`, `venue`) and an array of variable items:
    ```json
@@ -2306,7 +2306,7 @@ export interface ModularConfigurationApiResponse {
 - **TC-CFG-002 (Batch Name Resolution):** In Configurations table, verify `GET /api/v1/variable?select=...` is dispatched with extracted UUIDs. Verify pills render human-readable Profile names instead of raw UUIDs.
 - **TC-CFG-003 (Batch Resolution Network Failure Isolation):** Mock network failure on `GET /api/v1/variable?select=...`. Verify UI catches error and renders neutral fallback pill `[Profile: <uuid>]` with tooltip *"Unable to load profile name (network/server error)"* without crashing the table.
 - **TC-CFG-004 (Interactive Variable Pill Tooltip):** Hover over a rendered Profile pill. Verify tooltip displays section prefix and full Variable UUID.
-- **TC-CFG-005 (Profile Scope Eligibility Rejection in UI):** When authoring a Configuration at Property A, open the profile selection dropdown. Verify profiles belonging to Property B are omitted and cannot be selected.
+- **TC-CFG-005 (Profile Scope Eligibility Enforcement in UI):** When authoring a Configuration at Venue A, verify only Profiles scoped to Venue A (`venue === config.venue`) or shared from parent Property A (`entity === config.entity && (!venue || venue === "")`) are available in the dropdown. Verify profiles belonging to other Venues (neither child nor sibling venues) and other Properties are omitted and cannot be selected.
 - **TC-CFG-006 (Table Stability on Unresolved Reference):** Load a configuration referencing an unresolvable or missing VariableBlock UUID. Verify the configuration table renders row stably with a fallback representation rather than crashing.
 
 ### 35.2 Lossless Configuration Editing & Dependency Preservation

@@ -906,8 +906,8 @@ Configuration Profiles are persisted in the OWPROV database (`variables2` table)
 ```
 
 * **Scope Hierarchy (`entity` vs `venue`):**
-  * A Profile created with an `entity` UUID is scoped to the entire Property and can be referenced by any Configuration within that Property and its descendant Venues.
-  * A Profile created with a `venue` UUID is scoped specifically to that Venue and its child Venues.
+  * A Profile created with an `entity` UUID is scoped to the Property and can be referenced by Configurations within that Property and its Venues.
+  * A Profile created with a `venue` UUID is scoped strictly and exclusively to that specific Venue (it is not visible to or inherited by child Venues).
 * **Variable Items:** Each entry in `variables[]` contains:
   * `prefix` (string): Configuration subsection identifier (matching the profile type, e.g., `radio`, `interface.ssid`).
   * `type` (string): Data encoding type (`json` for structured profiles).
@@ -982,7 +982,7 @@ Configuration resolution occurs dynamically on-demand via OWPROV's **`APConfig`*
 
 - **CFG-053:** The IPv4 Configuration Profile must provide comprehensive network configuration, including static/DHCP addressing modes, subnet CIDR validation, gateway IP, DHCP server range calculation, lease parameters, DNS servers, static IP leases, and port forwarding rules.
 
-- **CFG-058:** Configuration Profile referencing within a Configuration must enforce strict scope eligibility in the UI. When authoring a Configuration at Property scope, the Profile selector must only offer Profiles belonging to that Property (`entity`). When authoring at Venue scope, the selector must only offer Profiles belonging to that Venue or its ancestor Venue/Property hierarchy. Profiles belonging to other Properties must be excluded from selection.
+- **CFG-058:** Configuration Profile referencing within a Configuration must enforce strict scope eligibility in the UI. When authoring a Configuration at Property scope, the Profile selector must only offer Profiles belonging to that Property (`entity`). When authoring at Venue scope, the selector must only offer Profiles belonging strictly to that specific Venue (`venue === config.venue`) or shared from its parent Property (`entity === config.entity && (!venue || venue === "")`). A Venue-scoped Profile is visible and selectable only within that specific Venue and is never inherited by child Venues. Profiles belonging to other Properties or other Venues must be excluded from selection.
 
 - **CFG-059:** Sensitive credentials across all Configuration Profile sections (including RADIUS shared secrets, local user passwords, and Wi-Fi pre-shared keys) must be protected using three explicit UI handling states:
   1. *Unchanged:* The input displays a masked placeholder (`••••••••`), and saving retains the existing secret without requiring re-entry.
