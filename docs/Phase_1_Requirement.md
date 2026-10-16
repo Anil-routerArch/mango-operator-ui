@@ -1044,7 +1044,7 @@ To ensure accurate, robust presentation in the Configurations table without muta
 4. **Interactive Pill Display:** Referenced Profiles are rendered as styled, interactive pills displaying the profile name. Hovering over a pill presents a tooltip with the profile's section prefix and full UUID.
 
 - **CFG-054:** The Configurations list must display referenced profiles as interactive, styled pills with tooltips showing section prefix and UUID.
-- **CFG-055:** The UI must implement recursive deep scanning of configuration JSON on read to extract all nested `__variableBlock` references for table display, combining them with the top-level `variables` array without altering the configuration payload on save.
+- **CFG-055:** The UI must implement recursive deep scanning of configuration JSON on read strictly to extract all nested `__variableBlock` references for table display and name resolution, without synthesizing or mutating configuration payloads on save.
 - **CFG-056:** The UI must resolve referenced variable UUIDs into human-readable Profile names via batch API queries with automatic fallback handling.
 - **CFG-060:** If batch variable name resolution encounters transport or network errors, the UI must isolate the failure and render a neutral fallback pill (`[Profile: <uuid>]` with tooltip *"Unable to load profile name (network/server error)"*), ensuring that healthy profiles are not mischaracterized as deleted and the Configurations table remains stable and interactive.
 
@@ -1061,9 +1061,11 @@ To ensure accurate, robust presentation in the Configurations table without muta
 Configurations authored across heterogeneous tools or previous platform versions may contain custom sections, advanced parameters, or third-party device settings not managed by standard form builders:
 1. **Preservation of Unedited & Unsupported Sections:** When loading a Configuration, all sections within `configuration[]` (including unrecognized, raw, or third-party sections) must be retained in memory.
 2. **Targeted Section Updates:** When an operator edits specific sections in the UI, only the modified sections are updated. All untouched and unrecognized sections must be preserved verbatim in the submitted payload.
-3. **Raw JSON Inspection & Safe Fallback:** Operators must be able to inspect raw configuration JSON, and the UI must warn operators before applying any destructive transformations.
+3. **Root Variables Delta Synchronization:** To ensure OWPROV maintains reverse dependency membership in `VariableBlock.configurations[]`, attaching a Configuration Profile in the UI adds its UUID to the root `variables[]` array, and detaching it removes the UUID (provided it is not referenced in any other section). Pre-existing or independent root variable dependencies not managed by the UI sections are preserved verbatim upon saving.
+4. **Raw JSON Inspection & Safe Fallback:** Operators must be able to inspect raw configuration JSON, and the UI must warn operators before applying any destructive transformations.
 
 - **CFG-061:** Configuration editing must adhere to a lossless contract: unrecognized sections, custom JSON directives, and unedited sections within `configuration[]` must be preserved intact upon saving.
+- **CFG-063:** When authoring or editing a Configuration, the UI must synchronize attached Profile UUIDs into the root `variables[]` array and remove detached Profile UUIDs while strictly preserving pre-existing, independent root variable dependencies, ensuring that OWPROV dependency tracking and deletion guards remain intact.
 
 ### Configuration Deletion Dependency Guard
 

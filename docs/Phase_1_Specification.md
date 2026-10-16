@@ -2099,7 +2099,7 @@ The UI executes a deep recursive scanner (`extractVariableBlockUuids` in `src/pa
 3. Handles both array representations (`["<uuid>"]`) and legacy string representations (`"<uuid>"`).
 4. Returns a deduplicated array of all referenced VariableBlock UUIDs.
 
-**Critical Architectural Boundary (Read-Only Table Presentation):** The recursive extraction of `__variableBlock` references is strictly a **read-only client-side presentation utility** used to resolve human-readable profile names for table pills. The UI **never** overwrites, replaces, or synthesizes the root `variables[]` array when saving configurations, avoiding any unintended clobbering of root-level dependencies or third-party references.
+**Critical Architectural Boundary (Read-Only Table Presentation):** Recursive scanning for table presentation is strictly a **read-only client-side presentation utility** used to resolve human-readable profile names for table pills. Configuration editing separately synchronizes UI-managed Profile references with root `variables[]` while preserving unrelated dependencies. The recursive table scanner itself never mutates, replaces, or synthesizes the payload submitted on save.
 
 ### 30.2 Merge & Deduplication with Root Variables for Name Lookup
 To present a comprehensive list of all referenced profiles in the Configurations table, the UI combines UUIDs extracted via recursive scanning with any UUIDs declared in `configuration.variables[]`:
@@ -2132,14 +2132,23 @@ const allVarIds = Array.from(
 ### 31.2 Root Variables Delta Synchronization & Dependency Tracking
 In accordance with OWPROV's dependency tracking model and lossless editing guarantees:
 * **The OWPROV Backend Contract:** In OWPROV (`RESTAPI_configurations_handler.cpp`), reverse dependency membership (`VariableBlock.configurations[]`) is maintained strictly from the configuration's root `variables[]` array via `ManageMembership()`. OWPROV does not recursively scan inner `configuration[].configuration` schemas for `__variableBlock` during write operations.
-* **The Delta Synchronization Contract:** The UI editor must preserve unrelated root dependencies while synchronizing the delta introduced by user actions:
-  1. **Profile Attachment:** When a Profile `P` is selected for a configuration subsection:
-     - The reference is inserted into the subsection's schema: `{"__variableBlock": ["<uuid>"]}` (for device firmware resolution in `APConfig`).
-     - The Profile UUID `P` is appended to the root `variables[]` array (if not already present), allowing OWPROV to link the configuration in `VariableBlock.configurations[]`.
-  2. **Profile Detachment / Replacement:** When a Profile `P` is unlinked or replaced:
+* **The Delta Synchronization Contract:** The UI editor distinguishes pre-existing root dependencies from UI-managed profile selections, preserving independently maintained references while synchronizing user actions:
+  1. **Classification of Dependencies on Load:**
+     - Let $V_{\text{initial}}$ be the set of UUIDs present in root `variables[]` when the configuration is loaded from OWPROV.
+     - Let $S_{\text{initial\_ui}}$ be the set of Profile UUIDs attached across UI-managed form sections at load time.
+     - Any variable UUID in root `variables[]` that is not attached to a UI-managed form section ($V_{\text{independent}} = V_{\text{initial}} \setminus S_{\text{initial\_ui}}$) is classified as an **independently maintained root dependency** (e.g., custom script variable blocks, legacy bindings, or raw unmanaged sections).
+  2. **Profile Attachment:** When a Profile $P$ is selected for a configuration subsection:
+     - The reference is inserted into the subsection's schema: `{"__variableBlock": ["<uuid>"]}` (for AP firmware compilation in `APConfig`).
+     - The Profile UUID $P$ is added to the active UI-managed selections set ($S_{\text{current\_ui}}$).
+  3. **Profile Detachment / Replacement:** When a Profile $P$ is unlinked or replaced:
      - The subsection's `__variableBlock` reference is removed or updated.
-     - The Profile UUID `P` is removed from the root `variables[]` array **only if** `P` is no longer referenced in any other section of that configuration.
-  3. **Unrelated Root Variables Preservation:** Pre-existing, legacy, or third-party variable UUIDs in root `variables[]` (outside the UI-managed modular form sections) are preserved verbatim. The UI must never blindly overwrite or regenerate root `variables[]` from scratch purely via a recursive scanner.
+     - The Profile UUID $P$ is removed from $S_{\text{current\_ui}}$ provided no other UI-managed section still references $P$.
+  4. **Payload Assembly on Save:** The final root `variables[]` array submitted in `PUT /api/v1/configuration/{id}` is calculated as:
+     $$V_{\text{final}} = V_{\text{independent}} \cup S_{\text{current\_ui}}$$
+     This guarantees:
+     - Newly attached profiles are registered in root `variables[]`, allowing OWPROV to link membership in `VariableBlock.configurations[]`.
+     - Detaching a profile removes it from root `variables[]` only if it was introduced via UI form sections and is no longer used elsewhere.
+     - Pre-existing or independent root dependencies ($V_{\text{independent}}$) are preserved verbatim and can never be accidentally stripped by detaching a profile in the editor.
 * **Scope and Existence Safety Guards:**
   - **Pre-Save Scope Enforcement (CFG-058 / Section 22.1):** When selecting profiles in the UI editor, only profiles matching the configuration's operational boundary (same venue `venue === config.venue` or shared parent entity `entity === config.entity && !venue`) are eligible. Any cross-scope profile reference is flagged as a validation error before payload submission.
   - **Backend Existence Verification:** Per OWPROV backend validation (`RESTAPI_configurations_handler.cpp`), any variable UUID in `variables[]` that does not exist in `VariablesDB` is rejected by the backend with `400 Bad Request` (`VariableMustExist`).
@@ -2294,6 +2303,7 @@ export interface ModularConfigurationApiResponse {
 - **TC-CFG-008 (Root Variables Preservation & Delta Synchronization on Edit):** 
   1. Load a configuration with root `variables: ["legacy-uuid-1"]` not referenced in any UI form section. Attach Profile `P1` to an SSID section and save. Verify the saved payload contains `variables: ["legacy-uuid-1", "P1"]` (unrelated legacy variable preserved, new profile delta synchronized into root array).
   2. Detach Profile `P1` from the SSID section and save. Verify `P1` is removed from root `variables[]` while `legacy-uuid-1` remains intact without being stripped.
+  3. Load a configuration where `P1` exists in both root `variables[]` and an unmanaged raw section outside the UI form ($V_{\text{independent}}$). Attach and subsequently detach `P1` in the UI form. Verify `P1` remains preserved in root `variables[]` as an independently maintained dependency.
 - **TC-CFG-009 (Standard Configuration Update):** Edit an existing configuration and click Save. Verify payload is submitted via `PUT /api/v1/configuration/{id}` with updated fields and `200 OK` response updates the UI.
 
 ### 35.3 Configuration Lifecycle & Impact
