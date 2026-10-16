@@ -1519,11 +1519,22 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   <Text fontSize="12px" fontWeight="700" color="#1e40af">
                     Policy impact
                   </Text>
-                  <Text fontSize="11px" color="#1e40af" mt={0.5}>
-                    {isOverviewError
-                      ? 'Policy impact metrics are currently unavailable.'
-                      : `${overviewStats.usedByUsers} users across ${overviewStats.scopedAssignmentsCount} scoped assignments will be affected by permission changes.`}
-                  </Text>
+                  {isOverviewError ? (
+                    <Text fontSize="11px" color="#1e40af" mt={0.5}>
+                      Policy impact metrics are currently unavailable.
+                    </Text>
+                  ) : isOverviewLoading ? (
+                    <HStack gap={1.5} mt={0.5} align="center">
+                      <Spinner size="xs" color="#1e40af" />
+                      <Text fontSize="11px" color="#1e40af">
+                        Calculating policy impact metrics...
+                      </Text>
+                    </HStack>
+                  ) : (
+                    <Text fontSize="11px" color="#1e40af" mt={0.5}>
+                      {`${overviewStats.usedByUsers} users across ${overviewStats.scopedAssignmentsCount} scoped assignments will be affected by permission changes.`}
+                    </Text>
+                  )}
                 </Box>
               </Flex>
 
@@ -1633,7 +1644,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         Users
                       </Text>
                       <Text fontSize="18px" fontWeight="700" color={isOverviewError ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
-                        {isOverviewError ? '—' : overviewStats.usedByUsers}
+                        {isOverviewError ? '—' : isOverviewLoading ? <Spinner size="xs" color="#2563eb" /> : overviewStats.usedByUsers}
                       </Text>
                     </Box>
                   </Flex>
@@ -1656,7 +1667,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         Scoped assignments
                       </Text>
                       <Text fontSize="18px" fontWeight="700" color={isOverviewError ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
-                        {isOverviewError ? '—' : overviewStats.scopedAssignmentsCount}
+                        {isOverviewError ? '—' : isOverviewLoading ? <Spinner size="xs" color="#7c3aed" /> : overviewStats.scopedAssignmentsCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1679,7 +1690,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         Properties
                       </Text>
                       <Text fontSize="18px" fontWeight="700" color={isOverviewError ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
-                        {isOverviewError ? '—' : overviewStats.propertiesCount}
+                        {isOverviewError ? '—' : isOverviewLoading ? <Spinner size="xs" color="#16a34a" /> : overviewStats.propertiesCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1702,7 +1713,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         Venues
                       </Text>
                       <Text fontSize="18px" fontWeight="700" color={isOverviewError ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
-                        {isOverviewError ? '—' : overviewStats.venuesCount}
+                        {isOverviewError ? '—' : isOverviewLoading ? <Spinner size="xs" color="#ea580c" /> : overviewStats.venuesCount}
                       </Text>
                     </Box>
                   </Flex>
@@ -1797,7 +1808,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     fontSize="11px"
                     fontWeight="600"
                   >
-                    {isOverviewError ? '—' : overviewStats.usedByUsers}
+                    {isOverviewError ? '—' : isOverviewLoading ? <Spinner size="xs" color="#64748b" /> : overviewStats.usedByUsers}
                   </Flex>
                 </HStack>
 
