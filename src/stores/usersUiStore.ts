@@ -12,6 +12,7 @@ export interface UsersUiState {
   setPolicySubTab: (tab: 'overview' | 'permissions') => void;
   userSubTab: 'profile' | 'scoped_access';
   setUserSubTab: (tab: 'profile' | 'scoped_access') => void;
+  resetUsersUiState: () => void;
 }
 
 export const useUsersUiStore = create<UsersUiState>()(
@@ -28,6 +29,14 @@ export const useUsersUiStore = create<UsersUiState>()(
       setPolicySubTab: (policySubTab) => set({ policySubTab }),
       userSubTab: 'profile',
       setUserSubTab: (userSubTab) => set({ userSubTab }),
+      resetUsersUiState: () =>
+        set({
+          mainTab: 'users',
+          selectedUserId: null,
+          selectedPolicyId: 'pol-net-op',
+          policySubTab: 'overview',
+          userSubTab: 'profile',
+        }),
     }),
     {
       name: 'users_ui_store',

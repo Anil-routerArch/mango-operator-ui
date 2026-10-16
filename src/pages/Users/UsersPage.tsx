@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import {
   Box,
@@ -242,16 +242,27 @@ export const UsersPage: React.FC = () => {
   }, [search, roleFilter, statusFilter]);
 
 
+  const prevSelectedUserIdRef = useRef<string | null>(null);
+
   // Ensure current page shows the selected user when selectedUserId changes
   useEffect(() => {
-    if (selectedUserId && filteredUsers.length > 0) {
-      const idx = filteredUsers.findIndex((u) => u.id === selectedUserId);
-      if (idx !== -1) {
-        const targetPage = Math.floor(idx / pageSize) + 1;
-        setCurrentPage((prev) => (prev === targetPage ? prev : targetPage));
+    if (!selectedUserId || manageableUsers.length === 0) return;
+
+    const idx = filteredUsers.findIndex((u) => u.id === selectedUserId);
+    if (idx !== -1) {
+      const targetPage = Math.floor(idx / pageSize) + 1;
+      setCurrentPage((prev) => (prev === targetPage ? prev : targetPage));
+    } else if (prevSelectedUserIdRef.current !== selectedUserId) {
+      // If a newly selected user is excluded by active filters, clear filters so the destination row is visible
+      const existsInTotal = manageableUsers.some((u) => u.id === selectedUserId);
+      if (existsInTotal) {
+        setSearch('');
+        setRoleFilter('All Roles');
+        setStatusFilter('All Status');
       }
     }
-  }, [selectedUserId, pageSize, filteredUsers]);
+    prevSelectedUserIdRef.current = selectedUserId;
+  }, [selectedUserId, pageSize, filteredUsers, manageableUsers]);
 
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
 
@@ -260,6 +271,32 @@ export const UsersPage: React.FC = () => {
     const startIndex = (currentPage - 1) * pageSize;
     return filteredUsers.slice(startIndex, startIndex + pageSize);
   }, [filteredUsers, currentPage, pageSize]);
+
+  /**
+   * Centralized navigation helper to select a user, clear conflicting filters,
+   * open the profile subtab, and switch to the Users tab.
+   * Also directly calculates the target page so the destination user row is immediately visible.
+   */
+  const handleNavigateToUser = useCallback(
+    (userId?: string) => {
+      setSearch('');
+      setRoleFilter('All Roles');
+      setStatusFilter('All Status');
+      setMainTab('users');
+
+      if (userId) {
+        setSelectedUserId(userId);
+        setActiveDetailTab('profile');
+
+        const userIndex = manageableUsers.findIndex((u) => u.id === userId);
+        if (userIndex !== -1) {
+          const targetPage = Math.floor(userIndex / pageSize) + 1;
+          setCurrentPage(targetPage);
+        }
+      }
+    },
+    [manageableUsers, pageSize, setSelectedUserId, setActiveDetailTab, setMainTab]
+  );
 
   // Derived KPI Counts (calculated from manageableUsers per TC-USR-001/002)
   const totalUsersCount = manageableUsers.length;
@@ -353,12 +390,7 @@ export const UsersPage: React.FC = () => {
         <PoliciesTab
           isCreatePolicyOpen={isCreatePolicyOpen}
           onCloseCreatePolicy={() => setIsCreatePolicyOpen(false)}
-          onNavigateToUsers={() => {
-            setSearch('');
-            setRoleFilter('All Roles');
-            setStatusFilter('All Status');
-            setMainTab('users');
-          }}
+          onNavigateToUsers={handleNavigateToUser}
         />
       ) : (
         <>

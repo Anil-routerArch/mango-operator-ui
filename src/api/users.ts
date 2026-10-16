@@ -102,6 +102,7 @@ export const useCreateUser = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -119,6 +120,8 @@ export const useUpdateUser = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['users', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['avatar', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -134,6 +137,7 @@ export const useSuspendUser = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['users', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -146,8 +150,14 @@ export const useDeleteUser = () => {
       const { data } = await axiosSec.delete(`user/${userId}`);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, userId) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: ['users', userId] });
+        queryClient.invalidateQueries({ queryKey: ['managementRoles', userId] });
+        queryClient.invalidateQueries({ queryKey: ['avatar', userId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
       queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
@@ -363,7 +373,15 @@ export interface PolicyOverviewResponse {
   usersWithPolicy: UserWithPolicySummary[];
 }
 
-export const useGetPolicyOverview = (policyId?: string) => {
+export const useGetPolicyOverview = (
+  policyId?: string,
+  optionsOrEnabled: { enabled?: boolean } | boolean = true
+) => {
+  const isEnabled =
+    typeof optionsOrEnabled === 'boolean'
+      ? optionsOrEnabled
+      : (optionsOrEnabled?.enabled ?? true);
+
   return useQuery<PolicyOverviewResponse | null>({
     queryKey: ['policyOverview', policyId],
     queryFn: async () => {
@@ -371,7 +389,7 @@ export const useGetPolicyOverview = (policyId?: string) => {
       const { data } = await axiosMdu.get<PolicyOverviewResponse>(`policy/${policyId}/overview`);
       return data;
     },
-    enabled: Boolean(policyId),
+    enabled: Boolean(policyId) && isEnabled,
     staleTime: 30 * 1000,
   });
 };

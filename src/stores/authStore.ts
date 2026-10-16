@@ -4,7 +4,9 @@ import {
   setApiToken,
   fetchSystemEndpoints,
   getApiErrorMessage,
+  clearAuthenticatedQueryCache,
 } from '@/api';
+import { useUsersUiStore } from '@/stores/usersUiStore';
 import type { User, LoginCredentials, LoginApiResponse } from '@/types/auth';
 
 export interface AuthState {
@@ -81,6 +83,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(STORAGE_KEY);
       setApiToken(null);
+      clearAuthenticatedQueryCache();
+      useUsersUiStore.getState().resetUsersUiState();
       set({
         token: null,
         user: null,
@@ -133,6 +137,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.removeItem(STORAGE_KEY);
       }
 
+      // Purge query cache and reset UI state between authenticated identities
+      clearAuthenticatedQueryCache();
+      useUsersUiStore.getState().resetUsersUiState();
+
       set({
         token,
         user: profileRes.data,
@@ -148,6 +156,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(STORAGE_KEY);
       setApiToken(null);
+      clearAuthenticatedQueryCache();
+      useUsersUiStore.getState().resetUsersUiState();
 
       const message = getApiErrorMessage(err, 'Invalid credentials. Please try again.');
       set({
@@ -201,6 +211,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         localStorage.removeItem(STORAGE_KEY);
       }
 
+      // Purge query cache and reset UI state between authenticated identities
+      clearAuthenticatedQueryCache();
+      useUsersUiStore.getState().resetUsersUiState();
+
       set({
         token,
         user: profileRes.data,
@@ -216,6 +230,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(STORAGE_KEY);
       setApiToken(null);
+      clearAuthenticatedQueryCache();
+      useUsersUiStore.getState().resetUsersUiState();
 
       const message = getApiErrorMessage(err, 'MFA verification failed.');
       set({
@@ -244,6 +260,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(STORAGE_KEY);
       setApiToken(null);
+
+      // Centralized cache wipe: remove all queries and reset UI store
+      clearAuthenticatedQueryCache();
+      useUsersUiStore.getState().resetUsersUiState();
+
       set({
         token: null,
         user: null,
