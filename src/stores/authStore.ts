@@ -4,6 +4,7 @@ import {
   setApiToken,
   fetchSystemEndpoints,
   getApiErrorMessage,
+  teardownSessionAndReload,
 } from '@/api';
 import type { User, LoginCredentials, LoginApiResponse } from '@/types/auth';
 
@@ -241,10 +242,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         await axiosSec.delete(`oauth2/${token}`).catch(() => {});
       }
     } finally {
-      localStorage.removeItem(STORAGE_KEY);
-      sessionStorage.removeItem(STORAGE_KEY);
-      setApiToken(null);
-      window.location.replace('/');
+      teardownSessionAndReload();
     }
   },
 

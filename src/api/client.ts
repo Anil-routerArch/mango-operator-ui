@@ -113,27 +113,66 @@ interface ApiErrorData {
   error?: string;
 }
 
+// Helper to identify unauthenticated login / MFA credential submissions
+export const isAuthEndpoint = (url?: string, method?: string): boolean => {
+  if (!url) return false;
+  const isPost = !method || method.toLowerCase() === 'post';
+  return isPost && url.includes('oauth2') && !url.includes('oauth2?me=true');
+};
+
+export const isLoginRoute = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.location.hash.includes('/login') ||
+    window.location.pathname.includes('/login')
+  );
+};
+
+/**
+ * Cleanly terminates the local session and reloads the active application document.
+ * Sets the hash to '#/login' so the reloaded document lands on the login page,
+ * while window.location.reload() natively preserves the current URL prefix (root, subpath, reverse proxy).
+ */
+export const teardownSessionAndReload = () => {
+  localStorage.removeItem('access_token');
+  sessionStorage.removeItem('access_token');
+  setApiToken(null);
+
+  if (typeof window !== 'undefined' && window.location) {
+    window.location.hash = '#/login';
+    if (typeof window.location.reload === 'function') {
+      window.location.reload();
+    }
+  }
+};
+
 const handleResponseError = (error: AxiosError<ApiErrorData>) => {
   if (error.response) {
     const { status, data } = error.response;
+    const url = error.config?.url;
+    const method = error.config?.method;
+
+    // Never redirect on 401/403 from login or MFA endpoints, allowing the login form
+    // to receive the rejected promise and display validation errors.
+    if (isAuthEndpoint(url, method)) {
+      return Promise.reject(error);
+    }
 
     // 403 Forbidden with OpenWiFi Expired or Invalid token codes
     if (
       status === 403 &&
       (data?.ErrorCode === AUTH_EXPIRED_TOKEN_CODE || data?.ErrorCode === AUTH_INVALID_TOKEN_CODE)
     ) {
-      localStorage.removeItem('access_token');
-      sessionStorage.removeItem('access_token');
-      setApiToken(null);
-      window.location.replace('/');
+      if (!isLoginRoute()) {
+        teardownSessionAndReload();
+      }
     }
 
-    // 401 Unauthorized handling
+    // 401 Unauthorized handling on authenticated requests
     if (status === 401) {
-      localStorage.removeItem('access_token');
-      sessionStorage.removeItem('access_token');
-      setApiToken(null);
-      window.location.replace('/');
+      if (!isLoginRoute()) {
+        teardownSessionAndReload();
+      }
     }
   }
 

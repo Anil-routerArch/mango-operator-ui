@@ -5,24 +5,27 @@ import path from 'node:path';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 
-test('client.ts error interceptor performs hard document reload on 401/403 token expiration', () => {
+test('client.ts error interceptor performs hard document reload via teardownSessionAndReload on 401/403 token expiration', () => {
   const clientPath = path.join(ROOT_DIR, 'src', 'api', 'client.ts');
   const content = fs.readFileSync(clientPath, 'utf-8');
 
-  const matches = content.match(/window\.location\.replace\('\/'\);/g);
   assert.ok(
-    matches && matches.length >= 2,
-    'client.ts must execute window.location.replace("/") in both 401 and 403 response handlers matching owprov-ui'
+    content.includes('teardownSessionAndReload();'),
+    'client.ts must execute teardownSessionAndReload on token expiration'
+  );
+  assert.ok(
+    content.includes("window.location.hash = '#/login';") && content.includes('window.location.reload();'),
+    'teardownSessionAndReload must reload to #/login preserving the deployment subpath'
   );
 });
 
-test('authStore.ts logout performs hard document reload in finally block', () => {
+test('authStore.ts logout performs hard document reload via teardownSessionAndReload in finally block', () => {
   const authStorePath = path.join(ROOT_DIR, 'src', 'stores', 'authStore.ts');
   const content = fs.readFileSync(authStorePath, 'utf-8');
 
   assert.ok(
-    content.includes("window.location.replace('/');"),
-    'authStore.ts logout must perform window.location.replace("/") matching owprov-ui Account.ts'
+    content.includes('teardownSessionAndReload();'),
+    'authStore.ts logout must perform teardownSessionAndReload'
   );
 });
 
@@ -224,4 +227,130 @@ test('Simulation: MDU 401 rejects locally without clearing token or redirecting 
   assert.strictEqual(sessionTerminated, true, 'Core OWSEC 401 must terminate session');
   assert.strictEqual(activeToken, null, 'Active token must be cleared on core 401');
 });
+
+test('client.ts does not reload page on 401 from login or MFA endpoints', () => {
+  const clientPath = path.join(ROOT_DIR, 'src', 'api', 'client.ts');
+  const content = fs.readFileSync(clientPath, 'utf-8');
+
+  // Verify isAuthEndpoint helper exists and checks oauth2 POST requests
+  assert.ok(
+    content.includes('export const isAuthEndpoint'),
+    'client.ts must define isAuthEndpoint'
+  );
+  assert.ok(
+    content.includes('if (isAuthEndpoint(url, method))'),
+    'client.ts handleResponseError must check isAuthEndpoint and reject without reloading'
+  );
+
+  // Verify isLoginRoute guard exists
+  assert.ok(
+    content.includes('export const isLoginRoute'),
+    'client.ts must define isLoginRoute'
+  );
+  assert.ok(
+    content.includes('if (!isLoginRoute())'),
+    'client.ts handleResponseError must prevent reload if already on login route'
+  );
+});
+
+test('Simulation: 401 on login POST oauth2 rejects without page reload or storage clearing', async () => {
+  let reloaded = false;
+  let activeToken = null;
+
+  // Interceptor matching client.ts
+  const isAuthEndpoint = (url, method) => {
+    if (!url) return false;
+    const isPost = !method || method.toLowerCase() === 'post';
+    return isPost && url.includes('oauth2') && !url.includes('oauth2?me=true');
+  };
+
+  const handleResponseError = (error) => {
+    if (isAuthEndpoint(error.config?.url, error.config?.method)) {
+      return Promise.reject(error);
+    }
+
+    if (error.status === 401) {
+      reloaded = true;
+    }
+    return Promise.reject(error);
+  };
+
+  // 1. User submits wrong credentials on login page
+  const failedLoginError = {
+    status: 401,
+    config: { url: 'oauth2', method: 'post' },
+    response: { status: 401, data: { ErrorDescription: 'Invalid credentials' } },
+  };
+
+  await assert.rejects(
+    async () => {
+      await handleResponseError(failedLoginError);
+    },
+    (err) => err.status === 401
+  );
+
+  assert.strictEqual(reloaded, false, 'Failed login 401 must NOT trigger a page reload');
+
+  // 2. User submits invalid MFA answer
+  const failedMfaError = {
+    status: 401,
+    config: { url: 'oauth2?completeMFAChallenge=true', method: 'post' },
+    response: { status: 401, data: { ErrorDescription: 'Invalid MFA' } },
+  };
+
+  await assert.rejects(
+    async () => {
+      await handleResponseError(failedMfaError);
+    },
+    (err) => err.status === 401
+  );
+
+  assert.strictEqual(reloaded, false, 'Failed MFA 401 must NOT trigger a page reload');
+
+  // 3. Authenticated session token expires on an API request
+  const expiredSessionError = {
+    status: 401,
+    config: { url: 'users', method: 'get' },
+    response: { status: 401, data: { ErrorDescription: 'Token expired' } },
+  };
+
+  await assert.rejects(
+    async () => {
+      await handleResponseError(expiredSessionError);
+    },
+    (err) => err.status === 401
+  );
+
+  assert.strictEqual(reloaded, true, 'Expired session 401 on authenticated API request MUST trigger session reload');
+});
+
+test('teardownSessionAndReload sets hash to #/login and reloads without modifying pathname', () => {
+  // Simulate browser window.location under a subpath deployment
+  const mockLocation = {
+    pathname: '/operator/',
+    hash: '#/dashboard',
+    reloaded: false,
+    reload() {
+      this.reloaded = true;
+    },
+  };
+
+  const mockStorage = {
+    access_token: 'ACTIVE_TOKEN',
+  };
+
+  const teardownSessionAndReload = (loc, storage) => {
+    delete storage.access_token;
+    loc.hash = '#/login';
+    loc.reload();
+  };
+
+  teardownSessionAndReload(mockLocation, mockStorage);
+
+  assert.strictEqual(mockStorage.access_token, undefined, 'Access token must be deleted');
+  assert.strictEqual(mockLocation.pathname, '/operator/', 'Subpath pathname must remain strictly preserved');
+  assert.strictEqual(mockLocation.hash, '#/login', 'Hash must be set to #/login');
+  assert.strictEqual(mockLocation.reloaded, true, 'Browser must execute document reload');
+});
+
 
