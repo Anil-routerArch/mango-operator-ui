@@ -23,6 +23,7 @@ import {
   useDeleteManagementPolicy,
   useGetPolicyOverview,
   queryClient,
+  axiosMdu,
 } from '@/api';
 import type { ManagementPolicy, ManagementPolicyEntry } from '@/types/managementRole';
 import { toaster } from '@/components/ui/toaster';
@@ -539,9 +540,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
     refetch: refetchOverview,
   } = useGetPolicyOverview(debouncedPolicyId, isOverviewActive);
 
+  // Check if MDU service is available in the cluster or configured via environment
+  const isMduConfigured = Boolean(axiosMdu.defaults.baseURL);
+
   // Active loading state taking debounce settling into account
   const isOverviewLoading =
     isOverviewActive &&
+    isMduConfigured &&
     Boolean(selectedPolicy?.id) &&
     (isOverviewQueryLoading || debouncedPolicyId !== selectedPolicy?.id);
 
@@ -1558,24 +1563,55 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 <Flex
                   p={3}
                   borderRadius="6px"
-                  bg={isOverviewError && !hasValidPolicyData ? '#fffbeb' : '#eff6ff'}
+                  bg={
+                    !isMduConfigured
+                      ? '#f8fafc'
+                      : isOverviewError
+                        ? '#fffbeb'
+                        : '#eff6ff'
+                  }
                   border="1px solid"
-                  borderColor={isOverviewError && !hasValidPolicyData ? '#fef3c7' : '#bfdbfe'}
+                  borderColor={
+                    !isMduConfigured
+                      ? '#e2e8f0'
+                      : isOverviewError
+                        ? '#fef3c7'
+                        : '#bfdbfe'
+                  }
                   gap={2.5}
                   align="flex-start"
                 >
-                  <Box color={isOverviewError && !hasValidPolicyData ? '#d97706' : '#0869ff'} mt="1px">
+                  <Box
+                    color={
+                      !isMduConfigured
+                        ? '#64748b'
+                        : isOverviewError
+                          ? '#d97706'
+                          : '#0869ff'
+                    }
+                    mt="1px"
+                  >
                     <Icon name="info" size={16} />
                   </Box>
                   <Box flex="1">
                     <Text
                       fontSize="12px"
                       fontWeight="700"
-                      color={isOverviewError && !hasValidPolicyData ? '#92400e' : '#1e40af'}
+                      color={
+                        !isMduConfigured
+                          ? '#475569'
+                          : isOverviewError
+                            ? '#92400e'
+                            : '#1e40af'
+                      }
                     >
                       Policy impact
                     </Text>
-                    {isOverviewLoading && !hasValidPolicyData ? (
+                    {!isMduConfigured ? (
+                      <Text fontSize="11px" color="#64748b" mt={0.5}>
+                        Policy impact metrics are unavailable because MDU service is not deployed in this cluster.
+                      </Text>
+                    ) : isOverviewLoading && !hasValidPolicyData ? (
                       <HStack gap={1.5} mt={0.5} align="center">
                         <Spinner size="xs" color="#1e40af" />
                         <Text fontSize="11px" color="#1e40af">
@@ -1585,6 +1621,10 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     ) : isOverviewError && !hasValidPolicyData ? (
                       <Text fontSize="11px" color="#92400e" mt={0.5}>
                         Policy impact cannot be loaded from service. Review user assignments before modifying permissions.
+                      </Text>
+                    ) : isOverviewError && hasValidPolicyData ? (
+                      <Text fontSize="11px" color="#92400e" mt={0.5}>
+                        Previously loaded: {overviewStats.usedByUsers} users across {overviewStats.scopedAssignmentsCount} scoped assignments. Refresh failed — verify assignments before saving changes.
                       </Text>
                     ) : (
                       <Text fontSize="11px" color="#1e40af" mt={0.5}>
@@ -1633,6 +1673,29 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 </Flex>
               )}
             </VStack>
+          ) : !isMduConfigured ? (
+            <Flex
+              p={6}
+              direction="column"
+              align="center"
+              justify="center"
+              border="1px dashed"
+              borderColor={themeColors.panel.border}
+              borderRadius="6px"
+              bg="#f8fafc"
+              textAlign="center"
+              gap={2}
+            >
+              <Box color="#64748b">
+                <Icon name="info" size={20} />
+              </Box>
+              <Text fontSize="13px" fontWeight="600" color="#334155">
+                MDU service not available in this cluster
+              </Text>
+              <Text fontSize="11px" color="#64748b">
+                Policy usage metrics and impact analytics are disabled because mango-mdu-service was not discovered.
+              </Text>
+            </Flex>
           ) : isOverviewLoading && !hasValidPolicyData ? (
             <Flex h="200px" justify="center" align="center" direction="column" gap={3}>
               <Spinner size="md" color="#0869ff" />
@@ -1641,7 +1704,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
           ) : (
             /* Overview Subtab */
             <VStack gap={4} align="stretch">
-              {isOverviewError && !hasValidPolicyData && (
+              {isOverviewError && (
                 <Flex
                   align="center"
                   justify="space-between"
@@ -1656,7 +1719,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   <HStack gap={2}>
                     <Icon name="info" size={15} color="#d97706" />
                     <Text fontWeight="500">
-                      Policy overview metrics could not be loaded from service.
+                      {hasValidPolicyData
+                        ? 'Unable to refresh metrics from service. Displaying previously loaded data.'
+                        : 'Policy overview metrics could not be loaded from service.'}
                     </Text>
                   </HStack>
                   <Button
@@ -1667,6 +1732,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     h="24px"
                     px={2}
                     fontSize="11px"
+                    loading={isOverviewFetching}
                     onClick={() => refetchOverview()}
                   >
                     <HStack gap={1}>
@@ -1680,9 +1746,16 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
               {/* Section 1: Usage summary */}
               <Box>
                 <Flex justify="space-between" align="center" mb={2}>
-                  <Text fontSize="12px" fontWeight="700" color="#0f172a">
-                    Usage summary
-                  </Text>
+                  <HStack gap={2} align="center">
+                    <Text fontSize="12px" fontWeight="700" color="#0f172a">
+                      Usage summary
+                    </Text>
+                    {isOverviewError && hasValidPolicyData && (
+                      <Badge colorScheme="yellow" fontSize="10px" px={1.5} py={0.5} borderRadius="4px">
+                        Refresh failed — cached
+                      </Badge>
+                    )}
+                  </HStack>
                   <Button
                     size="xs"
                     variant="ghost"
@@ -1692,7 +1765,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     px={2}
                     fontSize="11px"
                     loading={isOverviewFetching}
-                    disabled={isOverviewFetching}
+                    disabled={isOverviewFetching || !isMduConfigured}
                     onClick={() => refetchOverview()}
                     title="Refresh metrics from service"
                   >

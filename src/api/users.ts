@@ -382,14 +382,16 @@ export const useGetPolicyOverview = (
       ? optionsOrEnabled
       : (optionsOrEnabled?.enabled ?? true);
 
+  const isMduConfigured = Boolean(axiosMdu.defaults.baseURL);
+
   return useQuery<PolicyOverviewResponse | null>({
     queryKey: ['policyOverview', policyId],
     queryFn: async () => {
-      if (!policyId) return null;
+      if (!policyId || !axiosMdu.defaults.baseURL) return null;
       const { data } = await axiosMdu.get<PolicyOverviewResponse>(`policy/${policyId}/overview`);
       return data;
     },
-    enabled: Boolean(policyId) && isEnabled,
+    enabled: Boolean(policyId) && isEnabled && isMduConfigured,
     staleTime: 30 * 1000,
   });
 };

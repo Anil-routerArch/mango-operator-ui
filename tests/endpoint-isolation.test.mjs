@@ -26,6 +26,36 @@ test('authStore.ts logout performs hard document reload in finally block', () =>
   );
 });
 
+test('client.ts isolates axiosMdu: attaches session-terminating response interceptor only to coreAxiosInstances', () => {
+  const clientPath = path.join(ROOT_DIR, 'src', 'api', 'client.ts');
+  const content = fs.readFileSync(clientPath, 'utf-8');
+
+  // Verify coreAxiosInstances definition exists and excludes axiosMdu
+  assert.ok(
+    content.includes('export const coreAxiosInstances'),
+    'client.ts must define coreAxiosInstances'
+  );
+  assert.ok(
+    content.includes('coreAxiosInstances.forEach'),
+    'client.ts must attach handleResponseError only to coreAxiosInstances'
+  );
+
+  // Extract coreAxiosInstances block and assert axiosMdu is not in it
+  const coreBlockMatch = content.match(/coreAxiosInstances:\s*AxiosInstance\[\]\s*=\s*\[([\s\S]*?)\];/);
+  assert.ok(coreBlockMatch, 'coreAxiosInstances definition block must match');
+  assert.strictEqual(
+    coreBlockMatch[1].includes('axiosMdu'),
+    false,
+    'coreAxiosInstances must NOT include axiosMdu'
+  );
+
+  // Assert allAxiosInstances includes axiosMdu so it receives tokens and request interceptors
+  assert.ok(
+    content.includes('...coreAxiosInstances,\n  axiosMdu,'),
+    'allAxiosInstances must combine coreAxiosInstances with axiosMdu'
+  );
+});
+
 test('Simulation: Hard reload destroys JS heap, resetting Axios baseURLs and query cache', () => {
   // Simulate browser JS heap lifecycle
   class BrowserTabContext {
@@ -37,7 +67,7 @@ test('Simulation: Hard reload destroys JS heap, resetting Axios baseURLs and que
 
     // Full document navigation recreates module scope and singletons from environment defaults
     reboot() {
-      this.axiosMdu = { defaults: { baseURL: 'https://openwifi.wlan.local:16010/api/v1' } };
+      this.axiosMdu = { defaults: { baseURL: undefined } };
       this.axiosProv = { defaults: { baseURL: 'https://openwifi.wlan.local:16005/api/v1' } };
       this.queryClientCache = new Map();
     }
@@ -82,11 +112,11 @@ test('Simulation: Hard reload destroys JS heap, resetting Axios baseURLs and que
     { type: 'owprov', uri: 'https://cluster-b.net:16005' },
   ]);
 
-  // Assertions: Axios MDU baseURL and query cache were wiped cleanly by document reload
+  // Assertions: Axios MDU baseURL is undefined (never pings a hardcoded fallback outside the cluster)
   assert.strictEqual(
     tab.axiosMdu.defaults.baseURL,
-    'https://openwifi.wlan.local:16010/api/v1',
-    'Cluster B session must start from clean default MDU URL'
+    undefined,
+    'Cluster B session must have undefined MDU URL when not discovered in cluster'
   );
   assert.strictEqual(
     tab.queryClientCache.size,
@@ -94,3 +124,104 @@ test('Simulation: Hard reload destroys JS heap, resetting Axios baseURLs and que
     'Query client cache must be completely empty after document reload'
   );
 });
+
+test('client.ts does not hardcode default MDU URL and only sets baseURL when configured or discovered', () => {
+  const clientPath = path.join(ROOT_DIR, 'src', 'api', 'client.ts');
+  const content = fs.readFileSync(clientPath, 'utf-8');
+
+  // getMduBaseUrl must return string | undefined and NOT hardcode openwifi.wlan.local:16010
+  assert.strictEqual(
+    content.includes("'https://openwifi.wlan.local:16010'"),
+    false,
+    'client.ts must NOT hardcode fallback URL for MDU service to prevent cross-cluster traffic'
+  );
+  assert.ok(
+    content.includes('getMduBaseUrl = (): string | undefined'),
+    'getMduBaseUrl must return undefined when not configured'
+  );
+});
+
+test('users.ts useGetPolicyOverview gates query execution with isMduConfigured', () => {
+  const usersPath = path.join(ROOT_DIR, 'src', 'api', 'users.ts');
+  const content = fs.readFileSync(usersPath, 'utf-8');
+
+  assert.ok(
+    content.includes('const isMduConfigured = Boolean(axiosMdu.defaults.baseURL);'),
+    'useGetPolicyOverview must check if axiosMdu.defaults.baseURL is configured'
+  );
+  assert.ok(
+    content.includes('enabled: Boolean(policyId) && isEnabled && isMduConfigured'),
+    'useGetPolicyOverview query must be disabled if MDU service is not configured/discovered'
+  );
+});
+
+test('PoliciesTab.tsx surfaces stale cached metrics warning when refresh fails', () => {
+  const policiesPath = path.join(ROOT_DIR, 'src', 'pages', 'Users', 'PoliciesTab.tsx');
+  const content = fs.readFileSync(policiesPath, 'utf-8');
+
+  // Must detect when MDU is not configured
+  assert.ok(
+    content.includes('const isMduConfigured = Boolean(axiosMdu.defaults.baseURL);'),
+    'PoliciesTab must check isMduConfigured'
+  );
+
+  // Must distinguish failed refresh with cached data from fresh data
+  assert.ok(
+    content.includes('Refresh failed — cached'),
+    'PoliciesTab must display "Refresh failed — cached" badge when refresh fails'
+  );
+  assert.ok(
+    content.includes('Unable to refresh metrics from service. Displaying previously loaded data.'),
+    'PoliciesTab must alert user when displaying previously loaded data after failed refresh'
+  );
+  assert.ok(
+    content.includes('Previously loaded:'),
+    'Policy impact callout must label metrics as "Previously loaded" when refresh fails'
+  );
+});
+
+test('Simulation: MDU 401 rejects locally without clearing token or redirecting session', () => {
+  let sessionTerminated = false;
+  let activeToken = 'VALID_OWSEC_TOKEN';
+
+  const terminateSession = () => {
+    sessionTerminated = true;
+    activeToken = null;
+  };
+
+  // Interceptor dispatcher simulating client.ts
+  const dispatchResponseError = (clientName, error) => {
+    // Only core clients trigger session termination on 401/403
+    if (clientName !== 'axiosMdu' && (error.status === 401 || error.status === 403)) {
+      terminateSession();
+    }
+    return Promise.reject(error);
+  };
+
+  // Case 1: axiosMdu receives 401 Unauthorized from mango-mdu-service
+  const mduError = { status: 401, message: 'Unauthorized from MDU' };
+  assert.rejects(
+    async () => {
+      await dispatchResponseError('axiosMdu', mduError);
+    },
+    (err) => err.status === 401
+  );
+
+  // Assert session remains intact
+  assert.strictEqual(sessionTerminated, false, 'MDU 401 must NOT terminate the UI session');
+  assert.strictEqual(activeToken, 'VALID_OWSEC_TOKEN', 'OpenWiFi token must remain active after MDU 401');
+
+  // Case 2: Core client (e.g. axiosSec) receives 401 Unauthorized
+  const secError = { status: 401, message: 'Unauthorized from OWSEC' };
+  assert.rejects(
+    async () => {
+      await dispatchResponseError('axiosSec', secError);
+    },
+    (err) => err.status === 401
+  );
+
+  // Assert core failure terminates session
+  assert.strictEqual(sessionTerminated, true, 'Core OWSEC 401 must terminate session');
+  assert.strictEqual(activeToken, null, 'Active token must be cleared on core 401');
+});
+

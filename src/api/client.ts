@@ -9,23 +9,23 @@ declare global {
 
 // 1. Resolve OWSEC & OWPROV Base URLs from Runtime Environment (window._env_) or Build-time (.env)
 export const getSecBaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALSEC_URL || import.meta.env.VITE_UCENTRALSEC_URL || 'https://openwifi.wlan.local:16001';
+  const raw = window._env_?.VITE_UCENTRALSEC_URL || import.meta.env?.VITE_UCENTRALSEC_URL || 'https://openwifi.wlan.local:16001';
   return `${raw.replace(/\/+$/, '')}/api/v1`;
 };
 
 export const getProvBaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
+  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env?.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
   return `${raw.replace(/\/+$/, '')}/api/v1`;
 };
 
 export const getProvV2BaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
+  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env?.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
   return `${raw.replace(/\/+$/, '')}/api/v2`;
 };
 
-export const getMduBaseUrl = (): string => {
-  const raw = window._env_?.VITE_MANGO_MDU_URL || import.meta.env.VITE_MANGO_MDU_URL || 'https://openwifi.wlan.local:16010';
-  return `${raw.replace(/\/+$/, '')}/api/v1`;
+export const getMduBaseUrl = (): string | undefined => {
+  const raw = window._env_?.VITE_MANGO_MDU_URL || import.meta.env?.VITE_MANGO_MDU_URL;
+  return raw ? `${raw.replace(/\/+$/, '')}/api/v1` : undefined;
 };
 
 // 2. Base Configuration for all OpenWiFi & Mango Clients
@@ -44,10 +44,11 @@ export const axiosSec: AxiosInstance = axios.create({
   baseURL: getSecBaseUrl(),
 });
 
-// Mango MDU client (discovered dynamically from OWSEC systemEndpoints or default VITE_MANGO_MDU_URL)
+// Mango MDU client (discovered dynamically from OWSEC systemEndpoints or optional VITE_MANGO_MDU_URL)
+const initialMduBaseUrl = getMduBaseUrl();
 export const axiosMdu: AxiosInstance = axios.create({
   ...defaultClientConfig,
-  baseURL: getMduBaseUrl(),
+  ...(initialMduBaseUrl ? { baseURL: initialMduBaseUrl } : {}),
 });
 
 // OWPROV API v1 and v2 clients (dynamically updated upon endpoint discovery or defaulting to 16005)
@@ -66,16 +67,21 @@ export const axiosFms: AxiosInstance = axios.create(defaultClientConfig);
 export const axiosSub: AxiosInstance = axios.create(defaultClientConfig);
 export const axiosAnalytics: AxiosInstance = axios.create(defaultClientConfig);
 
-// Registry of all managed clients
-export const allAxiosInstances: AxiosInstance[] = [
+// Core OpenWiFi clients whose authentication failures indicate session expiration
+export const coreAxiosInstances: AxiosInstance[] = [
   axiosSec,
-  axiosMdu,
   axiosProv,
   axiosProvV2,
   axiosGw,
   axiosFms,
   axiosSub,
   axiosAnalytics,
+];
+
+// Registry of all managed clients
+export const allAxiosInstances: AxiosInstance[] = [
+  ...coreAxiosInstances,
+  axiosMdu,
 ];
 
 // 3. Centralized Token Propagation
@@ -134,8 +140,14 @@ const handleResponseError = (error: AxiosError<ApiErrorData>) => {
   return Promise.reject(error);
 };
 
-// Attach interceptors to all instances
+// Attach request interceptor to all instances (for auth token attachment)
 allAxiosInstances.forEach((client) => {
   client.interceptors.request.use(attachAuthToken, (error) => Promise.reject(error));
+});
+
+// Attach response interceptor only to core OpenWiFi instances.
+// Auxiliary microservices (such as axiosMdu) reject errors locally so service-specific
+// failures do not terminate the entire OpenWiFi operator session.
+coreAxiosInstances.forEach((client) => {
   client.interceptors.response.use(undefined, handleResponseError);
 });
