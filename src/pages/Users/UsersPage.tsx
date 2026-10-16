@@ -203,23 +203,20 @@ export const UsersPage: React.FC = () => {
     return users.filter((u) => u.id !== currentUser.id);
   }, [users, currentUser?.id]);
 
-  // Auto-select first user when manageable users list loads
+  // Auto-select first user on initial load only when no user has been requested or selected yet
   useEffect(() => {
     // Never overwrite or clear selection while data is still loading
     if (isLoading) return;
 
-    if (manageableUsers.length > 0) {
-      const exists = manageableUsers.some((u) => u.id === selectedUserId);
-      if (!exists) {
-        setSelectedUserId(manageableUsers[0].id);
-      }
-    } else if (selectedUserId !== null) {
-      setSelectedUserId(null);
+    // Only auto-select when no user has been requested or selected yet
+    if (selectedUserId === null && manageableUsers.length > 0) {
+      setSelectedUserId(manageableUsers[0].id);
     }
   }, [isLoading, manageableUsers, selectedUserId, setSelectedUserId]);
 
   const selectedUser = useMemo(() => {
-    return manageableUsers.find((u) => u.id === selectedUserId) || manageableUsers[0] || null;
+    if (!selectedUserId) return null;
+    return manageableUsers.find((u) => u.id === selectedUserId) || null;
   }, [manageableUsers, selectedUserId]);
 
   // Filtered Users List
@@ -939,7 +936,14 @@ export const UsersPage: React.FC = () => {
           maxH="calc(100vh - 40px)"
           overflowY="auto"
         >
-          {selectedUser ? (
+          {isLoading ? (
+            <Flex justify="center" align="center" minH="260px" direction="column" gap={3}>
+              <Spinner size="md" color={themeColors.brand.primary} />
+              <Text fontSize="13px" color={themeColors.text.secondary}>
+                Loading user profile...
+              </Text>
+            </Flex>
+          ) : selectedUser ? (
             <>
               {/* User Detail Head */}
               <Flex align="center" gap={3} pb={3}>
@@ -1120,6 +1124,51 @@ export const UsersPage: React.FC = () => {
               <Text fontSize="12px" color={themeColors.text.secondary} maxW="280px">
                 Directory request failed. User profile cannot be loaded.
               </Text>
+            </Flex>
+          ) : selectedUserId ? (
+            <Flex
+              justify="center"
+              align="center"
+              direction="column"
+              minH="260px"
+              color={themeColors.text.secondary}
+              p={6}
+              textAlign="center"
+            >
+              <Flex
+                w="44px"
+                h="44px"
+                borderRadius="50%"
+                bg="#f8fafc"
+                color="#64748b"
+                border="1px solid #e2e8f0"
+                align="center"
+                justify="center"
+                mb={3}
+              >
+                <Icon name="info" size={20} />
+              </Flex>
+              <Text fontSize="14px" fontWeight="600" color={themeColors.text.title} mb={1}>
+                User profile unavailable
+              </Text>
+              <Text fontSize="12px" color={themeColors.text.secondary} maxW="300px" mb={4}>
+                {currentUser?.id === selectedUserId
+                  ? 'Your account profile is self-managed and cannot be administered from this directory view.'
+                  : 'The requested user could not be found in your manageable users list. They may belong to another administrative scope or have been removed.'}
+              </Text>
+              {manageableUsers.length > 0 && (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  borderColor={themeColors.panel.divider}
+                  color={themeColors.text.title}
+                  onClick={() => setSelectedUserId(manageableUsers[0].id)}
+                  cursor="pointer"
+                  _hover={{ bg: '#f1f5f9' }}
+                >
+                  Select first manageable user
+                </Button>
+              )}
             </Flex>
           ) : (
             <Flex justify="center" align="center" minH="200px" color={themeColors.text.secondary}>

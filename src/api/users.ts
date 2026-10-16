@@ -148,6 +148,7 @@ export const useDeleteUser = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -185,6 +186,7 @@ export const useCreateManagementRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -199,6 +201,7 @@ export const useUpdateManagementRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -213,6 +216,7 @@ export const useDeleteManagementRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -281,6 +285,7 @@ export const useCreateManagementPolicy = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -293,8 +298,12 @@ export const useUpdateManagementPolicy = () => {
       const { data } = await axiosProv.put(`managementPolicy/${id}`, payload);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
+      if (variables?.id) {
+        queryClient.invalidateQueries({ queryKey: ['policyOverview', variables.id] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -307,8 +316,12 @@ export const useDeleteManagementPolicy = () => {
       const { data } = await axiosProv.delete(`managementPolicy/${id}`);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: ['policyOverview', id] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
