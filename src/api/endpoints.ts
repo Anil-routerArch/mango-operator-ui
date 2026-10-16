@@ -107,12 +107,11 @@ export const useEndpointsStore = create<EndpointsState>((set, get) => ({
 }));
 
 /**
- * Direct helper to fetch endpoints without Zustand hook if outside React tree
+ * Direct helper to fetch endpoints without Zustand hook if outside React tree.
+ * Updates the global useEndpointsStore with discovered services.
  */
 export const fetchSystemEndpoints = async (): Promise<Record<string, string>> => {
-  const response = await axiosSec.get<{ endpoints: EndpointApiResponse[] }>('systemEndpoints');
-  const list = response.data?.endpoints || [];
-  return applyDiscoveredEndpoints(list);
+  return useEndpointsStore.getState().fetchEndpoints();
 };
 
 /**
@@ -124,4 +123,15 @@ export const hasEndpoint = (serviceType: string): boolean => {
 
 export const getEndpointUri = (serviceType: string): string | undefined => {
   return useEndpointsStore.getState().endpoints[serviceType];
+};
+
+/**
+ * Check if MDU service is available (either dynamically discovered in the cluster
+ * or explicitly configured via VITE_MANGO_MDU_URL)
+ */
+export const isMduAvailable = (): boolean => {
+  return Boolean(
+    useEndpointsStore.getState().endpoints['mango-mdu-service'] ||
+    axiosMdu.defaults.baseURL
+  );
 };

@@ -9,18 +9,23 @@ declare global {
 
 // 1. Resolve OWSEC & OWPROV Base URLs from Runtime Environment (window._env_) or Build-time (.env)
 export const getSecBaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALSEC_URL || import.meta.env.VITE_UCENTRALSEC_URL || 'https://openwifi.wlan.local:16001';
+  const raw = window._env_?.VITE_UCENTRALSEC_URL || import.meta.env?.VITE_UCENTRALSEC_URL || 'https://openwifi.wlan.local:16001';
   return `${raw.replace(/\/+$/, '')}/api/v1`;
 };
 
 export const getProvBaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
+  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env?.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
   return `${raw.replace(/\/+$/, '')}/api/v1`;
 };
 
 export const getProvV2BaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
+  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env?.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
   return `${raw.replace(/\/+$/, '')}/api/v2`;
+};
+
+export const getMduBaseUrl = (): string | undefined => {
+  const raw = window._env_?.VITE_MANGO_MDU_URL || import.meta.env?.VITE_MANGO_MDU_URL;
+  return raw ? `${raw.replace(/\/+$/, '')}/api/v1` : undefined;
 };
 
 // 2. Base Configuration for all OpenWiFi & Mango Clients
@@ -39,8 +44,12 @@ export const axiosSec: AxiosInstance = axios.create({
   baseURL: getSecBaseUrl(),
 });
 
-// Mango MDU client (discovered dynamically from OWSEC systemEndpoints - no VIP treatment)
-export const axiosMdu: AxiosInstance = axios.create(defaultClientConfig);
+// Mango MDU client (discovered dynamically from OWSEC systemEndpoints or optional VITE_MANGO_MDU_URL)
+const initialMduBaseUrl = getMduBaseUrl();
+export const axiosMdu: AxiosInstance = axios.create({
+  ...defaultClientConfig,
+  ...(initialMduBaseUrl ? { baseURL: initialMduBaseUrl } : {}),
+});
 
 // OWPROV API v1 and v2 clients (dynamically updated upon endpoint discovery or defaulting to 16005)
 export const axiosProv: AxiosInstance = axios.create({
@@ -58,16 +67,21 @@ export const axiosFms: AxiosInstance = axios.create(defaultClientConfig);
 export const axiosSub: AxiosInstance = axios.create(defaultClientConfig);
 export const axiosAnalytics: AxiosInstance = axios.create(defaultClientConfig);
 
-// Registry of all managed clients
-export const allAxiosInstances: AxiosInstance[] = [
+// Core OpenWiFi clients whose authentication failures indicate session expiration
+export const coreAxiosInstances: AxiosInstance[] = [
   axiosSec,
-  axiosMdu,
   axiosProv,
   axiosProvV2,
   axiosGw,
   axiosFms,
   axiosSub,
   axiosAnalytics,
+];
+
+// Registry of all managed clients
+export const allAxiosInstances: AxiosInstance[] = [
+  ...coreAxiosInstances,
+  axiosMdu,
 ];
 
 // 3. Centralized Token Propagation
@@ -99,32 +113,65 @@ interface ApiErrorData {
   error?: string;
 }
 
+// Helper to identify unauthenticated login / MFA credential submissions
+export const isAuthEndpoint = (url?: string, method?: string): boolean => {
+  if (!url) return false;
+  const isPost = !method || method.toLowerCase() === 'post';
+  return isPost && url.includes('oauth2') && !url.includes('oauth2?me=true');
+};
+
+export const isLoginRoute = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.location.hash.includes('/login') ||
+    window.location.pathname.includes('/login')
+  );
+};
+
+/**
+ * Cleanly terminates the local session and reloads the active application document.
+ * Sets the hash to '#/login' so the reloaded document lands on the login page,
+ * while window.location.reload() natively preserves the current URL prefix (root, subpath, reverse proxy).
+ */
+export const teardownSessionAndReload = () => {
+  localStorage.removeItem('access_token');
+  sessionStorage.removeItem('access_token');
+  setApiToken(null);
+
+  if (typeof window !== 'undefined' && window.location) {
+    window.location.hash = '#/login';
+    if (typeof window.location.reload === 'function') {
+      window.location.reload();
+    }
+  }
+};
+
 const handleResponseError = (error: AxiosError<ApiErrorData>) => {
   if (error.response) {
     const { status, data } = error.response;
+    const url = error.config?.url;
+    const method = error.config?.method;
+
+    // Never redirect on 401/403 from login or MFA endpoints, allowing the login form
+    // to receive the rejected promise and display validation errors.
+    if (isAuthEndpoint(url, method)) {
+      return Promise.reject(error);
+    }
 
     // 403 Forbidden with OpenWiFi Expired or Invalid token codes
     if (
       status === 403 &&
       (data?.ErrorCode === AUTH_EXPIRED_TOKEN_CODE || data?.ErrorCode === AUTH_INVALID_TOKEN_CODE)
     ) {
-      localStorage.removeItem('access_token');
-      sessionStorage.removeItem('access_token');
-      setApiToken(null);
-      
-      // Redirect to login preserving hash routing if present
-      if (!window.location.href.includes('/login')) {
-        window.location.href = '/#/login';
+      if (!isLoginRoute()) {
+        teardownSessionAndReload();
       }
     }
 
-    // 401 Unauthorized handling
+    // 401 Unauthorized handling on authenticated requests
     if (status === 401) {
-      localStorage.removeItem('access_token');
-      sessionStorage.removeItem('access_token');
-      setApiToken(null);
-      if (!window.location.href.includes('/login')) {
-        window.location.href = '/#/login';
+      if (!isLoginRoute()) {
+        teardownSessionAndReload();
       }
     }
   }
@@ -132,8 +179,14 @@ const handleResponseError = (error: AxiosError<ApiErrorData>) => {
   return Promise.reject(error);
 };
 
-// Attach interceptors to all instances
+// Attach request interceptor to all instances (for auth token attachment)
 allAxiosInstances.forEach((client) => {
   client.interceptors.request.use(attachAuthToken, (error) => Promise.reject(error));
+});
+
+// Attach response interceptor only to core OpenWiFi instances.
+// Auxiliary microservices (such as axiosMdu) reject errors locally so service-specific
+// failures do not terminate the entire OpenWiFi operator session.
+coreAxiosInstances.forEach((client) => {
   client.interceptors.response.use(undefined, handleResponseError);
 });
