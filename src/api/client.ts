@@ -119,11 +119,7 @@ const handleResponseError = (error: AxiosError<ApiErrorData>) => {
       localStorage.removeItem('access_token');
       sessionStorage.removeItem('access_token');
       setApiToken(null);
-      
-      // Redirect to login preserving hash routing if present
-      if (!window.location.href.includes('/login')) {
-        window.location.href = '/#/login';
-      }
+      window.location.replace('/');
     }
 
     // 401 Unauthorized handling
@@ -131,9 +127,7 @@ const handleResponseError = (error: AxiosError<ApiErrorData>) => {
       localStorage.removeItem('access_token');
       sessionStorage.removeItem('access_token');
       setApiToken(null);
-      if (!window.location.href.includes('/login')) {
-        window.location.href = '/#/login';
-      }
+      window.location.replace('/');
     }
   }
 

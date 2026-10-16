@@ -530,11 +530,12 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   // Debounce policy ID when switching rapidly between un-cached policies
   const debouncedPolicyId = useDebouncedPolicyId(selectedPolicy?.id, 250);
 
-  // Fetch real-time policy overview from mango-mdu-service
+  // Fetch policy overview from mango-mdu-service
   const {
     data: policyOverview,
     isLoading: isOverviewQueryLoading,
     isError: isOverviewError,
+    isFetching: isOverviewFetching,
     refetch: refetchOverview,
   } = useGetPolicyOverview(debouncedPolicyId, isOverviewActive);
 
@@ -548,24 +549,6 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
   const hasValidPolicyData = Boolean(
     policyOverview && policyOverview.policy?.id === selectedPolicy?.id
   );
-
-  // Distinguish between the 4 metric presentation states:
-  // 1. 'live': fresh verified MDU response
-  // 2. 'cached': previously fetched in this session, but current refetch failed or inactive
-  // 3. 'loading': fetch in progress without prior valid cache
-  // 4. 'unavailable': MDU unreachable and no cached data exists for this policy
-  const metricsStatus: 'live' | 'cached' | 'loading' | 'unavailable' = useMemo(() => {
-    if (isOverviewLoading && !hasValidPolicyData) {
-      return 'loading';
-    }
-    if (isOverviewError) {
-      return hasValidPolicyData ? 'cached' : 'unavailable';
-    }
-    if (hasValidPolicyData) {
-      return 'live';
-    }
-    return isOverviewLoading ? 'loading' : 'unavailable';
-  }, [isOverviewLoading, isOverviewError, hasValidPolicyData]);
 
   const overviewStats = useMemo(() => {
     // If we have valid policy data (either live or cached)
@@ -1575,46 +1558,37 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 <Flex
                   p={3}
                   borderRadius="6px"
-                  bg={metricsStatus === 'unavailable' ? '#fffbeb' : '#eff6ff'}
+                  bg={isOverviewError && !hasValidPolicyData ? '#fffbeb' : '#eff6ff'}
                   border="1px solid"
-                  borderColor={metricsStatus === 'unavailable' ? '#fef3c7' : '#bfdbfe'}
+                  borderColor={isOverviewError && !hasValidPolicyData ? '#fef3c7' : '#bfdbfe'}
                   gap={2.5}
                   align="flex-start"
                 >
-                  <Box color={metricsStatus === 'unavailable' ? '#d97706' : '#0869ff'} mt="1px">
+                  <Box color={isOverviewError && !hasValidPolicyData ? '#d97706' : '#0869ff'} mt="1px">
                     <Icon name="info" size={16} />
                   </Box>
                   <Box flex="1">
-                    <HStack justify="space-between" align="center">
-                      <Text
-                        fontSize="12px"
-                        fontWeight="700"
-                        color={metricsStatus === 'unavailable' ? '#92400e' : '#1e40af'}
-                      >
-                        Policy impact
-                      </Text>
-                      {metricsStatus === 'cached' && (
-                        <Badge bg="#fef08a" color="#854d0e" fontSize="10px" px={1.5} py="1px" borderRadius="3px">
-                          Cached data
-                        </Badge>
-                      )}
-                    </HStack>
-                    {metricsStatus === 'unavailable' ? (
-                      <Text fontSize="11px" color="#92400e" mt={0.5}>
-                        Policy impact cannot be verified because the MDU service is unreachable. Review affected user assignments carefully before modifying permissions.
-                      </Text>
-                    ) : metricsStatus === 'loading' ? (
+                    <Text
+                      fontSize="12px"
+                      fontWeight="700"
+                      color={isOverviewError && !hasValidPolicyData ? '#92400e' : '#1e40af'}
+                    >
+                      Policy impact
+                    </Text>
+                    {isOverviewLoading && !hasValidPolicyData ? (
                       <HStack gap={1.5} mt={0.5} align="center">
                         <Spinner size="xs" color="#1e40af" />
                         <Text fontSize="11px" color="#1e40af">
                           Calculating policy impact metrics...
                         </Text>
                       </HStack>
+                    ) : isOverviewError && !hasValidPolicyData ? (
+                      <Text fontSize="11px" color="#92400e" mt={0.5}>
+                        Policy impact cannot be loaded from service. Review user assignments before modifying permissions.
+                      </Text>
                     ) : (
                       <Text fontSize="11px" color="#1e40af" mt={0.5}>
-                        {metricsStatus === 'cached'
-                          ? `Approximately ${overviewStats.usedByUsers} users across ${overviewStats.scopedAssignmentsCount} scoped assignments may be affected (based on cached session data).`
-                          : `${overviewStats.usedByUsers} users across ${overviewStats.scopedAssignmentsCount} scoped assignments will be affected by permission changes.`}
+                        {overviewStats.usedByUsers} users across {overviewStats.scopedAssignmentsCount} scoped assignments will be affected by permission changes.
                       </Text>
                     )}
                   </Box>
@@ -1667,43 +1641,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
           ) : (
             /* Overview Subtab */
             <VStack gap={4} align="stretch">
-              {metricsStatus === 'cached' && (
-                <Flex
-                  align="center"
-                  justify="space-between"
-                  bg="#fefce8"
-                  border="1px solid #fef08a"
-                  borderRadius="6px"
-                  py={2}
-                  px={3}
-                  fontSize="12px"
-                  color="#854d0e"
-                >
-                  <HStack gap={2}>
-                    <Icon name="info" size={15} color="#ca8a04" />
-                    <Text fontWeight="500">
-                      Displaying cached policy metrics. Real-time background sync is currently unavailable.
-                    </Text>
-                  </HStack>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    color="#854d0e"
-                    _hover={{ bg: '#fef9c3' }}
-                    h="24px"
-                    px={2}
-                    fontSize="11px"
-                    onClick={() => refetchOverview()}
-                  >
-                    <HStack gap={1}>
-                      <Icon name="refresh" size={12} />
-                      <Text>Refresh</Text>
-                    </HStack>
-                  </Button>
-                </Flex>
-              )}
-
-              {metricsStatus === 'unavailable' && (
+              {isOverviewError && !hasValidPolicyData && (
                 <Flex
                   align="center"
                   justify="space-between"
@@ -1718,7 +1656,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   <HStack gap={2}>
                     <Icon name="info" size={15} color="#d97706" />
                     <Text fontWeight="500">
-                      Real-time policy metrics unavailable (service unreachable).
+                      Policy overview metrics could not be loaded from service.
                     </Text>
                   </HStack>
                   <Button
@@ -1741,9 +1679,29 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
 
               {/* Section 1: Usage summary */}
               <Box>
-                <Text fontSize="12px" fontWeight="700" color="#0f172a" mb={2}>
-                  Usage summary
-                </Text>
+                <Flex justify="space-between" align="center" mb={2}>
+                  <Text fontSize="12px" fontWeight="700" color="#0f172a">
+                    Usage summary
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    color="#64748b"
+                    _hover={{ color: '#0f172a', bg: '#f1f5f9' }}
+                    h="24px"
+                    px={2}
+                    fontSize="11px"
+                    loading={isOverviewFetching}
+                    disabled={isOverviewFetching}
+                    onClick={() => refetchOverview()}
+                    title="Refresh metrics from service"
+                  >
+                    <HStack gap={1}>
+                      <Icon name="refresh" size={12} />
+                      <Text>Refresh</Text>
+                    </HStack>
+                  </Button>
+                </Flex>
                 <SimpleGrid columns={{ base: 2, sm: 4 }} gap={2.5}>
                   {/* Users */}
                   <Flex
@@ -1762,20 +1720,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Users
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color={metricsStatus === 'unavailable' ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
-                        {metricsStatus === 'loading' ? (
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError && !hasValidPolicyData ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewLoading && !hasValidPolicyData ? (
                           <Spinner size="xs" color="#2563eb" />
-                        ) : metricsStatus === 'unavailable' ? (
+                        ) : isOverviewError && !hasValidPolicyData ? (
                           '—'
                         ) : (
-                          <HStack gap={1} align="baseline">
-                            <span>{overviewStats.usedByUsers}</span>
-                            {metricsStatus === 'cached' && (
-                              <Text as="span" fontSize="10px" fontWeight="500" color="#ca8a04">
-                                (cached)
-                              </Text>
-                            )}
-                          </HStack>
+                          overviewStats.usedByUsers
                         )}
                       </Text>
                     </Box>
@@ -1798,20 +1749,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Scoped assignments
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color={metricsStatus === 'unavailable' ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
-                        {metricsStatus === 'loading' ? (
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError && !hasValidPolicyData ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewLoading && !hasValidPolicyData ? (
                           <Spinner size="xs" color="#7c3aed" />
-                        ) : metricsStatus === 'unavailable' ? (
+                        ) : isOverviewError && !hasValidPolicyData ? (
                           '—'
                         ) : (
-                          <HStack gap={1} align="baseline">
-                            <span>{overviewStats.scopedAssignmentsCount}</span>
-                            {metricsStatus === 'cached' && (
-                              <Text as="span" fontSize="10px" fontWeight="500" color="#ca8a04">
-                                (cached)
-                              </Text>
-                            )}
-                          </HStack>
+                          overviewStats.scopedAssignmentsCount
                         )}
                       </Text>
                     </Box>
@@ -1834,20 +1778,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Properties
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color={metricsStatus === 'unavailable' ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
-                        {metricsStatus === 'loading' ? (
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError && !hasValidPolicyData ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewLoading && !hasValidPolicyData ? (
                           <Spinner size="xs" color="#16a34a" />
-                        ) : metricsStatus === 'unavailable' ? (
+                        ) : isOverviewError && !hasValidPolicyData ? (
                           '—'
                         ) : (
-                          <HStack gap={1} align="baseline">
-                            <span>{overviewStats.propertiesCount}</span>
-                            {metricsStatus === 'cached' && (
-                              <Text as="span" fontSize="10px" fontWeight="500" color="#ca8a04">
-                                (cached)
-                              </Text>
-                            )}
-                          </HStack>
+                          overviewStats.propertiesCount
                         )}
                       </Text>
                     </Box>
@@ -1870,20 +1807,13 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Venues
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color={metricsStatus === 'unavailable' ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
-                        {metricsStatus === 'loading' ? (
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError && !hasValidPolicyData ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewLoading && !hasValidPolicyData ? (
                           <Spinner size="xs" color="#ea580c" />
-                        ) : metricsStatus === 'unavailable' ? (
+                        ) : isOverviewError && !hasValidPolicyData ? (
                           '—'
                         ) : (
-                          <HStack gap={1} align="baseline">
-                            <span>{overviewStats.venuesCount}</span>
-                            {metricsStatus === 'cached' && (
-                              <Text as="span" fontSize="10px" fontWeight="500" color="#ca8a04">
-                                (cached)
-                              </Text>
-                            )}
-                          </HStack>
+                          overviewStats.venuesCount
                         )}
                       </Text>
                     </Box>
@@ -1979,9 +1909,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     fontSize="11px"
                     fontWeight="600"
                   >
-                    {metricsStatus === 'loading' ? (
+                    {isOverviewLoading && !hasValidPolicyData ? (
                       <Spinner size="xs" color="#64748b" />
-                    ) : metricsStatus === 'unavailable' ? (
+                    ) : isOverviewError && !hasValidPolicyData ? (
                       '—'
                     ) : (
                       overviewStats.usedByUsers
@@ -1989,7 +1919,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   </Flex>
                 </HStack>
 
-                {metricsStatus === 'loading' ? (
+                {isOverviewLoading && !hasValidPolicyData ? (
                   <Flex
                     border="1px solid"
                     borderColor={themeColors.panel.border}
@@ -2004,7 +1934,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     <Spinner size="sm" color="#0869ff" />
                     <Text fontSize="12px" color="#64748b">Loading assigned users...</Text>
                   </Flex>
-                ) : metricsStatus === 'unavailable' ? (
+                ) : isOverviewError && !hasValidPolicyData ? (
                   <Box
                     border="1px solid"
                     borderColor={themeColors.panel.border}
@@ -2014,7 +1944,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     bg="#ffffff"
                   >
                     <Text fontSize="12px" color="#64748b" mb={2}>
-                      Unable to load assigned users from MDU service.
+                      Unable to load assigned users from service.
                     </Text>
                     <Button
                       size="xs"
@@ -2039,12 +1969,6 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     overflow="hidden"
                     bg="#ffffff"
                   >
-                    {metricsStatus === 'cached' && (
-                      <Flex bg="#fefce8" px={3} py={1.5} borderBottom="1px solid #fef08a" align="center" justify="space-between">
-                        <Text fontSize="11px" color="#854d0e">Displaying cached assigned users (background sync failed)</Text>
-                        <Badge bg="#fef08a" color="#854d0e" fontSize="10px">Cached</Badge>
-                      </Flex>
-                    )}
                     {overviewStats.assignedUsers.map((u, idx) => (
                       <Flex
                         key={u.id || u.name + idx}
@@ -2137,7 +2061,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   </Box>
                 )}
 
-                {metricsStatus !== 'unavailable' && overviewStats.usedByUsers > 0 && (
+                {overviewStats.usedByUsers > 0 && (
                   <Box mt={2}>
                     <Text
                       as="span"
