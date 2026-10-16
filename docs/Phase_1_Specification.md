@@ -2034,7 +2034,7 @@ export interface RadioProfileFormState {
 - **TC-PRF-006 (Search & Section Filtering):** Filter by section `Radio`. Verify only Radio profiles render in table. Search by profile name string. Verify real-time debounced filtering.
 
 ### 28.3 Dependency Enforcement & Deletion Safety
-- **TC-PRF-007 (In-Use Deletion Guard):** Attempt to delete a profile that has referencing configurations in its `configurations` array. Verify modal prevents deletion and displays blocking configurations.
+- **TC-PRF-007 (In-Use Deletion Guard):** Attempt to delete a profile that is referenced by a configuration (synchronized into its root `variables[]` array and reflected in `VariableBlock.configurations[]`). Verify deletion is blocked with `400 StillInUse` and the UI modal displays the blocking referencing configurations.
 - **TC-PRF-008 (Unreferenced Profile Deletion):** Delete an unreferenced profile. Verify `DELETE /api/v1/variable/{id}` completes and removes row from table.
 - **TC-PRF-009 (Pre-Save Impact Preview):** Edit an in-use profile referenced by multiple configurations. Click Save. Verify the Impact Confirmation Dialog opens displaying the referencing configuration names and affected device count before `PUT /api/v1/variable/{id}` is dispatched.
 - **TC-PRF-010 (RADIUS Secret Masking & Preservation):** Open an existing RADIUS profile in the editor. Verify the shared secret field renders masked (`type="password"` with visibility toggle). Save the form without modifying the secret field. Verify the existing secret value is preserved in the submission payload.
@@ -2129,11 +2129,21 @@ const allVarIds = Array.from(
 * **Authoritative Backend Contract:** OWPROV's existing `PUT /api/v1/configuration/{id}` API operates strictly under a **Last-Write-Wins (LWW)** model. OWPROV does not currently evaluate HTTP conditional headers (such as `If-Match` or `ETag`), nor does it reject stale updates with `409 Conflict`.
 * **Current UI Behavior:** When saving an edited Configuration, the UI dispatches the updated payload via `PUT /api/v1/configuration/{id}`. In alignment with OWPROV's current capabilities, no client-side blocking or conflict dialogs are enforced at this time; full atomic optimistic concurrency control is deferred until supported natively by the backend service.
 
-### 31.2 Authoritative Root Variables Preservation
-In accordance with OWPROV's configuration model and lossless editing guarantees:
-* When an existing configuration is retrieved, its root `variables[]` array is preserved exactly as stored in OWPROV.
-* The UI editor does not automatically overwrite, strip, or replace root `variables[]` with client-scanned section IDs. This ensures that manually assigned or third-party variable dependencies outside UI-managed form sections are never discarded.
-* New profile associations created via the modular section editor store their reference within the specific subsection's `{"__variableBlock": ["<uuid>"]}` structure.
+### 31.2 Root Variables Delta Synchronization & Dependency Tracking
+In accordance with OWPROV's dependency tracking model and lossless editing guarantees:
+* **The OWPROV Backend Contract:** In OWPROV (`RESTAPI_configurations_handler.cpp`), reverse dependency membership (`VariableBlock.configurations[]`) is maintained strictly from the configuration's root `variables[]` array via `ManageMembership()`. OWPROV does not recursively scan inner `configuration[].configuration` schemas for `__variableBlock` during write operations.
+* **The Delta Synchronization Contract:** The UI editor must preserve unrelated root dependencies while synchronizing the delta introduced by user actions:
+  1. **Profile Attachment:** When a Profile `P` is selected for a configuration subsection:
+     - The reference is inserted into the subsection's schema: `{"__variableBlock": ["<uuid>"]}` (for device firmware resolution in `APConfig`).
+     - The Profile UUID `P` is appended to the root `variables[]` array (if not already present), allowing OWPROV to link the configuration in `VariableBlock.configurations[]`.
+  2. **Profile Detachment / Replacement:** When a Profile `P` is unlinked or replaced:
+     - The subsection's `__variableBlock` reference is removed or updated.
+     - The Profile UUID `P` is removed from the root `variables[]` array **only if** `P` is no longer referenced in any other section of that configuration.
+  3. **Unrelated Root Variables Preservation:** Pre-existing, legacy, or third-party variable UUIDs in root `variables[]` (outside the UI-managed modular form sections) are preserved verbatim. The UI must never blindly overwrite or regenerate root `variables[]` from scratch purely via a recursive scanner.
+* **Scope and Existence Safety Guards:**
+  - **Pre-Save Scope Enforcement (CFG-058 / Section 22.1):** When selecting profiles in the UI editor, only profiles matching the configuration's operational boundary (same venue `venue === config.venue` or shared parent entity `entity === config.entity && !venue`) are eligible. Any cross-scope profile reference is flagged as a validation error before payload submission.
+  - **Backend Existence Verification:** Per OWPROV backend validation (`RESTAPI_configurations_handler.cpp`), any variable UUID in `variables[]` that does not exist in `VariablesDB` is rejected by the backend with `400 Bad Request` (`VariableMustExist`).
+* **Deletion Protection Alignment (TC-PRF-007 / CFG-009):** Synchronizing attached profile UUIDs into root `variables[]` ensures that OWPROV's `DELETE /api/v1/variable/{id}` in-use guard (`!Existing.configurations.empty() -> 400 StillInUse`) functions reliably, preventing accidental deletion of in-use profiles.
 
 ---
 
@@ -2281,7 +2291,9 @@ export interface ModularConfigurationApiResponse {
 
 ### 35.2 Lossless Configuration Editing & Dependency Preservation
 - **TC-CFG-007 (Lossless Configuration Section Preservation):** Load a configuration containing custom or unrecognized JSON sections. Edit only the Radio section and save. Verify untouched custom sections are preserved verbatim in the submitted payload.
-- **TC-CFG-008 (Root Variables Preservation on Edit):** Load a configuration that has root `variables: ["legacy-uuid-1"]` not referenced in any UI form section. Save an edit to an SSIDs section. Verify `legacy-uuid-1` remains intact in the saved configuration payload without being stripped by the client.
+- **TC-CFG-008 (Root Variables Preservation & Delta Synchronization on Edit):** 
+  1. Load a configuration with root `variables: ["legacy-uuid-1"]` not referenced in any UI form section. Attach Profile `P1` to an SSID section and save. Verify the saved payload contains `variables: ["legacy-uuid-1", "P1"]` (unrelated legacy variable preserved, new profile delta synchronized into root array).
+  2. Detach Profile `P1` from the SSID section and save. Verify `P1` is removed from root `variables[]` while `legacy-uuid-1` remains intact without being stripped.
 - **TC-CFG-009 (Standard Configuration Update):** Edit an existing configuration and click Save. Verify payload is submitted via `PUT /api/v1/configuration/{id}` with updated fields and `200 OK` response updates the UI.
 
 ### 35.3 Configuration Lifecycle & Impact
