@@ -208,6 +208,7 @@ export interface ServicesSectionData {
 
 export interface SingleRadioConfigItem {
   id: string;
+  resource?: string;
   band: '2G' | '5G' | '5G-lower' | '5G-upper' | '6G';
   bandwidth: number;
   country: string;

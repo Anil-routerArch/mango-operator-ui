@@ -12,6 +12,7 @@ import type {
   InterfacesSectionData,
   SingleInterfaceConfigItem,
 } from '../types';
+import type { VariableBlockApiResponse } from '@/api/modularConfigurations';
 
 export interface InterfacesSectionProps {
   data: InterfacesSectionData;
@@ -19,6 +20,7 @@ export interface InterfacesSectionProps {
   onDeleteSection: () => void;
   disabled?: boolean;
   isDefaultConfig?: boolean;
+  availableResources?: VariableBlockApiResponse[];
 }
 
 export const InterfacesSection: React.FC<InterfacesSectionProps> = ({
@@ -27,6 +29,7 @@ export const InterfacesSection: React.FC<InterfacesSectionProps> = ({
   onDeleteSection,
   disabled = false,
   isDefaultConfig = false,
+  availableResources = [],
 }) => {
   const [selectedIfaceId, setSelectedIfaceId] = useState<string>(
     () => data.interfaces[0]?.id || ''
@@ -194,6 +197,7 @@ export const InterfacesSection: React.FC<InterfacesSectionProps> = ({
                 canDelete={true}
                 disabled={disabled}
                 isDefaultConfig={isDefaultConfig}
+                availableResources={availableResources}
               />
             )}
           </Box>

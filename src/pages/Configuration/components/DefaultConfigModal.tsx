@@ -128,7 +128,7 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
       setApiSuccess(`Successfully saved default configuration "${configName}" to OWGW`);
 
       const saved: DeviceConfiguration = {
-        id: initialConfig?.id || `cfg-owgw-${Date.now().toString(36)}`,
+        id: initialConfig?.id || `owgw-${name.trim()}`,
         name: name.trim(),
         description: description.trim(),
         configType: 'default',

@@ -26,6 +26,7 @@ import { UnitSection } from './UnitSection/index';
 import { ThirdPartySection } from './ThirdPartySection/index';
 
 import { getInitialSectionsState, compileStateToUCentralJson, parseUCentralJsonToSectionsState } from './utils';
+import type { VariableBlockApiResponse } from '@/api/modularConfigurations';
 
 interface ConfigurationSectionsCardProps {
   platform?: PlatformType;
@@ -34,6 +35,7 @@ interface ConfigurationSectionsCardProps {
   onStateChange?: (state: ConfigurationSectionsState, compiledJson: string) => void;
   disabled?: boolean;
   isDefaultConfig?: boolean;
+  availableResources?: VariableBlockApiResponse[];
 }
 
 export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps> = ({
@@ -42,6 +44,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
   onStateChange,
   disabled = false,
   isDefaultConfig = false,
+  availableResources = [],
 }) => {
   const [sectionsState, setSectionsState] = useState<ConfigurationSectionsState>(() => {
     if (initialJson && initialJson.trim()) {
@@ -413,6 +416,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onDeleteSection={() => handleDeleteSection('radios')}
                 disabled={disabled}
                 isDefaultConfig={isDefaultConfig}
+                availableResources={availableResources}
               />
             )}
 
@@ -423,6 +427,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 onDeleteSection={() => handleDeleteSection('interfaces')}
                 disabled={disabled}
                 isDefaultConfig={isDefaultConfig}
+                availableResources={availableResources}
               />
             )}
 

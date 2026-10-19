@@ -11,6 +11,7 @@ import { GeneralInfoCard } from '../GeneralInfoCard';
 import { SingleRadio } from './SingleRadio';
 import { AddRadioModal } from './AddRadioModal';
 import type { RadiosSectionData, SingleRadioConfigItem } from '../types';
+import type { VariableBlockApiResponse } from '@/api/modularConfigurations';
 
 export interface RadiosSectionProps {
   data: RadiosSectionData;
@@ -18,6 +19,7 @@ export interface RadiosSectionProps {
   onDeleteSection: () => void;
   disabled?: boolean;
   isDefaultConfig?: boolean;
+  availableResources?: VariableBlockApiResponse[];
 }
 
 export const RadiosSection: React.FC<RadiosSectionProps> = ({
@@ -26,6 +28,7 @@ export const RadiosSection: React.FC<RadiosSectionProps> = ({
   onDeleteSection,
   disabled = false,
   isDefaultConfig = false,
+  availableResources = [],
 }) => {
   const [selectedRadioId, setSelectedRadioId] = useState<string>(
     () => data.bands[0]?.id || ''
@@ -209,6 +212,7 @@ export const RadiosSection: React.FC<RadiosSectionProps> = ({
               canDelete={true}
               disabled={disabled}
               isDefaultConfig={isDefaultConfig}
+              availableResources={availableResources}
             />
           )
         )}

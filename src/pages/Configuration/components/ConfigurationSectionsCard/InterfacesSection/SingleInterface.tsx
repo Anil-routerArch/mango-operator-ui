@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Box,
   Flex,
@@ -24,6 +24,7 @@ import {
   getDefaultSsid,
 } from './interfacesConstants';
 import type { SingleInterfaceConfigItem } from '../types';
+import type { VariableBlockApiResponse } from '@/api/modularConfigurations';
 
 interface SingleInterfaceProps {
   iface: SingleInterfaceConfigItem;
@@ -33,6 +34,7 @@ interface SingleInterfaceProps {
   canDelete?: boolean;
   disabled?: boolean;
   isDefaultConfig?: boolean;
+  availableResources?: VariableBlockApiResponse[];
 }
 
 export const SingleInterface: React.FC<SingleInterfaceProps> = ({
@@ -43,9 +45,160 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
   canDelete = true,
   disabled = false,
   isDefaultConfig = false,
+  availableResources = [],
 }) => {
   const [isReservedModalOpen, setIsReservedModalOpen] = useState(false);
   const [isPortForwardModalOpen, setIsPortForwardModalOpen] = useState(false);
+
+  // 1. IPv4 Resources & Options
+  const ipv4Resources = useMemo(() => {
+    if (!availableResources || availableResources.length === 0) return [];
+    return availableResources.filter((r) =>
+      r.variables?.some((v) => v.prefix === 'interface.ipv4')
+    );
+  }, [availableResources]);
+
+  const ipv4Options = useMemo(() => {
+    const opts = [
+      { value: '', label: 'No Resource Selected' },
+      ...ipv4Resources.map((r) => ({
+        value: r.id,
+        label: r.name ? `${r.name}` : r.id,
+      })),
+    ];
+    if (iface.ipv4?.resource && !opts.some((o) => o.value === iface.ipv4.resource)) {
+      opts.push({
+        value: iface.ipv4.resource,
+        label: `${iface.ipv4.resource} (Attached Profile)`,
+      });
+    }
+    return opts;
+  }, [ipv4Resources, iface.ipv4?.resource]);
+
+  const handleIpv4ResourceChange = (val: string) => {
+    if (!val) {
+      onChange({
+        ...iface,
+        ipv4: { ...iface.ipv4, resource: '' },
+      });
+      return;
+    }
+    const selectedProfile = availableResources?.find((r) => r.id === val);
+    let updatedIpv4 = { ...iface.ipv4, resource: val };
+    if (selectedProfile?.variables?.[0]?.value) {
+      try {
+        const rawVal = selectedProfile.variables[0].value;
+        const parsed = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.addressing) updatedIpv4.addressing = parsed.addressing as 'dynamic' | 'static';
+          if (parsed.subnet) updatedIpv4.subnet = String(parsed.subnet);
+          if (parsed.gateway) updatedIpv4.gateway = String(parsed.gateway);
+        }
+      } catch (e) {
+        console.warn('Could not parse IPv4 profile JSON value:', e);
+      }
+    }
+    onChange({ ...iface, ipv4: updatedIpv4 });
+  };
+
+  // 2. VLAN Resources & Options
+  const vlanResources = useMemo(() => {
+    if (!availableResources || availableResources.length === 0) return [];
+    return availableResources.filter((r) =>
+      r.variables?.some((v) => v.prefix === 'interface.vlan')
+    );
+  }, [availableResources]);
+
+  const vlanOptions = useMemo(() => {
+    const opts = [
+      { value: '', label: 'No Resource Selected' },
+      ...vlanResources.map((r) => ({
+        value: r.id,
+        label: r.name ? `${r.name}` : r.id,
+      })),
+    ];
+    if (iface.vlan?.resource && !opts.some((o) => o.value === iface.vlan.resource)) {
+      opts.push({
+        value: iface.vlan.resource,
+        label: `${iface.vlan.resource} (Attached Profile)`,
+      });
+    }
+    return opts;
+  }, [vlanResources, iface.vlan?.resource]);
+
+  const handleVlanResourceChange = (val: string) => {
+    if (!val) {
+      onChange({
+        ...iface,
+        vlan: { ...iface.vlan, resource: '' },
+      });
+      return;
+    }
+    const selectedProfile = availableResources?.find((r) => r.id === val);
+    let updatedVlan = { ...iface.vlan, resource: val };
+    if (selectedProfile?.variables?.[0]?.value) {
+      try {
+        const rawVal = selectedProfile.variables[0].value;
+        const parsed = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.id !== undefined) updatedVlan.id = Number(parsed.id);
+        }
+      } catch (e) {
+        console.warn('Could not parse VLAN profile JSON value:', e);
+      }
+    }
+    onChange({ ...iface, vlan: updatedVlan });
+  };
+
+  // 3. Tunnel Resources & Options
+  const tunnelResources = useMemo(() => {
+    if (!availableResources || availableResources.length === 0) return [];
+    return availableResources.filter((r) =>
+      r.variables?.some((v) => v.prefix === 'interface.tunnel')
+    );
+  }, [availableResources]);
+
+  const tunnelOptions = useMemo(() => {
+    const opts = [
+      { value: '', label: 'No Resource Selected' },
+      ...tunnelResources.map((r) => ({
+        value: r.id,
+        label: r.name ? `${r.name}` : r.id,
+      })),
+    ];
+    if (iface.tunnel?.resource && !opts.some((o) => o.value === iface.tunnel.resource)) {
+      opts.push({
+        value: iface.tunnel.resource,
+        label: `${iface.tunnel.resource} (Attached Profile)`,
+      });
+    }
+    return opts;
+  }, [tunnelResources, iface.tunnel?.resource]);
+
+  const handleTunnelResourceChange = (val: string) => {
+    if (!val) {
+      onChange({
+        ...iface,
+        tunnel: { ...iface.tunnel, resource: '' },
+      });
+      return;
+    }
+    const selectedProfile = availableResources?.find((r) => r.id === val);
+    let updatedTunnel = { ...iface.tunnel, resource: val };
+    if (selectedProfile?.variables?.[0]?.value) {
+      try {
+        const rawVal = selectedProfile.variables[0].value;
+        const parsed = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.proto) updatedTunnel.proto = String(parsed.proto);
+          if (parsed.peer) updatedTunnel.peer = String(parsed.peer);
+        }
+      } catch (e) {
+        console.warn('Could not parse Tunnel profile JSON value:', e);
+      }
+    }
+    onChange({ ...iface, tunnel: updatedTunnel });
+  };
 
   const isIpv4Enabled = iface.ipv4?.addressing !== 'none';
   const isIpv6Enabled = iface.ipv6?.addressing !== 'none';
@@ -277,14 +430,9 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
                   <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
                     <SelectDropdown
                       size="sm"
-                      value={iface.ipv4.resource || ''}
-                      onChange={(val) =>
-                        onChange({
-                          ...iface,
-                          ipv4: { ...iface.ipv4, resource: String(val) },
-                        })
-                      }
-                      options={[{ value: '', label: 'No Resource Selected' }]}
+                      value={iface.ipv4?.resource || ''}
+                      onChange={(val) => handleIpv4ResourceChange(String(val))}
+                      options={ipv4Options}
                       disabled={disabled || isDefaultConfig}
                       w="200px"
                     />
@@ -873,14 +1021,9 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
                   <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
                     <SelectDropdown
                       size="sm"
-                      value={iface.vlan.resource || ''}
-                      onChange={(val) =>
-                        onChange({
-                          ...iface,
-                          vlan: { ...iface.vlan, resource: String(val) },
-                        })
-                      }
-                      options={[{ value: '', label: 'No Resource Selected' }]}
+                      value={iface.vlan?.resource || ''}
+                      onChange={(val) => handleVlanResourceChange(String(val))}
+                      options={vlanOptions}
                       disabled={disabled || isDefaultConfig}
                       w="200px"
                     />
@@ -932,14 +1075,9 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
                     <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
                       <SelectDropdown
                         size="sm"
-                        value={iface.tunnel.resource || ''}
-                        onChange={(val) =>
-                          onChange({
-                            ...iface,
-                            tunnel: { ...iface.tunnel, resource: String(val) },
-                          })
-                        }
-                        options={[{ value: '', label: 'No Resource Selected' }]}
+                        value={iface.tunnel?.resource || ''}
+                        onChange={(val) => handleTunnelResourceChange(String(val))}
+                        options={tunnelOptions}
                         disabled={disabled || isDefaultConfig}
                         w="200px"
                       />
@@ -993,6 +1131,7 @@ export const SingleInterface: React.FC<SingleInterfaceProps> = ({
             onChange={(ssids) => onChange({ ...iface, ssids })}
             disabled={disabled}
             isDefaultConfig={isDefaultConfig}
+            availableResources={availableResources}
           />
         ) : (
           <Box pt={4} textAlign="center">

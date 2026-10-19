@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Box,
   Flex,
@@ -22,6 +22,7 @@ import {
   RADIO_BANDS,
 } from './radiosConstants';
 import type { SingleRadioConfigItem } from '../types';
+import type { VariableBlockApiResponse } from '@/api/modularConfigurations';
 
 interface SingleRadioProps {
   radio: SingleRadioConfigItem;
@@ -30,6 +31,7 @@ interface SingleRadioProps {
   canDelete: boolean;
   disabled?: boolean;
   isDefaultConfig?: boolean;
+  availableResources?: VariableBlockApiResponse[];
 }
 
 export const SingleRadio: React.FC<SingleRadioProps> = ({
@@ -39,7 +41,64 @@ export const SingleRadio: React.FC<SingleRadioProps> = ({
   canDelete,
   disabled = false,
   isDefaultConfig = false,
+  availableResources = [],
 }) => {
+  const radioResources = useMemo(() => {
+    if (!availableResources || availableResources.length === 0) return [];
+    return availableResources.filter((r) =>
+      r.variables?.some((v) => v.prefix === 'radio')
+    );
+  }, [availableResources]);
+
+  const radioOptions = useMemo(() => {
+    const opts = [
+      { value: '', label: 'No Resource Selected' },
+      ...radioResources.map((r) => ({
+        value: r.id,
+        label: r.name ? `${r.name}` : r.id,
+      })),
+    ];
+    if (radio.resource && !opts.some((o) => o.value === radio.resource)) {
+      opts.push({
+        value: radio.resource,
+        label: `${radio.resource} (Attached Profile)`,
+      });
+    }
+    return opts;
+  }, [radioResources, radio.resource]);
+
+  const handleResourceChange = (val: string) => {
+    if (!val) {
+      onChange({ ...radio, resource: '' });
+      return;
+    }
+    const selectedProfile = availableResources?.find((r) => r.id === val);
+    let updatedRadio: SingleRadioConfigItem = { ...radio, resource: val };
+    if (selectedProfile?.variables?.[0]?.value) {
+      try {
+        const rawVal = selectedProfile.variables[0].value;
+        const parsed = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.bandwidth !== undefined) updatedRadio.bandwidth = Number(parsed.bandwidth);
+          if (parsed.channel !== undefined) updatedRadio.channel = String(parsed.channel);
+          if (parsed['channel-mode'] || parsed.channelMode) {
+            updatedRadio.channelMode = String(parsed['channel-mode'] || parsed.channelMode);
+          }
+          if (parsed['channel-width'] !== undefined || parsed.channelWidth !== undefined) {
+            updatedRadio.channelWidth = Number(parsed['channel-width'] ?? parsed.channelWidth);
+          }
+          if (parsed.country) updatedRadio.country = String(parsed.country);
+          if (parsed['tx-power'] !== undefined || parsed.txPower !== undefined) {
+            updatedRadio.txPower = Number(parsed['tx-power'] ?? parsed.txPower);
+          }
+        }
+      } catch (e) {
+        console.warn('Could not parse radio profile JSON value:', e);
+      }
+    }
+    onChange(updatedRadio);
+  };
+
   return (
     <Box p={4}>
       {/* Header: General [No Resource Selected] and red delete button */}
@@ -57,9 +116,9 @@ export const SingleRadio: React.FC<SingleRadioProps> = ({
 
           <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
             <SelectDropdown
-              value="No Resource Selected"
-              onChange={() => {}}
-              options={['No Resource Selected']}
+              value={radio.resource || ''}
+              onChange={(val) => handleResourceChange(String(val))}
+              options={radioOptions}
               disabled={disabled || isDefaultConfig}
               size="sm"
               h="28px"

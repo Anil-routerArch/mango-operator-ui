@@ -421,6 +421,11 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
 
   if (state.activeSections.includes('radios')) {
     doc.radios = state.radios.bands.map((b) => {
+      if (b.resource) {
+        return {
+          __variableBlock: [b.resource],
+        };
+      }
       const radioObj: Record<string, unknown> = {
         band: b.band,
         bandwidth: Number(b.bandwidth) || 5,
@@ -488,45 +493,51 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
       if (iface.hostapdBssRaw) ifaceObj['hostapd-bss-raw'] = iface.hostapdBssRaw;
 
       if (iface.ipv4 && iface.ipv4.addressing !== 'none') {
-        const ipv4Obj: Record<string, unknown> = {
-          addressing: iface.ipv4.addressing,
-        };
-        if (iface.ipv4.addressing === 'static') {
-          if (iface.ipv4.subnet) ipv4Obj.subnet = iface.ipv4.subnet;
-          if (iface.ipv4.gateway) ipv4Obj.gateway = iface.ipv4.gateway;
-          if (iface.ipv4.sendHostname !== undefined) ipv4Obj['send-hostname'] = iface.ipv4.sendHostname;
-          if (iface.ipv4.useDns && iface.ipv4.useDns.length > 0) ipv4Obj['use-dns'] = iface.ipv4.useDns;
-        }
-        if (iface.ipv4.dhcpServer) {
-          const dhcpData = iface.ipv4.dhcp || {};
-          const dhcpObj: Record<string, unknown> = {
-            'lease-first': dhcpData.leaseFirst ?? iface.ipv4.leaseFirst ?? 1,
-            'lease-count': dhcpData.leaseCount ?? iface.ipv4.leaseCount ?? 128,
-            'lease-time': dhcpData.leaseTime || iface.ipv4.leaseTime || '6h',
+        if (iface.ipv4.resource) {
+          ifaceObj.ipv4 = {
+            __variableBlock: [iface.ipv4.resource],
           };
-          if (dhcpData.relayServer) dhcpObj['relay-server'] = dhcpData.relayServer;
-          if (dhcpData.circuitIdFormat) dhcpObj['circuit-id-format'] = dhcpData.circuitIdFormat;
-          if (dhcpData.remoteIdFormat) dhcpObj['remote-id-format'] = dhcpData.remoteIdFormat;
-          ipv4Obj.dhcp = dhcpObj;
+        } else {
+          const ipv4Obj: Record<string, unknown> = {
+            addressing: iface.ipv4.addressing,
+          };
+          if (iface.ipv4.addressing === 'static') {
+            if (iface.ipv4.subnet) ipv4Obj.subnet = iface.ipv4.subnet;
+            if (iface.ipv4.gateway) ipv4Obj.gateway = iface.ipv4.gateway;
+            if (iface.ipv4.sendHostname !== undefined) ipv4Obj['send-hostname'] = iface.ipv4.sendHostname;
+            if (iface.ipv4.useDns && iface.ipv4.useDns.length > 0) ipv4Obj['use-dns'] = iface.ipv4.useDns;
+          }
+          if (iface.ipv4.dhcpServer) {
+            const dhcpData = iface.ipv4.dhcp || {};
+            const dhcpObj: Record<string, unknown> = {
+              'lease-first': dhcpData.leaseFirst ?? iface.ipv4.leaseFirst ?? 1,
+              'lease-count': dhcpData.leaseCount ?? iface.ipv4.leaseCount ?? 128,
+              'lease-time': dhcpData.leaseTime || iface.ipv4.leaseTime || '6h',
+            };
+            if (dhcpData.relayServer) dhcpObj['relay-server'] = dhcpData.relayServer;
+            if (dhcpData.circuitIdFormat) dhcpObj['circuit-id-format'] = dhcpData.circuitIdFormat;
+            if (dhcpData.remoteIdFormat) dhcpObj['remote-id-format'] = dhcpData.remoteIdFormat;
+            ipv4Obj.dhcp = dhcpObj;
 
-          if (dhcpData.reservedAddresses && dhcpData.reservedAddresses.length > 0) {
-            ipv4Obj['dhcp-leases'] = dhcpData.reservedAddresses.map((res) => ({
-              macaddr: res.macaddr,
-              'static-lease-offset': res.staticLeaseOffset,
-              'lease-time': res.leaseTime,
-              'publish-hostname': res.publishHostname,
+            if (dhcpData.reservedAddresses && dhcpData.reservedAddresses.length > 0) {
+              ipv4Obj['dhcp-leases'] = dhcpData.reservedAddresses.map((res) => ({
+                macaddr: res.macaddr,
+                'static-lease-offset': res.staticLeaseOffset,
+                'lease-time': res.leaseTime,
+                'publish-hostname': res.publishHostname,
+              }));
+            }
+          }
+          if (iface.ipv4.portForward && iface.ipv4.portForward.length > 0) {
+            ipv4Obj['port-forward'] = iface.ipv4.portForward.map((pf) => ({
+              protocol: pf.protocol,
+              'external-port': pf.externalPort,
+              'internal-port': pf.internalPort,
+              'internal-address': pf.internalAddress,
             }));
           }
+          ifaceObj.ipv4 = ipv4Obj;
         }
-        if (iface.ipv4.portForward && iface.ipv4.portForward.length > 0) {
-          ipv4Obj['port-forward'] = iface.ipv4.portForward.map((pf) => ({
-            protocol: pf.protocol,
-            'external-port': pf.externalPort,
-            'internal-port': pf.internalPort,
-            'internal-address': pf.internalAddress,
-          }));
-        }
-        ifaceObj.ipv4 = ipv4Obj;
       }
 
       if (iface.ipv6 && iface.ipv6.addressing !== 'none') {
@@ -550,16 +561,33 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
         ifaceObj.ipv6 = ipv6Obj;
       }
 
-      if (iface.vlan && iface.vlan.enabled && iface.vlan.id) {
-        ifaceObj.vlan = { id: iface.vlan.id };
+      if (iface.vlan && iface.vlan.enabled) {
+        if (iface.vlan.resource) {
+          ifaceObj.vlan = {
+            __variableBlock: [iface.vlan.resource],
+          };
+        } else if (iface.vlan.id) {
+          ifaceObj.vlan = { id: iface.vlan.id };
+        }
       }
 
       if (iface.tunnel && iface.tunnel.proto && iface.tunnel.proto !== 'none') {
-        ifaceObj.tunnel = { proto: iface.tunnel.proto, ...(iface.tunnel.peer ? { peer: iface.tunnel.peer } : {}) };
+        if (iface.tunnel.resource) {
+          ifaceObj.tunnel = {
+            __variableBlock: [iface.tunnel.resource],
+          };
+        } else {
+          ifaceObj.tunnel = { proto: iface.tunnel.proto, ...(iface.tunnel.peer ? { peer: iface.tunnel.peer } : {}) };
+        }
       }
 
       if (iface.ssids && iface.ssids.length > 0) {
         ifaceObj.ssids = iface.ssids.map((s) => {
+          if (s.resource) {
+            return {
+              __variableBlock: [s.resource],
+            };
+          }
           const ssidObj: Record<string, unknown> = {
             name: s.name,
             'bss-mode': s.bssMode,
@@ -1150,11 +1178,21 @@ export const parseUCentralJsonToSectionsState = (
           ? bandRaw
           : '2G';
 
-      const heObj = r.he as Record<string, unknown> | undefined;
-      const ratesObj = r.rates as Record<string, unknown> | undefined;
+      const radioRaw = r as Record<string, unknown>;
+      const radioRes = Array.isArray(radioRaw.__variableBlock)
+        ? String(radioRaw.__variableBlock[0])
+        : radioRaw.__variableBlock
+        ? String(radioRaw.__variableBlock)
+        : radioRaw.resource
+        ? String(radioRaw.resource)
+        : undefined;
+
+      const heObj = radioRaw.he as Record<string, unknown> | undefined;
+      const ratesObj = radioRaw.rates as Record<string, unknown> | undefined;
 
       return {
         id: r.id ? String(r.id) : `radio-${band.toLowerCase()}-${idx + 1}`,
+        resource: radioRes,
         band,
         bandwidth: Number(r.bandwidth ?? 5),
         country: r.country ? String(r.country) : 'US',
@@ -1215,6 +1253,13 @@ export const parseUCentralJsonToSectionsState = (
       const services: string[] = Array.isArray(iface.services) ? (iface.services as unknown[]).map(String) : [];
 
       const ipv4Raw = (iface.ipv4 as Record<string, unknown> | undefined) || {};
+      const ipv4Res = Array.isArray(ipv4Raw.__variableBlock)
+        ? String(ipv4Raw.__variableBlock[0])
+        : ipv4Raw.__variableBlock
+        ? String(ipv4Raw.__variableBlock)
+        : ipv4Raw.resource
+        ? String(ipv4Raw.resource)
+        : undefined;
       const hasDhcp = Boolean(ipv4Raw.dhcp || ipv4Raw['dhcp-leases'] || ipv4Raw.dhcpServer);
       const dhcpRaw = (ipv4Raw.dhcp as Record<string, unknown> | undefined) || {};
       const leasesRaw = Array.isArray(ipv4Raw['dhcp-leases'])
@@ -1223,7 +1268,7 @@ export const parseUCentralJsonToSectionsState = (
 
       const ipv4 = {
         addressing: (ipv4Raw.addressing || 'dynamic') as 'dynamic' | 'static' | 'none',
-        resource: ipv4Raw.resource ? String(ipv4Raw.resource) : undefined,
+        resource: ipv4Res,
         subnet: ipv4Raw.subnet ? String(ipv4Raw.subnet) : undefined,
         gateway: ipv4Raw.gateway ? String(ipv4Raw.gateway) : undefined,
         sendHostname: ipv4Raw['send-hostname'] !== undefined ? Boolean(ipv4Raw['send-hostname']) : (ipv4Raw.sendHostname !== undefined ? Boolean(ipv4Raw.sendHostname) : true),
@@ -1278,16 +1323,30 @@ export const parseUCentralJsonToSectionsState = (
       };
 
       const vlanRaw = (iface.vlan as Record<string, unknown> | undefined) || {};
+      const vlanRes = Array.isArray(vlanRaw.__variableBlock)
+        ? String(vlanRaw.__variableBlock[0])
+        : vlanRaw.__variableBlock
+        ? String(vlanRaw.__variableBlock)
+        : vlanRaw.resource
+        ? String(vlanRaw.resource)
+        : undefined;
       const vlan = {
-        enabled: Boolean(vlanRaw.id !== undefined || vlanRaw.enabled),
-        resource: vlanRaw.resource ? String(vlanRaw.resource) : undefined,
+        enabled: Boolean(vlanRaw.id !== undefined || vlanRaw.enabled || vlanRes),
+        resource: vlanRes,
         id: vlanRaw.id !== undefined ? Number(vlanRaw.id) : 1080,
       };
 
       const tunRaw = (iface.tunnel as Record<string, unknown> | undefined) || {};
+      const tunRes = Array.isArray(tunRaw.__variableBlock)
+        ? String(tunRaw.__variableBlock[0])
+        : tunRaw.__variableBlock
+        ? String(tunRaw.__variableBlock)
+        : tunRaw.resource
+        ? String(tunRaw.resource)
+        : undefined;
       const tunnel = {
-        proto: tunRaw.proto ? String(tunRaw.proto) : (tunRaw.peer ? 'mesh' : 'none'),
-        resource: tunRaw.resource ? String(tunRaw.resource) : undefined,
+        proto: tunRaw.proto ? String(tunRaw.proto) : (tunRaw.peer ? 'mesh' : (tunRes ? 'mesh' : 'none')),
+        resource: tunRes,
         peer: tunRaw.peer ? String(tunRaw.peer) : undefined,
       };
 
@@ -1406,10 +1465,18 @@ export const parseUCentralJsonToSectionsState = (
           };
         }
 
+        const sRes = Array.isArray(s.__variableBlock)
+          ? String(s.__variableBlock[0])
+          : s.__variableBlock
+          ? String(s.__variableBlock)
+          : s.resource
+          ? String(s.resource)
+          : undefined;
+
         return {
           id: sId,
           name: sName,
-          resource: s.resource ? String(s.resource) : undefined,
+          resource: sRes,
           bssMode,
           wifiBands,
           encryption,

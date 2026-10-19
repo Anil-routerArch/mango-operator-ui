@@ -192,17 +192,24 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
         if (id && id.trim()) set.add(id.trim());
       });
     });
-    return Array.from(set);
+    return Array.from(set).sort();
   }, [configurations]);
+
+  const serializedVariableIds = useMemo(
+    () => referencedVariableIds.join(','),
+    [referencedVariableIds]
+  );
 
   const [variableNameMap, setVariableNameMap] = useState<Map<string, string>>(new Map());
 
   // Fetch only the referenced variable blocks using targeted select query, with fallback
   useEffect(() => {
-    if (referencedVariableIds.length === 0) return;
+    if (!serializedVariableIds) return;
+    const targetIds = serializedVariableIds.split(',').filter(Boolean);
+    if (targetIds.length === 0) return;
     let isMounted = true;
 
-    getVariableBlocksSelect(referencedVariableIds)
+    getVariableBlocksSelect(targetIds)
       .then((blocks) => {
         if (!isMounted) return;
         const resolvedMap = new Map<string, string>();
@@ -213,7 +220,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
         });
 
         // Check if all referenced IDs were found in select response
-        const hasMissing = referencedVariableIds.some((id) => !resolvedMap.has(id));
+        const hasMissing = targetIds.some((id) => !resolvedMap.has(id));
         if (hasMissing) {
           getAllVariableBlocks()
             .then((allBlocks) => {
@@ -255,7 +262,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [referencedVariableIds]);
+  }, [serializedVariableIds]);
 
   const [isSelectTypeModalOpen, setIsSelectTypeModalOpen] = useState(false);
   const [isDefaultConfigModalOpen, setIsDefaultConfigModalOpen] = useState(false);
@@ -319,7 +326,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
 
   const handleSaveModularConfig = (saved: DeviceConfiguration) => {
     setConfigurations((prev) => {
-      const idx = prev.findIndex((c) => c.id === saved.id || c.name === saved.name);
+      const idx = prev.findIndex((c) => c.id === saved.id);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = saved;
@@ -356,6 +363,40 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
 
     return matchesSearch && matchesScope && matchesStatus && matchesFormat && matchesPlatform;
   });
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('configurations_page_size');
+      if (stored) {
+        const parsed = Number(stored);
+        if ([5, 10, 20, 50].includes(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return 10;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('configurations_page_size', String(pageSize));
+    } catch {
+      // ignore
+    }
+  }, [pageSize]);
+
+  // Reset page to 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, scopeFilter, statusFilter, formatFilter, platformFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredConfigs.length / pageSize));
+
+  const paginatedConfigs = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredConfigs.slice(startIndex, startIndex + pageSize);
+  }, [filteredConfigs, currentPage, pageSize]);
 
   const handleDeleteConfig = async (id: string) => {
     const target = configurations.find((c) => c.id === id);
@@ -548,7 +589,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                 </td>
               </Box>
             ) : (
-              filteredConfigs.map((c) => {
+              paginatedConfigs.map((c) => {
                 return (
                   <Box
                     as="tr"
@@ -806,6 +847,143 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
             )}
           </Box>
         </Box>
+
+        {/* Pagination Bar */}
+        {filteredConfigs.length > 0 && (
+          <Flex
+            justify="space-between"
+            align="center"
+            px={4}
+            py={3}
+            borderTop="1px solid"
+            borderColor={themeColors.panel.divider}
+            fontSize="12px"
+            color={themeColors.text.secondary}
+            wrap="wrap"
+            gap={2}
+          >
+            <HStack gap={3} align="center">
+              <Text>
+                Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredConfigs.length)} of {filteredConfigs.length}
+              </Text>
+
+              {/* Rows Per Page Selector */}
+              <HStack gap={1} align="center">
+                <Text fontSize="11px" color={themeColors.text.muted}>Rows:</Text>
+                <SelectDropdown
+                  value={pageSize}
+                  onChange={(val) => {
+                    setPageSize(Number(val));
+                    setCurrentPage(1);
+                  }}
+                  options={[5, 10, 20, 50]}
+                  w="66px"
+                  h="26px"
+                  fontSize="11px"
+                  borderColor={themeColors.panel.border}
+                />
+              </HStack>
+            </HStack>
+
+            {totalPages > 1 && (
+              <HStack gap={1}>
+                {/* Previous Page */}
+                <Button
+                  size="xs"
+                  w="28px"
+                  h="28px"
+                  minW="28px"
+                  p={0}
+                  variant="outline"
+                  borderColor={themeColors.panel.border}
+                  color={themeColors.text.secondary}
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  cursor={currentPage <= 1 ? 'not-allowed' : 'pointer'}
+                  borderRadius="4px"
+                  bg="#ffffff"
+                  _hover={{ borderColor: themeColors.brand.accent }}
+                  aria-label="Previous page"
+                >
+                  <Icon name="chevronLeft" size={14} />
+                </Button>
+
+                {/* Numbered Page Buttons */}
+                {(() => {
+                  const pages: (number | string)[] = [];
+                  if (totalPages <= 7) {
+                    for (let i = 1; i <= totalPages; i++) pages.push(i);
+                  } else {
+                    if (currentPage <= 4) {
+                      pages.push(1, 2, 3, 4, 5, '...', totalPages);
+                    } else if (currentPage >= totalPages - 3) {
+                      pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+                    } else {
+                      pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
+                    }
+                  }
+                  return pages.map((pageNum, idx) => {
+                    if (pageNum === '...') {
+                      return (
+                        <Text key={`ellipsis-${idx}`} px={1} color={themeColors.text.muted} fontSize="12px">
+                          ...
+                        </Text>
+                      );
+                    }
+                    const num = pageNum as number;
+                    const isActive = num === currentPage;
+                    return (
+                      <Button
+                        key={num}
+                        size="xs"
+                        w="28px"
+                        h="28px"
+                        minW="28px"
+                        p={0}
+                        fontSize="12px"
+                        fontWeight={isActive ? '700' : '400'}
+                        bg="#ffffff"
+                        color={isActive ? themeColors.brand.accent : themeColors.text.secondary}
+                        border="1px solid"
+                        borderColor={isActive ? themeColors.brand.accent : themeColors.panel.border}
+                        borderRadius="4px"
+                        onClick={() => setCurrentPage(num)}
+                        cursor="pointer"
+                        _hover={{
+                          borderColor: themeColors.brand.accent,
+                          color: themeColors.brand.accent,
+                        }}
+                      >
+                        {num}
+                      </Button>
+                    );
+                  });
+                })()}
+
+                {/* Next Page */}
+                <Button
+                  size="xs"
+                  w="28px"
+                  h="28px"
+                  minW="28px"
+                  p={0}
+                  variant="outline"
+                  borderColor={themeColors.panel.border}
+                  color={themeColors.text.secondary}
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  cursor={currentPage >= totalPages ? 'not-allowed' : 'pointer'}
+                  borderRadius="4px"
+                  bg="#ffffff"
+                  _hover={{ borderColor: themeColors.brand.accent }}
+                  aria-label="Next page"
+                >
+                  <Icon name="chevronRight" size={14} />
+                </Button>
+              </HStack>
+            )}
+          </Flex>
+        )}
       </Box>
 
       {/* Select Configuration Type Choice Modal */}

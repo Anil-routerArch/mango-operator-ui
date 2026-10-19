@@ -12,7 +12,13 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
-import { useGetEntities, useGetVenues } from '@/api';
+import {
+  useGetEntities,
+  useGetVenues,
+  useGetVenue,
+  useGetEntity,
+  useGetVariableBlocksSelect,
+} from '@/api';
 import type { DeviceConfiguration, PlatformType } from '../types/configuration';
 import {
   ConfigurationSectionsCard,
@@ -99,6 +105,27 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
 
   const selectedEntity = selectedEntityOverride !== null ? selectedEntityOverride : resolvedInitialEntity;
   const selectedVenue = selectedVenueOverride !== null ? selectedVenueOverride : (initialConfig?.venue || '');
+
+  // Scope query for venue and entity details
+  const { data: venueDetails } = useGetVenue(selectedVenue || undefined);
+  const { data: entityDetails } = useGetEntity(selectedEntity || undefined);
+
+  // Collect target variable block IDs according to selected venue / entity scope
+  const targetVariableIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (selectedVenue && venueDetails?.variables && venueDetails.variables.length > 0) {
+      venueDetails.variables.forEach((id) => ids.add(id));
+    } else if (selectedEntity && entityDetails?.variables) {
+      entityDetails.variables.forEach((id) => ids.add(id));
+    }
+    // Also include any variable block IDs present in initialConfig.variables
+    if (initialConfig?.variables) {
+      initialConfig.variables.forEach((id) => ids.add(id));
+    }
+    return Array.from(ids);
+  }, [selectedVenue, venueDetails, selectedEntity, entityDetails, initialConfig?.variables]);
+
+  const { data: availableResources = [] } = useGetVariableBlocksSelect(targetVariableIds);
 
   // Venues filtered by the selected entity
   const filteredVenues = selectedEntity
@@ -222,6 +249,50 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
       modularBlocks = compileStateToModularConfigurationElements(latestState);
     }
 
+    // Preserve any unmanaged / custom blocks from initial configuration (TC-CFG-007)
+    if (initialConfig?.configuration && Array.isArray(initialConfig.configuration)) {
+      const UI_MANAGED_KEYS = new Set([
+        'globals',
+        'unit',
+        'metrics',
+        'services',
+        'radios',
+        'interfaces',
+        'third-party',
+      ]);
+
+      for (const block of initialConfig.configuration) {
+        if (!block || typeof block !== 'object') continue;
+        let parsed: Record<string, unknown> | null = null;
+        if (typeof block.configuration === 'string') {
+          try {
+            parsed = JSON.parse(block.configuration);
+          } catch {
+            parsed = null;
+          }
+        } else if (typeof block.configuration === 'object' && block.configuration !== null) {
+          parsed = block.configuration as Record<string, unknown>;
+        }
+
+        const isUiManaged =
+          parsed &&
+          typeof parsed === 'object' &&
+          Object.keys(parsed).some((k) => UI_MANAGED_KEYS.has(k));
+
+        if (!isUiManaged) {
+          modularBlocks.push({
+            name: block.name || 'Custom Block',
+            description: block.description || '',
+            weight: typeof block.weight === 'number' ? block.weight : 99,
+            configuration:
+              typeof block.configuration === 'string'
+                ? block.configuration
+                : JSON.stringify(block.configuration, null, 2),
+          });
+        }
+      }
+    }
+
     // Fallback if no blocks were produced: wrap the compiled uCentral JSON into a primary block
     if (modularBlocks.length === 0) {
       modularBlocks = [
@@ -248,7 +319,55 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
       payloadVenue = '';
     }
 
-    const extractedVarIds = extractVariableBlockUuids(modularBlocks);
+    // 1. Extract all variable UUIDs currently referenced in modular blocks (both UI-managed & unmanaged)
+    const currentExtractedVars = extractVariableBlockUuids(modularBlocks);
+
+    // 2. Identify independent / pre-existing root variables (TC-CFG-008)
+    // V_independent = V_initial \ S_initial_ui
+    const initialRootVars = initialConfig?.variables || [];
+    let independentVars: string[] = [];
+
+    if (initialRootVars.length > 0) {
+      const initialUiVars = new Set<string>();
+      if (initialConfig?.configuration && Array.isArray(initialConfig.configuration)) {
+        const UI_MANAGED_KEYS = new Set([
+          'globals',
+          'unit',
+          'metrics',
+          'services',
+          'radios',
+          'interfaces',
+          'third-party',
+        ]);
+        for (const block of initialConfig.configuration) {
+          let parsed: Record<string, unknown> | null = null;
+          if (typeof block.configuration === 'string') {
+            try {
+              parsed = JSON.parse(block.configuration);
+            } catch {
+              parsed = null;
+            }
+          } else if (typeof block.configuration === 'object' && block.configuration !== null) {
+            parsed = block.configuration as Record<string, unknown>;
+          }
+          const isUiManaged =
+            parsed &&
+            typeof parsed === 'object' &&
+            Object.keys(parsed).some((k) => UI_MANAGED_KEYS.has(k));
+
+          if (isUiManaged) {
+            const blockVars = extractVariableBlockUuids(block);
+            blockVars.forEach((id) => initialUiVars.add(id));
+          }
+        }
+      }
+
+      // Any root variable in V_initial not tied to an initial UI-managed section is preserved
+      independentVars = initialRootVars.filter((id) => !initialUiVars.has(id));
+    }
+
+    // 3. Final root variables = V_independent ∪ currentExtractedVars (UI + unmanaged)
+    const finalVarIds = Array.from(new Set([...independentVars, ...currentExtractedVars]));
 
     const payload: ModularConfigurationPayload = {
       name: configName,
@@ -263,7 +382,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
       notes: note.trim() ? [{ note: note.trim() }] : undefined,
       entity: payloadEntity,
       venue: payloadVenue,
-      variables: extractedVarIds.length > 0 ? extractedVarIds : undefined,
+      variables: finalVarIds.length > 0 ? finalVarIds : undefined,
       configuration: modularBlocks.map((b) => ({
         name: b.name,
         description: b.description,
@@ -836,6 +955,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
                 platform={platform}
                 initialJson={configurationJson}
                 isDefaultConfig={false}
+                availableResources={availableResources}
                 onStateChange={(state, compiledJson) => {
                   setLatestState(state);
                   setConfigurationJson(compiledJson);

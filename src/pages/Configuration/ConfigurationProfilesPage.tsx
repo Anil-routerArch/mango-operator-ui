@@ -13,6 +13,7 @@ import { Header } from '@/layout/Header';
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
+import { toaster } from '@/components/ui/toaster';
 import { useConfigurationUiStore } from '@/stores/configurationUiStore';
 import { useGetEntities, useGetVenues } from '@/api';
 import {
@@ -132,6 +133,10 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
   const [editingModalProfile, setEditingModalProfile] = useState<ConfigurationProfile | null>(null);
   const isModalOpen = internalModalOpen || Boolean(isCreateOpen);
 
+  const [inUseModalProfile, setInUseModalProfile] = useState<ConfigurationProfile | null>(null);
+  const [deleteConfirmProfile, setDeleteConfirmProfile] = useState<ConfigurationProfile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -216,6 +221,10 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         }
         return [mapped, ...prev];
       });
+      toaster.success({
+        title: isExisting ? 'Variable Block Updated' : 'Variable Block Created',
+        description: `Variable block "${savedProfile.name}" was saved successfully.`,
+      });
     } catch (err: unknown) {
       console.error('Failed to save variable block:', err);
       const errorMsg =
@@ -223,7 +232,10 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
           ?.ErrorDescription ||
         (err as Error)?.message ||
         'Failed to save variable to OWPROV.';
-      alert(errorMsg);
+      toaster.error({
+        title: 'Save Failed',
+        description: errorMsg,
+      });
     }
   };
 
@@ -246,21 +258,25 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     setInternalModalOpen(true);
   };
 
-  const handleDeleteProfile = async (profileId: string) => {
-    const target = profiles.find((p) => p.id === profileId);
-    if (target && target.configurations && target.configurations.length > 0) {
-      alert(
-        `Cannot delete variable "${target.name}": it is currently in use by ${target.configurations.length} configuration(s). Please remove it from those configurations before deleting.`
-      );
+  const handleRequestDelete = (profile: ConfigurationProfile) => {
+    if (profile.configurations && profile.configurations.length > 0) {
+      setInUseModalProfile(profile);
       return;
     }
+    setDeleteConfirmProfile(profile);
+  };
 
-    const confirmMsg = `Are you sure you want to delete variable "${target?.name || profileId}"?`;
-    if (!window.confirm(confirmMsg)) return;
-
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmProfile) return;
     try {
-      await deleteVariableBlock(profileId);
-      setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+      setIsDeleting(true);
+      await deleteVariableBlock(deleteConfirmProfile.id);
+      setProfiles((prev) => prev.filter((p) => p.id !== deleteConfirmProfile.id));
+      toaster.success({
+        title: 'Variable Block Deleted',
+        description: `Variable block "${deleteConfirmProfile.name}" was deleted successfully.`,
+      });
+      setDeleteConfirmProfile(null);
     } catch (err: unknown) {
       console.error('Failed to delete variable from OWPROV:', err);
       const errorMsg =
@@ -268,7 +284,12 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
           ?.ErrorDescription ||
         (err as Error)?.message ||
         'Failed to delete variable from OWPROV.';
-      alert(errorMsg);
+      toaster.error({
+        title: 'Delete Failed',
+        description: errorMsg,
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -289,6 +310,10 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
       const created = await createVariableBlock(payload);
       const mapped = mapRawVariableToProfile(created, entityNameMap, venueNameMap);
       setProfiles((prev) => [mapped, ...prev]);
+      toaster.success({
+        title: 'Variable Block Duplicated',
+        description: `Created copy "${created.name}".`,
+      });
     } catch (err: unknown) {
       console.error('Failed to duplicate variable:', err);
       const errorMsg =
@@ -296,7 +321,10 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
           ?.ErrorDescription ||
         (err as Error)?.message ||
         'Failed to duplicate variable.';
-      alert(errorMsg);
+      toaster.error({
+        title: 'Duplicate Failed',
+        description: errorMsg,
+      });
     }
   };
 
@@ -318,6 +346,39 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
 
     return matchesSearch && matchesSection && matchesScope;
   });
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('configuration_profiles_page_size');
+      if (stored) {
+        const parsed = Number(stored);
+        if ([5, 10, 20, 50].includes(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return 10;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('configuration_profiles_page_size', String(pageSize));
+    } catch {
+      // ignore
+    }
+  }, [pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, sectionFilter, scopeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProfiles.length / pageSize));
+
+  const paginatedProfiles = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredProfiles.slice(startIndex, startIndex + pageSize);
+  }, [filteredProfiles, currentPage, pageSize]);
 
   const radioProfilesCount = profiles.filter((p) => p.prefix === 'radio').length;
   const ssidProfilesCount = profiles.filter((p) => p.prefix.startsWith('interface.ssid')).length;
@@ -486,7 +547,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
                 </td>
               </Box>
             ) : (
-              filteredProfiles.map((p) => {
+              paginatedProfiles.map((p) => {
                 return (
                   <Box
                     as="tr"
@@ -601,7 +662,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
                           borderColor={themeColors.panel.border}
                           color="#dc2626"
                           _hover={{ bg: '#fee2e2' }}
-                          onClick={() => handleDeleteProfile(p.id)}
+                          onClick={() => handleRequestDelete(p)}
                           title="Delete variable"
                         >
                           <Icon name="trash" size={12} color="#dc2626" />
@@ -614,6 +675,143 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
             )}
           </Box>
         </Box>
+
+        {/* Pagination Bar */}
+        {filteredProfiles.length > 0 && (
+          <Flex
+            justify="space-between"
+            align="center"
+            px={4}
+            py={3}
+            borderTop="1px solid"
+            borderColor={themeColors.panel.divider}
+            fontSize="12px"
+            color={themeColors.text.secondary}
+            wrap="wrap"
+            gap={2}
+          >
+            <HStack gap={3} align="center">
+              <Text>
+                Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredProfiles.length)} of {filteredProfiles.length}
+              </Text>
+
+              {/* Rows Per Page Selector */}
+              <HStack gap={1} align="center">
+                <Text fontSize="11px" color={themeColors.text.muted}>Rows:</Text>
+                <SelectDropdown
+                  value={pageSize}
+                  onChange={(val) => {
+                    setPageSize(Number(val));
+                    setCurrentPage(1);
+                  }}
+                  options={[5, 10, 20, 50]}
+                  w="66px"
+                  h="26px"
+                  fontSize="11px"
+                  borderColor={themeColors.panel.border}
+                />
+              </HStack>
+            </HStack>
+
+            {totalPages > 1 && (
+              <HStack gap={1}>
+                {/* Previous Page */}
+                <Button
+                  size="xs"
+                  w="28px"
+                  h="28px"
+                  minW="28px"
+                  p={0}
+                  variant="outline"
+                  borderColor={themeColors.panel.border}
+                  color={themeColors.text.secondary}
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  cursor={currentPage <= 1 ? 'not-allowed' : 'pointer'}
+                  borderRadius="4px"
+                  bg="#ffffff"
+                  _hover={{ borderColor: themeColors.brand.accent }}
+                  aria-label="Previous page"
+                >
+                  <Icon name="chevronLeft" size={14} />
+                </Button>
+
+                {/* Numbered Page Buttons */}
+                {(() => {
+                  const pages: (number | string)[] = [];
+                  if (totalPages <= 7) {
+                    for (let i = 1; i <= totalPages; i++) pages.push(i);
+                  } else {
+                    if (currentPage <= 4) {
+                      pages.push(1, 2, 3, 4, 5, '...', totalPages);
+                    } else if (currentPage >= totalPages - 3) {
+                      pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+                    } else {
+                      pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages);
+                    }
+                  }
+                  return pages.map((pageNum, idx) => {
+                    if (pageNum === '...') {
+                      return (
+                        <Text key={`ellipsis-${idx}`} px={1} color={themeColors.text.muted} fontSize="12px">
+                          ...
+                        </Text>
+                      );
+                    }
+                    const num = pageNum as number;
+                    const isActive = num === currentPage;
+                    return (
+                      <Button
+                        key={num}
+                        size="xs"
+                        w="28px"
+                        h="28px"
+                        minW="28px"
+                        p={0}
+                        fontSize="12px"
+                        fontWeight={isActive ? '700' : '400'}
+                        bg="#ffffff"
+                        color={isActive ? themeColors.brand.accent : themeColors.text.secondary}
+                        border="1px solid"
+                        borderColor={isActive ? themeColors.brand.accent : themeColors.panel.border}
+                        borderRadius="4px"
+                        onClick={() => setCurrentPage(num)}
+                        cursor="pointer"
+                        _hover={{
+                          borderColor: themeColors.brand.accent,
+                          color: themeColors.brand.accent,
+                        }}
+                      >
+                        {num}
+                      </Button>
+                    );
+                  });
+                })()}
+
+                {/* Next Page */}
+                <Button
+                  size="xs"
+                  w="28px"
+                  h="28px"
+                  minW="28px"
+                  p={0}
+                  variant="outline"
+                  borderColor={themeColors.panel.border}
+                  color={themeColors.text.secondary}
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  cursor={currentPage >= totalPages ? 'not-allowed' : 'pointer'}
+                  borderRadius="4px"
+                  bg="#ffffff"
+                  _hover={{ borderColor: themeColors.brand.accent }}
+                  aria-label="Next page"
+                >
+                  <Icon name="chevronRight" size={14} />
+                </Button>
+              </HStack>
+            )}
+          </Flex>
+        )}
       </Box>
 
       {/* Modal for Creating & Quick-Editing Profile */}
@@ -623,6 +821,214 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         onSave={handleSaveProfile}
         initialProfile={editingModalProfile}
       />
+
+      {/* In-Use Warning Modal */}
+      {inUseModalProfile && (
+        <Box
+          position="fixed"
+          inset="0"
+          bg="rgba(5, 12, 23, 0.54)"
+          display="grid"
+          placeItems="center"
+          zIndex="1200"
+          p={4}
+        >
+          <Box
+            w="min(480px, 95vw)"
+            bg="#ffffff"
+            borderRadius="8px"
+            boxShadow="0 20px 50px rgba(0,0,0,0.3)"
+            overflow="hidden"
+          >
+            <Flex
+              justify="space-between"
+              align="center"
+              p={5}
+              pb={3}
+              borderBottom="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <HStack gap={2}>
+                <Flex
+                  w="30px"
+                  h="30px"
+                  borderRadius="50%"
+                  bg="#fef3c7"
+                  color="#d97706"
+                  align="center"
+                  justify="center"
+                >
+                  <Icon name="alertTriangle" size={16} />
+                </Flex>
+                <Text fontSize="16px" fontWeight="700" color="#0f172a">
+                  Variable Block In Use
+                </Text>
+              </HStack>
+              <Button
+                variant="plain"
+                size="xs"
+                p={1}
+                cursor="pointer"
+                onClick={() => setInUseModalProfile(null)}
+              >
+                <Icon name="x" size={18} />
+              </Button>
+            </Flex>
+
+            <Box p={5}>
+              <Text fontSize="13px" color="#334155" mb={3} lineHeight="1.5">
+                Cannot delete variable block <strong>"{inUseModalProfile.name}"</strong> because it is currently referenced by <strong>{inUseModalProfile.configurations.length}</strong> configuration(s).
+              </Text>
+              <Box
+                bg="#f8fafc"
+                border="1px solid"
+                borderColor={themeColors.panel.border}
+                borderRadius="6px"
+                p={3}
+                mb={4}
+                maxH="150px"
+                overflowY="auto"
+              >
+                <Text fontSize="11px" fontWeight="600" color={themeColors.text.muted} mb={1.5} textTransform="uppercase">
+                  Referenced by Configurations:
+                </Text>
+                <VStack align="flex-start" gap={1}>
+                  {inUseModalProfile.configurations.map((cfgId) => (
+                    <HStack key={cfgId} gap={1.5} fontSize="12px" color={themeColors.text.primary}>
+                      <Icon name="file" size={13} color={themeColors.text.muted} />
+                      <Text fontFamily="monospace">{cfgId}</Text>
+                    </HStack>
+                  ))}
+                </VStack>
+              </Box>
+              <Text fontSize="12px" color="#64748b" lineHeight="1.5">
+                OWPROV enforces referential integrity. Please unassign or remove this variable block from the configurations above before deleting it.
+              </Text>
+            </Box>
+
+            <Flex
+              justify="flex-end"
+              p={4}
+              bg="#f8fafc"
+              borderTop="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <Button
+                size="sm"
+                bg={themeColors.brand.primary}
+                color="#ffffff"
+                _hover={{ opacity: 0.9 }}
+                onClick={() => setInUseModalProfile(null)}
+              >
+                Understood
+              </Button>
+            </Flex>
+          </Box>
+        </Box>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmProfile && (
+        <Box
+          position="fixed"
+          inset="0"
+          bg="rgba(5, 12, 23, 0.54)"
+          display="grid"
+          placeItems="center"
+          zIndex="1200"
+          p={4}
+        >
+          <Box
+            w="min(460px, 95vw)"
+            bg="#ffffff"
+            borderRadius="8px"
+            boxShadow="0 20px 50px rgba(0,0,0,0.3)"
+            overflow="hidden"
+          >
+            <Flex
+              justify="space-between"
+              align="center"
+              p={5}
+              pb={3}
+              borderBottom="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <HStack gap={2}>
+                <Flex
+                  w="30px"
+                  h="30px"
+                  borderRadius="50%"
+                  bg="#fee2e2"
+                  color="#dc2626"
+                  align="center"
+                  justify="center"
+                >
+                  <Icon name="trash" size={16} />
+                </Flex>
+                <Text fontSize="16px" fontWeight="700" color="#0f172a">
+                  Delete Variable Block
+                </Text>
+              </HStack>
+              <Button
+                variant="plain"
+                size="xs"
+                p={1}
+                cursor="pointer"
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmProfile(null)}
+              >
+                <Icon name="x" size={18} />
+              </Button>
+            </Flex>
+
+            <Box p={5}>
+              <Text fontSize="13px" color="#334155" mb={2} lineHeight="1.5">
+                Are you sure you want to delete variable block <strong>"{deleteConfirmProfile.name}"</strong>?
+              </Text>
+              <Text fontSize="12px" color="#64748b" lineHeight="1.5">
+                This action cannot be undone. The variable block will be permanently removed from OWPROV.
+              </Text>
+            </Box>
+
+            <Flex
+              justify="flex-end"
+              gap={3}
+              p={4}
+              bg="#f8fafc"
+              borderTop="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                borderColor={themeColors.panel.border}
+                color={themeColors.text.primary}
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmProfile(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                bg="#dc2626"
+                color="#ffffff"
+                _hover={{ bg: '#b91c1c' }}
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+              >
+                {isDeleting ? (
+                  <HStack gap={1.5}>
+                    <Spinner size="xs" color="#ffffff" />
+                    <Text>Deleting...</Text>
+                  </HStack>
+                ) : (
+                  'Delete Variable'
+                )}
+              </Button>
+            </Flex>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 };

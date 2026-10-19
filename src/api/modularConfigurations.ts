@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { axiosProv } from './client';
 
 export interface DeviceRulesPayload {
@@ -223,7 +224,7 @@ export const deleteVariableBlock = async (id: string): Promise<void> => {
 
 /**
  * Fetch specific variable blocks (profiles) by their UUIDs using OWPROV ?select= batch query.
- * GET /api/v1/variable?select=uuid1,uuid2
+ * GET /api/v1/variable?withExtendedInfo=true&select=uuid1,uuid2
  */
 export const getVariableBlocksSelect = async (
   ids: string[]
@@ -232,12 +233,21 @@ export const getVariableBlocksSelect = async (
   try {
     const response = await axiosProv.get<{
       variableBlocks?: VariableBlockApiResponse[];
-    }>(`variable?select=${ids.map((id) => encodeURIComponent(id)).join(',')}`);
+    }>(`variable?withExtendedInfo=true&select=${ids.map((id) => encodeURIComponent(id)).join(',')}`);
     return response.data?.variableBlocks || [];
   } catch (err) {
     console.warn('Could not fetch variable blocks by select:', err);
     return [];
   }
+};
+
+export const useGetVariableBlocksSelect = (ids: string[]) => {
+  return useQuery({
+    queryKey: ['variableBlocks', 'select', ids],
+    queryFn: () => getVariableBlocksSelect(ids),
+    enabled: Boolean(ids && ids.length > 0),
+    staleTime: 30 * 1000,
+  });
 };
 
 

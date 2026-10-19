@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import {
   Box,
   Flex,
@@ -27,6 +27,7 @@ import {
 } from './interfacesConstants';
 import { MultiPskModal } from './MultiPskModal';
 import type { SingleSsidConfigItem } from '../types';
+import type { VariableBlockApiResponse } from '@/api/modularConfigurations';
 import { PassPointSection } from '../../PassPointSection';
 import { DEFAULT_PASSPOINT_CONFIG } from '../../../types/passpoint';
 import { CaptivePortalSection } from '../../CaptivePortalSection';
@@ -37,6 +38,7 @@ interface SsidConfigProps {
   onChange: (ssids: SingleSsidConfigItem[]) => void;
   disabled?: boolean;
   isDefaultConfig?: boolean;
+  availableResources?: VariableBlockApiResponse[];
 }
 
 interface MultiSelectPillsProps {
@@ -216,6 +218,7 @@ export const SsidConfig: React.FC<SsidConfigProps> = ({
   onChange,
   disabled = false,
   isDefaultConfig = false,
+  availableResources = [],
 }) => {
   const [selectedSsidId, setSelectedSsidId] = useState<string>(() => ssids[0]?.id || '');
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -223,6 +226,147 @@ export const SsidConfig: React.FC<SsidConfigProps> = ({
 
   const activeSsid = ssids.find((s) => s.id === selectedSsidId) || ssids[0];
   const activeIndex = activeSsid ? ssids.findIndex((s) => s.id === activeSsid.id) : 0;
+
+  const ssidResources = useMemo(() => {
+    if (!availableResources || availableResources.length === 0) return [];
+    return availableResources.filter((r) =>
+      r.variables?.some(
+        (v) => v.prefix === 'interface.ssid' || v.prefix === 'interface.ssid.openroaming'
+      )
+    );
+  }, [availableResources]);
+
+  const ssidOptions = useMemo(() => {
+    const opts = [
+      { value: '', label: 'No Resource Selected' },
+      ...ssidResources.map((r) => ({
+        value: r.id,
+        label: r.name ? `${r.name}` : r.id,
+      })),
+    ];
+    if (activeSsid?.resource && !opts.some((o) => o.value === activeSsid.resource)) {
+      opts.push({
+        value: activeSsid.resource,
+        label: `${activeSsid.resource} (Attached Profile)`,
+      });
+    }
+    return opts;
+  }, [ssidResources, activeSsid?.resource]);
+
+  const handleResourceChange = (val: string) => {
+    if (!activeSsid) return;
+    if (!val) {
+      handleUpdateSsid({ ...activeSsid, resource: '' });
+      return;
+    }
+    const selectedProfile = availableResources?.find((r) => r.id === val);
+    let updatedSsid: SingleSsidConfigItem = { ...activeSsid, resource: val };
+    if (selectedProfile?.variables?.[0]?.value) {
+      try {
+        const rawVal = selectedProfile.variables[0].value;
+        const parsed = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.name) updatedSsid.name = String(parsed.name);
+          if (parsed['bss-mode'] || parsed.bssMode) {
+            updatedSsid.bssMode = (parsed['bss-mode'] || parsed.bssMode) as SingleSsidConfigItem['bssMode'];
+          }
+          if (Array.isArray(parsed['wifi-bands'] ?? parsed.wifiBands)) {
+            updatedSsid.wifiBands = (parsed['wifi-bands'] ?? parsed.wifiBands) as SingleSsidConfigItem['wifiBands'];
+          }
+          const proto = parsed.protocol ?? parsed.proto ?? parsed.encryption?.proto;
+          if (proto) {
+            const protoLower = String(proto).toLowerCase();
+            let mappedProto = protoLower;
+            if (protoLower === 'wpa2-psk' || protoLower === 'wpa2_psk') mappedProto = 'psk2';
+            else if (protoLower === 'wpa-psk' || protoLower === 'wpa_psk') mappedProto = 'psk';
+            else if (protoLower === 'wpa3-sae' || protoLower === 'wpa3_sae') mappedProto = 'sae';
+            else if (protoLower === 'wpa2-enterprise') mappedProto = 'wpa2';
+            else if (protoLower === 'wpa3-enterprise') mappedProto = 'wpa3';
+            else if (protoLower === 'open') mappedProto = 'none';
+
+            updatedSsid.encryption = {
+              ...updatedSsid.encryption,
+              proto: mappedProto,
+              key: parsed.key ?? parsed.encryption?.key ?? updatedSsid.encryption.key,
+              ieee80211w: (parsed.ieee80211w ?? parsed.encryption?.ieee80211w ?? updatedSsid.encryption.ieee80211w) as any,
+              keyCaching: (parsed['key-caching'] ?? parsed.keyCaching ?? parsed.encryption?.keyCaching) !== undefined
+                ? Boolean(parsed['key-caching'] ?? parsed.keyCaching ?? parsed.encryption?.keyCaching)
+                : updatedSsid.encryption.keyCaching,
+            };
+          }
+          updatedSsid.advanced = {
+            ...updatedSsid.advanced,
+            hiddenSsid: (parsed['hidden-ssid'] ?? parsed.hiddenSsid) !== undefined
+              ? Boolean(parsed['hidden-ssid'] ?? parsed.hiddenSsid)
+              : updatedSsid.advanced.hiddenSsid,
+            isolateClients: (parsed['isolate-clients'] ?? parsed.isolateClients) !== undefined
+              ? Boolean(parsed['isolate-clients'] ?? parsed.isolateClients)
+              : updatedSsid.advanced.isolateClients,
+            powerSave: (parsed['power-save'] ?? parsed.powerSave) !== undefined
+              ? Boolean(parsed['power-save'] ?? parsed.powerSave)
+              : updatedSsid.advanced.powerSave,
+            broadcastTime: (parsed['broadcast-time'] ?? parsed.broadcastTime) !== undefined
+              ? Boolean(parsed['broadcast-time'] ?? parsed.broadcastTime)
+              : updatedSsid.advanced.broadcastTime,
+            unicastConversion: (parsed['unicast-conversion'] ?? parsed.unicastConversion) !== undefined
+              ? Boolean(parsed['unicast-conversion'] ?? parsed.unicastConversion)
+              : updatedSsid.advanced.unicastConversion,
+            proxyArp: (parsed['proxy-arp'] ?? parsed.proxyArp) !== undefined
+              ? Boolean(parsed['proxy-arp'] ?? parsed.proxyArp)
+              : updatedSsid.advanced.proxyArp,
+            disassocLowAck: (parsed['disassoc-low-ack'] ?? parsed.disassocLowAck) !== undefined
+              ? Boolean(parsed['disassoc-low-ack'] ?? parsed.disassocLowAck)
+              : updatedSsid.advanced.disassocLowAck,
+            vendorElements: parsed['vendor-elements'] ?? parsed.vendorElements ?? updatedSsid.advanced.vendorElements,
+            tipInformationElement: (parsed['tip-information-element'] ?? parsed.tipInformationElement) !== undefined
+              ? Boolean(parsed['tip-information-element'] ?? parsed.tipInformationElement)
+              : updatedSsid.advanced.tipInformationElement,
+            dtimPeriod: parsed['dtim-period'] ?? parsed.dtimPeriod ?? updatedSsid.advanced.dtimPeriod,
+            maximumClients: parsed['maximum-clients'] ?? parsed.maximumClients ?? updatedSsid.advanced.maximumClients,
+            filsDiscoveryInterval: parsed['fils-discovery-interval'] ?? parsed.filsDiscoveryInterval ?? updatedSsid.advanced.filsDiscoveryInterval,
+            purpose: parsed.purpose ?? updatedSsid.advanced.purpose,
+          };
+          if (parsed['rate-limit-enabled'] || parsed.rateLimit?.enabled) {
+            updatedSsid.rateLimit = {
+              enabled: true,
+              ingressRate: Number(parsed['ingress-rate'] ?? parsed.rateLimit?.ingressRate ?? 0),
+              egressRate: Number(parsed['egress-rate'] ?? parsed.rateLimit?.egressRate ?? 0),
+            };
+          }
+          if (parsed['rrm-enabled'] || parsed.rrm?.enabled) {
+            updatedSsid.rrm = {
+              enabled: true,
+              neighborReporting: Boolean(parsed['neighbor-reporting'] ?? parsed.rrm?.neighborReporting),
+              lci: String(parsed.lci ?? parsed.rrm?.lci ?? ''),
+              civicLocation: String(parsed['civic-location'] ?? parsed.rrm?.civicLocation ?? ''),
+              ftmResponder: Boolean(parsed['ftm-responder'] ?? parsed.rrm?.ftmResponder),
+              stationaryAp: Boolean(parsed['stationary-ap'] ?? parsed.rrm?.stationaryAp),
+            };
+          }
+          if (parsed['roaming-state'] || parsed.roaming) {
+            const rState = parsed['roaming-state'] ?? parsed.roaming?.state;
+            if (rState === 'off') {
+              updatedSsid.roaming = { state: 'off' };
+            } else if (rState === 'on') {
+              updatedSsid.roaming = { state: 'on', messageExchange: 'air', generatePsk: false };
+            } else {
+              updatedSsid.roaming = {
+                state: 'custom',
+                messageExchange: (parsed['roaming-exchange'] ?? parsed.roaming?.messageExchange ?? 'ds') as any,
+                domainIdentifier: String(parsed['roaming-domain-id'] ?? parsed.roaming?.domainIdentifier ?? ''),
+                generatePsk: Boolean(parsed['roaming-generate-psk'] ?? parsed.roaming?.generatePsk),
+                pmkR0KeyHolder: String(parsed['pmk-r0-key-holder'] ?? parsed.roaming?.pmkR0KeyHolder ?? ''),
+                pmkR1KeyHolder: String(parsed['pmk-r1-key-holder'] ?? parsed.roaming?.pmkR1KeyHolder ?? ''),
+              };
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Could not parse SSID profile JSON value:', e);
+      }
+    }
+    handleUpdateSsid(updatedSsid);
+  };
 
   const handleAddSsid = () => {
     const newSsid = getDefaultSsid(ssids.length);
@@ -335,12 +479,8 @@ export const SsidConfig: React.FC<SsidConfigProps> = ({
               <Box title={isDefaultConfig ? 'Resource profiles cannot be bound to default configurations' : undefined}>
                 <SelectDropdown
                   value={activeSsid.resource || ''}
-                  onChange={(val) =>
-                    handleUpdateSsid({ ...activeSsid, resource: val as string })
-                  }
-                  options={[
-                    { value: '', label: 'No Resource Selected' },
-                  ]}
+                  onChange={(val) => handleResourceChange(String(val))}
+                  options={ssidOptions}
                   disabled={disabled || isDefaultConfig}
                   w="200px"
                 />
