@@ -110,12 +110,7 @@ const mapOwprovModularConfigToDeviceConfig = (cfg: ModularConfigurationApiRespon
       configuration: typeof b?.configuration === 'string' ? b.configuration : JSON.stringify(b?.configuration || {}),
     })),
     inuse: cfg.inUse || [],
-    variables: Array.from(
-      new Set([
-        ...(cfg.variables || []),
-        ...extractVariableBlockUuids(cfg.configuration),
-      ])
-    ),
+    variables: extractVariableBlockUuids(cfg.configuration),
     devicerules: {
       firmwareUpgrade: (cfg.deviceRules?.firmwareUpgrade as 'inherit' | 'yes' | 'no') || 'inherit',
       rcOnly: (cfg.deviceRules?.rcOnly as 'inherit' | 'yes' | 'no') || 'inherit',

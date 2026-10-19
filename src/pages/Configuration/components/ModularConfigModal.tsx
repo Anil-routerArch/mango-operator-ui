@@ -319,55 +319,8 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
       payloadVenue = '';
     }
 
-    // 1. Extract all variable UUIDs currently referenced in modular blocks (both UI-managed & unmanaged)
-    const currentExtractedVars = extractVariableBlockUuids(modularBlocks);
-
-    // 2. Identify independent / pre-existing root variables (TC-CFG-008)
-    // V_independent = V_initial \ S_initial_ui
-    const initialRootVars = initialConfig?.variables || [];
-    let independentVars: string[] = [];
-
-    if (initialRootVars.length > 0) {
-      const initialUiVars = new Set<string>();
-      if (initialConfig?.configuration && Array.isArray(initialConfig.configuration)) {
-        const UI_MANAGED_KEYS = new Set([
-          'globals',
-          'unit',
-          'metrics',
-          'services',
-          'radios',
-          'interfaces',
-          'third-party',
-        ]);
-        for (const block of initialConfig.configuration) {
-          let parsed: Record<string, unknown> | null = null;
-          if (typeof block.configuration === 'string') {
-            try {
-              parsed = JSON.parse(block.configuration);
-            } catch {
-              parsed = null;
-            }
-          } else if (typeof block.configuration === 'object' && block.configuration !== null) {
-            parsed = block.configuration as Record<string, unknown>;
-          }
-          const isUiManaged =
-            parsed &&
-            typeof parsed === 'object' &&
-            Object.keys(parsed).some((k) => UI_MANAGED_KEYS.has(k));
-
-          if (isUiManaged) {
-            const blockVars = extractVariableBlockUuids(block);
-            blockVars.forEach((id) => initialUiVars.add(id));
-          }
-        }
-      }
-
-      // Any root variable in V_initial not tied to an initial UI-managed section is preserved
-      independentVars = initialRootVars.filter((id) => !initialUiVars.has(id));
-    }
-
-    // 3. Final root variables = V_independent ∪ currentExtractedVars (UI + unmanaged)
-    const finalVarIds = Array.from(new Set([...independentVars, ...currentExtractedVars]));
+    // Extract all variable UUIDs currently referenced in modular blocks
+    const finalVarIds = extractVariableBlockUuids(modularBlocks);
 
     const payload: ModularConfigurationPayload = {
       name: configName,
@@ -382,7 +335,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
       notes: note.trim() ? [{ note: note.trim() }] : undefined,
       entity: payloadEntity,
       venue: payloadVenue,
-      variables: finalVarIds.length > 0 ? finalVarIds : undefined,
+      variables: finalVarIds,
       configuration: modularBlocks.map((b) => ({
         name: b.name,
         description: b.description,
@@ -428,7 +381,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
         subscriber: initialConfig?.subscriber || '',
         subscriberonly: false,
         inuse: initialConfig?.inuse || [],
-        variables: initialConfig?.variables || [],
+        variables: finalVarIds,
         devicerules: {
           firmwareUpgrade: (firmwareUpgrade as 'inherit' | 'yes' | 'no') || 'inherit',
           rcOnly: (rcOnly as 'inherit' | 'yes' | 'no') || 'inherit',
