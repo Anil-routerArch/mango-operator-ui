@@ -2135,20 +2135,24 @@ In accordance with OWPROV's dependency tracking model and lossless editing guara
 * **The Delta Synchronization Contract:** The UI editor distinguishes pre-existing root dependencies from UI-managed profile selections, preserving independently maintained references while synchronizing user actions:
   1. **Classification of Dependencies on Load:**
      - Let $V_{\text{initial}}$ be the set of UUIDs present in root `variables[]` when the configuration is loaded from OWPROV.
-     - Let $S_{\text{initial\_ui}}$ be the set of Profile UUIDs attached across UI-managed form sections at load time.
-     - Any variable UUID in root `variables[]` that is not attached to a UI-managed form section ($V_{\text{independent}} = V_{\text{initial}} \setminus S_{\text{initial\_ui}}$) is classified as an **independently maintained root dependency** (e.g., custom script variable blocks, legacy bindings, or raw unmanaged sections).
+     - Let $S_{\text{initial\_managed}}$ be the set of VariableBlock UUIDs referenced across UI-managed form sections at load time.
+     - Let $S_{\text{unmanaged}}$ be the set of VariableBlock UUIDs referenced in preserved, raw, custom, or non-UI-managed configuration sections (computed by scanning preserved unmanaged blocks for `__variableBlock`).
+     - Any variable UUID in root `variables[]` that is not referenced by any configuration section is classified as a **purely independent root dependency**:
+       $$V_{\text{independent}} = V_{\text{initial}} \setminus (S_{\text{initial\_managed}} \cup S_{\text{unmanaged}})$$
+       (e.g., custom script variable blocks, legacy root bindings, or variables maintained independently of configuration sections).
   2. **Profile Attachment:** When a Profile $P$ is selected for a configuration subsection:
      - The reference is inserted into the subsection's schema: `{"__variableBlock": ["<uuid>"]}` (for AP firmware compilation in `APConfig`).
-     - The Profile UUID $P$ is added to the active UI-managed selections set ($S_{\text{current\_ui}}$).
+     - The Profile UUID $P$ is added to the active UI-managed selections set ($S_{\text{current\_managed}}$).
   3. **Profile Detachment / Replacement:** When a Profile $P$ is unlinked or replaced:
      - The subsection's `__variableBlock` reference is removed or updated.
-     - The Profile UUID $P$ is removed from $S_{\text{current\_ui}}$ provided no other UI-managed section still references $P$.
+     - The Profile UUID $P$ is removed from $S_{\text{current\_managed}}$ provided no other UI-managed section still references $P$.
   4. **Payload Assembly on Save:** The final root `variables[]` array submitted in `PUT /api/v1/configuration/{id}` is calculated as:
-     $$V_{\text{final}} = V_{\text{independent}} \cup S_{\text{current\_ui}}$$
+     $$V_{\text{final}} = V_{\text{independent}} \cup S_{\text{unmanaged}} \cup S_{\text{current\_managed}}$$
      This guarantees:
-     - Newly attached profiles are registered in root `variables[]`, allowing OWPROV to link membership in `VariableBlock.configurations[]`.
-     - Detaching a profile removes it from root `variables[]` only if it was introduced via UI form sections and is no longer used elsewhere.
-     - Pre-existing or independent root dependencies ($V_{\text{independent}}$) are preserved verbatim and can never be accidentally stripped by detaching a profile in the editor.
+     - Newly attached profiles ($S_{\text{current\_managed}}$) are registered in root `variables[]`, allowing OWPROV to link membership in `VariableBlock.configurations[]`.
+     - Detaching a profile removes it from root `variables[]` only if it was introduced via UI form sections and is no longer referenced anywhere in either $S_{\text{unmanaged}}$ or $V_{\text{independent}}$.
+     - **Non-Removal Invariant:** A VariableBlock UUID must never be removed from root `variables[]` when any unmanaged or preserved configuration section ($S_{\text{unmanaged}}$) still references that UUID. This prevents actively referenced VariableBlocks from accidentally passing deletion checks in OWPROV.
+     - Purely independent root dependencies ($V_{\text{independent}}$) and unmanaged section dependencies ($S_{\text{unmanaged}}$) are preserved verbatim and can never be accidentally stripped by detaching a profile in the UI editor.
 * **Scope and Existence Safety Guards:**
   - **Pre-Save Scope Enforcement (CFG-058 / Section 22.1):** When selecting profiles in the UI editor, only profiles matching the configuration's operational boundary (same venue `venue === config.venue` or shared parent entity `entity === config.entity && !venue`) are eligible. Any cross-scope profile reference is flagged as a validation error before payload submission.
   - **Backend Existence Verification:** Per OWPROV backend validation (`RESTAPI_configurations_handler.cpp`), any variable UUID in `variables[]` that does not exist in `VariablesDB` is rejected by the backend with `400 Bad Request` (`VariableMustExist`).
@@ -2303,7 +2307,7 @@ export interface ModularConfigurationApiResponse {
 - **TC-CFG-008 (Root Variables Preservation & Delta Synchronization on Edit):** 
   1. Load a configuration with root `variables: ["legacy-uuid-1"]` not referenced in any UI form section. Attach Profile `P1` to an SSID section and save. Verify the saved payload contains `variables: ["legacy-uuid-1", "P1"]` (unrelated legacy variable preserved, new profile delta synchronized into root array).
   2. Detach Profile `P1` from the SSID section and save. Verify `P1` is removed from root `variables[]` while `legacy-uuid-1` remains intact without being stripped.
-  3. Load a configuration where `P1` exists in both root `variables[]` and an unmanaged raw section outside the UI form ($V_{\text{independent}}$). Attach and subsequently detach `P1` in the UI form. Verify `P1` remains preserved in root `variables[]` as an independently maintained dependency.
+  3. Load a configuration where `P1` exists in both root `variables[]` and an unmanaged raw section outside the UI form ($S_{\text{unmanaged}}$). Attach and subsequently detach `P1` in the UI form. Verify `P1` remains preserved in root `variables[]` as an unmanaged section dependency ($S_{\text{unmanaged}}$).
 - **TC-CFG-009 (Standard Configuration Update):** Edit an existing configuration and click Save. Verify payload is submitted via `PUT /api/v1/configuration/{id}` with updated fields and `200 OK` response updates the UI.
 
 ### 35.3 Configuration Lifecycle & Impact
