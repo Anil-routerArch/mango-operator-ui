@@ -95,8 +95,7 @@ but Phase 1 does not introduce a persistent issue-management workflow.
 | **Operator** | A business/provisioning object used to bind subscribers. Creating an Operator automatically creates its corresponding Operator Entity. An Operator is not a loginable User. |
 | **Property** | A top-level MDU site or managed customer location. Backend terminology may represent this as an Entity. |
 | **Venue** | A physical or organizational division within a Property, such as a building, floor, common area, suite, or room. In OWPROV, venues form a recursive hierarchy (`parent` and `children[]`). Individual dwelling spaces or suites are simply leaf Venues in this hierarchy. |
-| **Device** | A managed AP, switch, gateway, or other supported network device. Uniquely identified by its 12-character hexadecimal **Serial Number** (`serialNumber`). |
-| **Configuration Profile** | A reusable section-level Configuration component representing the product-facing UI model of an OWPROV **`VariableBlock`**. When referenced by a Configuration section (`{"__variableBlock": "<uuid>"}`), the Configuration retains a live reference in `variables[]`. Profile-provided values are resolved dynamically on-demand and are read-only within that Configuration section. |
+| **Configuration Profile** | A reusable section-level Configuration component representing the product-facing UI model of an OWPROV **`VariableBlock`**. When referenced by a Configuration section (`{"__variableBlock": ["<uuid>"]}`, with backward compatibility for legacy string format `{"__variableBlock": "<uuid>"}`), the Configuration retains a live reference in `variables[]`. Profile-provided values are resolved dynamically on-demand and are read-only within that Configuration section. |
 | **Configuration** | The actual named configuration assembled from supported settings and, where applicable, Configuration Profile values. |
 | **Assignment** | Association of a Configuration with a Property, Venue, or Device. |
 | **Effective Configuration** | The resulting configuration applicable to a Device after applicable assignments and supported overrides/resolution. |
@@ -711,11 +710,11 @@ Downstream Mango Cloud services maintain different configuration capabilities de
 Configuration Profiles are reusable section-level Configuration components.
 
 ### Product-to-Backend Mapping
-Configuration Profiles in the MDU UI are explicitly defined as the product-facing representation of OWPROV **`VariableBlock`** objects. The MDU UI does not introduce or require a separate independent Profile data store; it maps directly to OWPROV VariableBlock services.
+Configuration Profiles in the MDU UI are explicitly defined as the product-facing representation of OWPROV **`VariableBlock`** objects (`/api/v1/variable`). The MDU UI does not introduce or require a separate independent Profile data store; it maps directly to OWPROV VariableBlock services and the underlying `variables2` database schema.
 
 Configuration Profiles apply specifically to OWPROV configuration scopes (Properties, Venues, and OWPROV-managed device configurations). Because OWGW does not store VariableBlocks or execute dynamic variable compilation (`APConfig`), Configuration Profiles are not used when authoring flat Gateway Default configurations or direct OWGW device table configurations.
 
-In Configuration JSON, referencing a Configuration Profile inserts an OWPROV `{"__variableBlock": "<uuid>"}` reference into the corresponding configuration section, and the Configuration retains a reference in its `variables[]` array. OWPROV tracks referencing Configurations directly in `variableBlock.configurations` (and `inUse`), enabling native dependency-safe lifecycle enforcement.
+In Configuration JSON, referencing a Configuration Profile inserts an OWPROV `{"__variableBlock": ["<uuid>"]}` reference into the corresponding configuration section, and the Configuration retains a reference in its `variables[]` array. OWPROV tracks referencing Configurations directly in `variableBlock.configurations` (and `inUse`), enabling native dependency-safe lifecycle enforcement.
 
 A supported Configuration section may reference one Configuration Profile at a time.
 
@@ -732,6 +731,195 @@ When a Profile is selected, the user may:
 Removing the Profile reference allows that Configuration section to be configured manually.
 
 Complete Configuration Templates are not included in Phase 1. Configuration Profiles are reusable section-level components and must not be presented as complete Configurations.
+
+### 10.2.1 Supported Configuration Profile Types & Wire Schemas
+
+Phase 1 provides dedicated UI form builders, validation rules, and OWPROV wire serialization for eight (8) foundational Configuration Profile section types:
+
+#### 1. Radio Profile (`radio`)
+Defines physical radio frequency (RF) operational parameters and advanced 802.11 physical/MAC layer behavior across device bands:
+* **Section Prefix:** `radio`
+* **General Parameters:**
+  * `band` (string, required): Operating RF band (`2G`, `5G`, `5G-lower`, `5G-upper`, `6G`, `HaLow`).
+  * `bandwidth` (number, required): Channel bandwidth in MHz (`5`, `10`, `20`).
+  * `country` (string, required): Two-letter ISO country code (e.g., `US`, `DE`, `CA`).
+  * `channel-mode` (string, required): PHY modulation standard (`HT` for 802.11n, `VHT` for 802.11ac, `HE` for 802.11ax, `EHT` for 802.11be).
+  * `channel-width` (number, required): Operating channel width in MHz (`20`, `40`, `80`, `160`).
+  * `channel` (string / array of numbers, required): Static channel assignment (e.g., `[36]`) or dynamic `auto` channel selection.
+  * `mimo` (string, optional): Spatial stream MIMO configuration (`1x1`, `2x2`, `3x3`, `4x4`, `8x8`).
+  * `tx-power` (number, optional): Transmit power limit in dBm (0 = driver default).
+  * `legacy-rates` (boolean, optional): Enable legacy 802.11b/g data rates.
+  * `max-clients` (number, optional): Maximum associated stations on this radio interface.
+  * `multiple-bssid` (boolean, optional): Enable Multiple BSSID (MBSSID) beacon reduction.
+* **Advanced Parameters:**
+  * `allow-dfs` (boolean, optional): Allow Dynamic Frequency Selection channels in radar bands.
+  * `beacon-rate` (number, optional): Beacon transmission rate.
+  * `beacon-interval` (number, optional): Beacon interval in Time Units (TUs) (default: 100).
+  * `multicast-rate` (number, optional): Multicast frames transmission rate.
+  * `ema` (boolean, optional): Enhanced Multi-BSSID Advertisement support.
+  * `bss-color` (number, optional): 802.11ax BSS coloring identifier (1–63).
+  * `require-mode` (string, optional): Restrict associations to specific PHY modes (e.g., `HT`, `VHT`, `HE`).
+  * `hostapd-iface-raw` (array of strings, optional): Custom hostapd interface directives passed directly to the radio driver.
+
+#### 2. SSID Profile (`interface.ssid`)
+Defines wireless network service set parameters, encryption, and client access rules:
+* **Section Prefix:** `interface.ssid`
+* **Core Parameters:**
+  * `name` (string, required): Broadcast wireless network name (SSID).
+  * `bss-mode` (string, required): Operational BSS mode (`ap`, `mesh`, `wds-ap`, `wds-sta`).
+  * `wifi-bands` (array of strings, required): Enabled frequency bands (subset of `["2G", "5G", "6G"]`).
+  * `encryption` (object, required): Authentication suite and key management:
+    * `proto` (string): `psk`, `psk2`, `sae`, `sae-mixed`, `wpa2`, `wpa3`, `wpa3-mixed`, `none`.
+    * `key` (string, optional): Pre-Shared Key (8–63 ASCII characters or 64 hex digits) for PSK/SAE.
+    * `ieee80211w` (string, optional): Protected Management Frames (`disabled`, `optional`, `required`).
+  * `hidden-ssid` (boolean, optional): Suppress SSID broadcasting in beacon frames.
+  * `isolate-clients` (boolean, optional): Client L2 intra-BSS isolation.
+  * `power-save` (boolean, optional): 802.11 power-save mode optimizations.
+  * `purpose` (string, optional): Functional classification (e.g., `guest`, `employee`, `onboarding`).
+  * `maximum-clients` (number, optional): Per-BSS station limit.
+  * `dtim-period` (number, optional): Delivery Traffic Indication Message period.
+  * `rate-limit` (object, optional): Upstream/downstream bandwidth limits in kbps (`ingress-rate`, `egress-rate`).
+  * `roaming` (object, optional): Fast roaming acceleration including 802.11r (FT), 802.11k (RRM), and 802.11v (BSS Transition).
+
+#### 3. IPv4 Network Profile (`interface.ipv4`)
+Defines interface layer-3 IP addressing, DHCP server pools, and NAT capabilities:
+* **Section Prefix:** `interface.ipv4`
+* **Parameters:**
+  * `addressing` (string, required): Interface addressing mode (`static` or `dhcp`).
+  * `subnet` (string, required for static): Interface IPv4 address and CIDR prefix (e.g., `192.168.1.1/24`).
+  * `gateway` (string, optional): Default upstream gateway IPv4 address.
+  * `dhcp` (object, optional): Integrated local DHCP server configuration:
+    * `lease-first` (number): Starting IP pool offset.
+    * `lease-count` (number): Total pool size.
+    * `lease-time` (string): Lease duration (e.g., `12h`, `24h`).
+    * `dns` (array of strings): Primary and secondary DNS nameserver addresses.
+  * `static-leases` (array of objects, optional): Fixed IP reservations (`mac`, `ip`, `name`).
+  * `port-forward` (array of objects, optional): Destination NAT mappings (`protocol`, `external-port`, `internal-ip`, `internal-port`).
+  * `nat` (boolean, optional): Enable SNAT/masquerading on egress traffic.
+
+#### 4. Enterprise & Local RADIUS Profile (`interface.ssid.radius`)
+Defines 802.1X Enterprise authentication, accounting, and local embedded authentication services:
+* **Section Prefix:** `interface.ssid.radius`
+* **Authentication Server:**
+  * `host` (string, required): FQDN or IP address of the primary RADIUS server.
+  * `port` (number, required): UDP authentication port (default: 1812).
+  * `secret` (string, required): Shared secret key.
+  * `mac-filter` (boolean, optional): Enable RADIUS MAC-based authentication / filtering.
+* **Accounting Server:**
+  * `enable` (boolean): Toggle for dedicated accounting server.
+  * `host` (string, optional): Accounting server host.
+  * `port` (number, optional): UDP accounting port (default: 1813).
+  * `secret` (string, optional): Accounting shared secret key.
+* **Dynamic Authorization (CoA / Disconnect Messages):**
+  * `enable` (boolean): Toggle for RFC 5176 Dynamic Authorization.
+  * `host` (string, optional): Authorized client IP.
+  * `port` (number, optional): CoA UDP port (default: 3799).
+  * `secret` (string, optional): Shared secret for CoA messages.
+* **General RADIUS Settings:**
+  * `nas-identifier` (string, optional): Network Access Server Identifier attribute.
+  * `chargeable-user-id` (boolean, optional): Enable RFC 4372 CUI tracking.
+* **Local RADIUS Server (`local-radius`):**
+  * `server-identity` (string, optional): Server EAP identity name.
+  * `users` (array of objects, optional): Embedded local user database:
+    * `mac` (string, optional): Client station MAC address.
+    * `username` (string, required): EAP username / identity.
+    * `password` (string, required): User password / credential.
+    * `vlan-id` (number, optional): Dynamic VLAN assignment ID.
+
+#### 5. VLAN Profile (`interface.vlan`)
+Defines 802.1Q virtual LAN segmentation and tagging parameters:
+* **Section Prefix:** `interface.vlan`
+* **Parameters:**
+  * `vlan-id` (number, required): 802.1Q VLAN tag identifier (1–4094).
+  * `description` (string, optional): Network segment purpose or billing tag.
+  * `isolate` (boolean, optional): Intra-VLAN client traffic isolation.
+
+#### 6. Network Tunnel Profile (`interface.tunnel`)
+Defines point-to-point and multipoint layer-2/layer-3 overlay encapsulation tunnels:
+* **Section Prefix:** `interface.tunnel`
+* **Parameters:**
+  * `proto` (string, required): Tunnel encapsulation protocol (`vxlan`, `l2tp`, `gre`).
+  * `peer-address` (string, required): Remote endpoint IP address or FQDN.
+  * `peer-port` (number, optional): UDP port for overlay traffic (e.g., 4789 for VXLAN).
+  * `server` (boolean, optional): Device operates as tunnel server or tunnel initiator.
+  * `credentials` (object, optional): Tunnel authentication username and password.
+  * `healthcheck` (object, optional): Tunnel keepalive and heartbeat verification interval.
+
+#### 7. Captive Portal Profile (`interface.captive`)
+Defines guest access captive portal interception, authentication flows, and walled garden rules:
+* **Section Prefix:** `interface.captive`
+* **Core Parameters:**
+  * `auth-mode` (string, required): Interception and authentication workflow:
+    * `click-to-continue`: Lightweight splash page acknowledging Terms of Service.
+    * `credentials`: Local web form requiring guest login credentials.
+    * `radius`: Web portal authenticating against an external RADIUS backend.
+    * `external`: Complete redirection to an external third-party portal service.
+  * `portal-url` (string, required for `external`): Target redirect URL for external portal engine.
+  * `walled-garden` (array of strings, optional): Whitelist of pre-authentication accessible FQDNs, IPs, and subnets.
+  * `session-timeout` (number, optional): Maximum authorized session length in minutes.
+  * `idle-timeout` (number, optional): Inactive client disconnection timeout.
+  * `redirect-url` (string, optional): Landing page shown post-authentication.
+
+#### 8. Passpoint / OpenRoaming Profile (`interface.ssid.openroaming`)
+Defines WBA Hotspot 2.0 (802.11u) / Passpoint and OpenRoaming federated authentication parameters:
+* **Section Prefix:** `interface.ssid.openroaming`
+* **Parameters:**
+  * `venue-name` (string, optional): Human-readable venue name advertised over ANQP.
+  * `venue-url` (string, optional): Informational URL for the venue.
+  * `venue-group` (number, optional): Hotspot 2.0 venue group code.
+  * `venue-type` (number, optional): Hotspot 2.0 venue type code.
+  * `auth-type` (string, optional): Network authentication type indicator.
+  * `domain-name` (array of strings, optional): Authoritative domain names advertised in ANQP.
+  * `anqp-domain` (number, optional): ANQP Domain ID (0–65535).
+  * `roaming-consortium` (array of strings, optional): 24-bit or 36-bit Roaming Consortium Organization Identifiers (RCOIs) (e.g., `BA-A2-F0-00-00` for OpenRoaming).
+  * `wan-metrics` (object, optional): WAN link status, symmetric/asymmetric link speed, and load metrics.
+
+### 10.2.2 VariableBlock Wire Format & Backend Serialization
+
+Configuration Profiles are persisted in the OWPROV database (`variables2` table) as `VariableBlock` resources. Each `VariableBlock` entity encapsulates metadata and a structured array of variable definitions:
+
+```json
+{
+  "name": "Corporate 5GHz Radio Profile",
+  "description": "Standard 5GHz high-density RF configuration",
+  "entity": "00000000-0000-0000-0000-000000000001",
+  "venue": "11111111-1111-1111-1111-111111111111",
+  "variables": [
+    {
+      "prefix": "radio",
+      "type": "json",
+      "weight": 100,
+      "value": {
+        "band": "5G",
+        "bandwidth": 20,
+        "country": "US",
+        "channel-mode": "HE",
+        "channel-width": 80,
+        "channel": "auto",
+        "mimo": "4x4",
+        "tx-power": 20,
+        "allow-dfs": false
+      }
+    }
+  ]
+}
+```
+
+* **Scope Hierarchy (`entity` vs `venue`):**
+  * A Profile created with an `entity` UUID is scoped to the Property and can be referenced by Configurations within that Property and its Venues.
+  * A Profile created with a `venue` UUID is scoped strictly and exclusively to that specific Venue (it is not visible to or inherited by child Venues).
+* **Variable Items:** Each entry in `variables[]` contains:
+  * `prefix` (string): Configuration subsection identifier (matching the profile type, e.g., `radio`, `interface.ssid`).
+  * `type` (string): Data encoding type (`json` for structured profiles).
+  * `weight` (number): Resolution precedence weight (default: 100).
+  * `value` (object): The profile's configuration payload.
+
+### 10.2.3 Operator Interface Simplification
+
+To ensure a streamlined, operator-friendly workflow and avoid UI cognitive overload:
+1. **Suppression of Internal Backend Registry Clutter:** The UI suppresses internal database artifact metadata—such as raw internal Variable IDs, raw section prefixes, JSON type indicators, internal weight values, and redundant backend status cards.
+2. **Context-Aware Sub-Tabs:** Redundant sub-tabs (such as separate "Referencing Configurations" read-only tables) are removed from the profile editor in favor of unified, contextual dependency dialogs shown only when relevant (e.g., during deletion confirmation or pre-save impact checks).
+3. **Structured Form Experience:** Operators interact with validated form inputs, switches, and structured tables; the system seamlessly handles JSON parsing, default population, and wire payload generation.
 
 ### Dynamic Resolution Semantics
 Configuration resolution occurs dynamically on-demand via OWPROV's **`APConfig`** compiler:
@@ -755,13 +943,13 @@ Configuration resolution occurs dynamically on-demand via OWPROV's **`APConfig`*
 - **CFG-007:** A Configuration Profile must include:
   - Name
   - Description
-  - Applicable Device context
-  - Configuration section
-  - Supported reusable values
+  - Scope Binding (`entity` for Property scope, or `venue` for Venue scope)
+  - Configuration section (`radio`, `interface.ssid`, `interface.ipv4`, `interface.ssid.radius`, `interface.vlan`, `interface.tunnel`, `interface.captive`, `interface.ssid.openroaming`)
+  - Supported reusable values adhering to the section's wire schema
 
 - **CFG-008:** A supported Configuration section may reference only one Configuration Profile at a time.
 
-- **CFG-009:** When a Configuration Profile is selected for a Configuration section, the Configuration must retain a live reference to that Profile via OWPROV `{"__variableBlock": "<uuid>"}` and `variables[]`.
+- **CFG-009:** When a Configuration Profile is selected for a Configuration section, the Configuration must retain a live reference to that Profile via OWPROV `{"__variableBlock": ["<uuid>"]}` in the section payload and in the root `variables[]` array.
 
 - **CFG-010:** Profile-provided values must be read-only within the Configuration and must not support field-level overrides.
 
@@ -784,23 +972,43 @@ Configuration resolution occurs dynamically on-demand via OWPROV's **`APConfig`*
 
 - **CFG-018:** Deployment records must identify the Configuration Profile revision used when the downstream platform provides revision information.
 
+- **CFG-049:** The UI must support the eight (8) defined Configuration Profile section types (`radio`, `interface.ssid`, `interface.ipv4`, `interface.ssid.radius`, `interface.vlan`, `interface.tunnel`, `interface.captive`, `interface.ssid.openroaming`), providing tailored form controls, input validations, and default parameter initialization for each type.
+
+- **CFG-050:** The Radio Configuration Profile must provide validated controls for standard RF parameters (band, bandwidth, country, channel-mode, channel-width, channel, MIMO, TX power) and advanced parameters (allow-dfs, beacon-rate, beacon-interval, multicast-rate, EMA, BSS color, require-mode, and raw hostapd directives).
+
+- **CFG-051:** The RADIUS Configuration Profile must support enterprise 802.1X authentication, optional accounting, optional dynamic authorization (CoA/DM), general parameters, and a local RADIUS user database with tabular credential management (MAC address, username, password, VLAN ID).
+
+- **CFG-052:** The Captive Portal Configuration Profile must dynamically display context-specific fields tailored to the selected authentication action (`click-to-continue`, `credentials`, `radius`, `external`).
+
+- **CFG-053:** The IPv4 Configuration Profile must provide comprehensive network configuration, including static/DHCP addressing modes, subnet CIDR validation, gateway IP, DHCP server range calculation, lease parameters, DNS servers, static IP leases, and port forwarding rules.
+
+- **CFG-058:** Configuration Profile referencing within a Configuration must enforce strict scope eligibility in the UI. When authoring a Configuration at Property scope, the Profile selector must only offer Profiles belonging to that Property (`entity`). When authoring at Venue scope, the selector must only offer Profiles belonging strictly to that specific Venue (`venue === config.venue`) or shared from its parent Property (`entity === config.entity && (!venue || venue === "")`). A Venue-scoped Profile is visible and selectable only within that specific Venue and is never inherited by child Venues. Profiles belonging to other Properties or other Venues must be excluded from selection.
+
+- **CFG-059:** Sensitive credentials across all Configuration Profile sections (including RADIUS shared secrets, local user passwords, and Wi-Fi pre-shared keys) must be protected using three explicit UI handling states:
+  1. *Unchanged:* The input displays a masked placeholder (`••••••••`), and saving retains the existing secret without requiring re-entry.
+  2. *Replaced:* The operator enters a new value using a masked input field (`type="password"` with visibility toggle), which replaces the old secret in the submission payload.
+  3. *Cleared:* When an operator disables authentication or switches to an open mode (e.g. `Open` Wi-Fi or disabling accounting), the secret property is removed from the payload.
+  Secrets must never be exposed in plaintext in read-only cards, browser logs, or URL query strings.
+
 ## 10.3 Configuration Profiles List
 - **CFG-019:** The Configuration Profiles list must display:
   - Profile name
   - Description
-  - Device context
-  - Configuration section
-  - Validation state
-  - Number of referencing Configurations
+  - Scope badge (Property or Venue)
+  - Configuration section / type
   - Last modified
+  - Actions (View, Edit, Duplicate, Delete)
 
-- **CFG-020:** The Configuration Profiles list must support search and filtering.
+  *Note: To optimize table rendering performance, avoid redundant fleet-wide configuration traversals, and maximize operator information density, the Profile list does not include a dedicated "Referenced By" column.*
+
+- **CFG-020:** The Configuration Profiles list must support search by name/description and filtering by configuration section and scope.
 
 - **CFG-021:** Available Profile actions must include:
   - Create
   - View
   - Edit
   - Duplicate
+  - Delete (with dependency confirmation)
 
 - **CFG-022:** Profile deletion must be dependency-safe, leveraging OWPROV's native `VariableBlock` deletion checks to disallow deletion while referencing Configurations remain in `variableBlock.configurations`.
 
@@ -808,12 +1016,13 @@ Configuration resolution occurs dynamically on-demand via OWPROV's **`APConfig`*
 - **CFG-023:** The Configurations list must display:
   - Configuration name
   - Description
-  - Applicable Device context
+  - Applicable Scope / Device context
   - Validation state
-  - Profiles used
+  - Referenced Profiles / Variables
   - Number of assignments
   - Latest deployment state
   - Last modified
+  - Actions (View, Edit, Duplicate, Delete)
 
 - **CFG-024:** The Configurations list must support search and filtering.
 
@@ -822,17 +1031,45 @@ Configuration resolution occurs dynamically on-demand via OWPROV's **`APConfig`*
   - View
   - Edit
   - Duplicate
+  - Delete
+
+### Recursive Variable Block Extraction & Human-Readable Resolution (Read-Only Table Presentation)
+
+In OWPROV configurations, Profile references may be embedded deeply inside nested JSON structures (e.g., inside interfaces, SSIDs, or radios) as `{"__variableBlock": ["<uuid>"]}`. In legacy or externally created configurations, the top-level `variables[]` array may be empty even when variable blocks are actively referenced in subsections.
+
+To ensure accurate, robust presentation in the Configurations table without mutating configuration payloads:
+1. **Recursive Deep Scanning (Read-Only):** The UI recursively traverses the entire `configuration` JSON tree of each record to locate all occurrences of the `"__variableBlock"` key, extracting all referenced UUIDs strictly for display and name resolution.
+2. **Set Union & Deduplication:** Extracted UUIDs are merged with any UUIDs present in the configuration's top-level `variables` array, producing a complete, deduplicated set of referenced Profile UUIDs for table display.
+3. **Batch Variable Resolution & Error Isolation:** The UI resolves variable UUIDs into human-readable Profile names via batch API queries (`GET /api/v1/variable?select=uuid1,uuid2`). If the batch query encounters transport or network errors, the UI isolates the failure and renders a neutral fallback pill `[Profile: <uuid>]` with tooltip *"Unable to load profile name (network/server error)"*. If individual profile references cannot be resolved, the UI maintains table stability without crashing or dropping the row.
+4. **Interactive Pill Display:** Referenced Profiles are rendered as styled, interactive pills displaying the profile name. Hovering over a pill presents a tooltip with the profile's section prefix and full UUID.
+
+- **CFG-054:** The Configurations list must display referenced profiles as interactive, styled pills with tooltips showing section prefix and UUID.
+- **CFG-055:** The UI must implement recursive deep scanning of configuration JSON on read strictly to extract all nested `__variableBlock` references for table display and name resolution, without synthesizing or mutating configuration payloads on save.
+- **CFG-056:** The UI must resolve referenced variable UUIDs into human-readable Profile names via batch API queries with automatic fallback handling.
+- **CFG-060:** If batch variable name resolution encounters transport or network errors, the UI must isolate the failure and render a neutral fallback pill (`[Profile: <uuid>]` with tooltip *"Unable to load profile name (network/server error)"*), ensuring that healthy profiles are not mischaracterized as deleted and the Configurations table remains stable and interactive.
 
 ## 10.5 Configuration Creation and Editing
 
--   **CFG-026:** Users must be able to create and edit named
-    Configurations.
--   **CFG-027:** Configurations must provide understandable groups of
-    settings.
+-   **CFG-026:** Users must be able to create and edit named Configurations.
+-   **CFG-027:** Configurations must provide understandable groups of settings (Radios, Interfaces, SSIDs, Routing, Services).
 -   **CFG-028:** When targeting Property or Venue scopes (OWPROV), a supported Configuration section must allow the user to either reference a compatible Configuration Profile or configure the section manually. When targeting Gateway Default configurations (OWGW), the UI must hide Profile referencing and provide direct manual field configuration.
 -   **CFG-029:** Before saving a Configuration, the UI must validate required fields, supported data types and ranges, Profile references, and applicable cross-field constraints.
--   **CFG-030:** Saved Configurations must have identifiable names and
-    modification information.
+-   **CFG-030:** Saved Configurations must have identifiable names and modification information.
+
+### Lossless Configuration Editing Contract
+
+Configurations authored across heterogeneous tools or previous platform versions may contain custom sections, advanced parameters, or third-party device settings not managed by standard form builders:
+1. **Preservation of Unedited & Unsupported Sections:** When loading a Configuration, all sections within `configuration[]` (including unrecognized, raw, or third-party sections) must be retained in memory.
+2. **Targeted Section Updates:** When an operator edits specific sections in the UI, only the modified sections are updated. All untouched and unrecognized sections must be preserved verbatim in the submitted payload.
+3. **Root Variables Delta Synchronization:** To ensure OWPROV maintains reverse dependency membership in `VariableBlock.configurations[]`, attaching a Configuration Profile in the UI adds its UUID to the root `variables[]` array, and detaching it removes the UUID (provided it is not referenced in any other section). Pre-existing or independent root variable dependencies not managed by the UI sections are preserved verbatim upon saving.
+4. **Raw JSON Inspection & Safe Fallback:** Operators must be able to inspect raw configuration JSON, and the UI must warn operators before applying any destructive transformations.
+
+- **CFG-061:** Configuration editing must adhere to a lossless contract: unrecognized sections, custom JSON directives, and unedited sections within `configuration[]` must be preserved intact upon saving.
+- **CFG-063:** When authoring or editing a Configuration, the UI must synchronize attached Profile UUIDs into the root `variables[]` array and remove detached Profile UUIDs while strictly preserving pre-existing, independent root variable dependencies, ensuring that OWPROV dependency tracking and deletion guards remain intact.
+
+### Configuration Deletion Dependency Guard
+
+- **CFG-062:** Configuration deletion must be dependency-safe. If a Configuration is currently assigned to a Property, Venue, or Device (indicated by non-empty `inUse` or a backend `400 Bad Request` with error code `StillInUse`), the UI must block deletion and display an actionable dialog informing the operator that the Configuration must be unassigned before it can be deleted.
 
 ## 10.6 Assignment
 
@@ -1116,7 +1353,7 @@ services.
 MDU should consume these capabilities without duplicating their
 underlying data models or authorization logic. Specifically, Configuration Profiles map directly to OWPROV `VariableBlock` services and leverage native dependency tracking (`variableBlock.configurations`) and dynamic compilation (`APConfig`) rather than an independent MDU data store.
 
-The core backend integration behaviors specified in this document—including `VariableBlock` reference semantics (`{"__variableBlock": "<uuid>"}` in sections and `variables[]`), reverse configuration dependency tracking (`variableBlock.configurations`), on-demand compilation via `APConfig`, and dependency-safe deletion checks—are validated against authoritative OWPROV backend services and data structures. While low-level implementation specifications and open product policies will be finalized in dedicated technical documents, these requirements reflect established and confirmed platform capabilities rather than provisional assumptions.
+The core backend integration behaviors specified in this document—including `VariableBlock` reference semantics (`{"__variableBlock": ["<uuid>"]}` in sections and `variables[]`), reverse configuration dependency tracking (`variableBlock.configurations`), on-demand compilation via `APConfig`, and dependency-safe deletion checks—are validated against authoritative OWPROV backend services and data structures. While low-level implementation specifications and open product policies will be finalized in dedicated technical documents, these requirements reflect established and confirmed platform capabilities rather than provisional assumptions.
 
 ------------------------------------------------------------------------
 
@@ -1132,7 +1369,7 @@ Phase 1 is ready for product acceptance when:
 
 6. Profile-provided values are dynamically resolved from the underlying VariableBlock via OWPROV APConfig, are displayed as read-only within the Configuration, and cannot be individually overridden.
 
-7. A Configuration retains a live reference to a selected Configuration Profile via OWPROV `{"__variableBlock": "<uuid>"}` in the section and in `variables[]`.
+7. A Configuration retains a live reference to a selected Configuration Profile via OWPROV `{"__variableBlock": ["<uuid>"]}` in the section and in `variables[]`.
 
 8. Updating a Configuration Profile dynamically updates the resolved Profile values compiled by APConfig for every referencing Configuration.
 
