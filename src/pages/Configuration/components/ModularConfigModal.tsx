@@ -205,13 +205,30 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
   if (!isOpen) return null;
 
   // Real-time JSON validation
-  const validateJson = (text: string): boolean => {
-    if (!text.trim()) {
-      setJsonError(null);
-      return true;
+  const validateJson = (text: string, isSubmit = false): boolean => {
+    const trimmed = text.trim();
+    if (!trimmed || trimmed === '{}') {
+      if (isSubmit) {
+        setJsonError('Configuration cannot be empty. Please configure at least one section before saving.');
+      } else {
+        setJsonError(null);
+      }
+      return false;
     }
     try {
-      JSON.parse(text);
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed !== 'object' || parsed === null) {
+        setJsonError('Configuration must be a valid JSON object.');
+        return false;
+      }
+      if (Array.isArray(parsed) ? parsed.length === 0 : Object.keys(parsed).length === 0) {
+        if (isSubmit) {
+          setJsonError('Configuration cannot be empty. Please configure at least one section before saving.');
+        } else {
+          setJsonError(null);
+        }
+        return false;
+      }
       setJsonError(null);
       return true;
     } catch (err: unknown) {
@@ -234,8 +251,23 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (!name.trim()) return;
-    if (!validateJson(configurationJson)) return;
+    if (!name.trim()) {
+      setApiError('Configuration name is required.');
+      return;
+    }
+
+    const hasSections = Boolean(
+      (latestState && latestState.activeSections.length > 0) ||
+      (configurationJson.trim().length > 0 && configurationJson.trim() !== '{}')
+    );
+    if (!hasSections) {
+      setJsonError('Configuration cannot be empty. Please configure at least one section before saving.');
+      return;
+    }
+
+    if (configurationJson.trim().length > 0 && configurationJson.trim() !== '{}') {
+      if (!validateJson(configurationJson, true)) return;
+    }
 
     setIsSubmitting(true);
     setApiError(null);
@@ -295,14 +327,20 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
 
     // Fallback if no blocks were produced: wrap the compiled uCentral JSON into a primary block
     if (modularBlocks.length === 0) {
-      modularBlocks = [
-        {
-          name: 'Main Configuration',
-          description: description.trim() || 'Master device configuration',
-          weight: 1,
-          configuration: configurationJson,
-        },
-      ];
+      if (configurationJson.trim().length > 0 && configurationJson.trim() !== '{}') {
+        modularBlocks = [
+          {
+            name: 'Main Configuration',
+            description: description.trim() || 'Master device configuration',
+            weight: 1,
+            configuration: configurationJson,
+          },
+        ];
+      } else {
+        setApiError('Configuration cannot be empty. Please configure at least one section before saving.');
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     // Determine entity and venue according to OWPROV rules
@@ -345,14 +383,16 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
     };
 
     try {
-      let savedId = initialConfig?.id;
+      let savedId: string;
       if (isEditMode && initialConfig?.id) {
         await updateModularConfiguration(initialConfig.id, payload);
+        savedId = initialConfig.id;
       } else {
         const res = await createModularConfiguration(payload);
-        if (res?.id) {
-          savedId = res.id;
+        if (!res?.id) {
+          throw new Error('OWPROV did not return a valid configuration ID in the creation response.');
         }
+        savedId = res.id;
       }
 
       setApiSuccess(`Successfully saved modular configuration "${configName}" to OWPROV`);
@@ -361,7 +401,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
       const selectedVenueObj = venues.find((v) => v.id === (payloadVenue || selectedVenue));
 
       const saved: DeviceConfiguration = {
-        id: savedId || `cfg-owprov-${Date.now().toString(36)}`,
+        id: savedId,
         name: configName,
         description: description.trim(),
         configType: 'modular',
@@ -616,6 +656,28 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
                 <Box flex="1">
                   <Text fontWeight="600">Failed to save configuration:</Text>
                   <Text>{apiError}</Text>
+                </Box>
+              </Box>
+            )}
+
+            {jsonError && (
+              <Box
+                p={3}
+                borderRadius="6px"
+                bg="#fee2e2"
+                border="1px solid #fca5a5"
+                color="#b91c1c"
+                fontSize="12px"
+                display="flex"
+                alignItems="flex-start"
+                gap={2}
+              >
+                <Box mt={0.5}>
+                  <Icon name="alertTriangle" size={15} color="#b91c1c" />
+                </Box>
+                <Box flex="1">
+                  <Text fontWeight="600">Configuration Validation Error:</Text>
+                  <Text>{jsonError}</Text>
                 </Box>
               </Box>
             )}

@@ -273,9 +273,16 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
   const [deleteConfirmConfig, setDeleteConfirmConfig] = useState<DeviceConfiguration | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Load live default configurations from OWGW and modular configurations from OWPROV on mount
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const refetchConfigurations = () => {
+    setReloadKey((prev) => prev + 1);
+  };
+
+  // Load live default configurations from OWGW and modular configurations from OWPROV
   useEffect(() => {
     let isMounted = true;
+    setIsLoadingConfigs(true);
 
     Promise.allSettled([
       getDefaultConfigurations(),
@@ -310,7 +317,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [reloadKey]);
 
   const isTypeModalOpen = isSelectTypeModalOpen || Boolean(isCreateOpen);
 
@@ -324,6 +331,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
       }
       return [saved, ...prev];
     });
+    refetchConfigurations();
   };
 
   const handleSaveModularConfig = (saved: DeviceConfiguration) => {
@@ -336,6 +344,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
       }
       return [saved, ...prev];
     });
+    refetchConfigurations();
   };
 
   // Filter configurations
@@ -423,6 +432,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
         description: `Configuration "${deleteConfirmConfig.name}" was deleted successfully.`,
       });
       setDeleteConfirmConfig(null);
+      refetchConfigurations();
     } catch (err: unknown) {
       console.error('Failed to delete configuration:', err);
       const errorMsg =

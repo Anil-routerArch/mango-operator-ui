@@ -68,13 +68,30 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
   if (!isOpen) return null;
 
   // Real-time JSON validation
-  const validateJson = (text: string): boolean => {
-    if (!text.trim()) {
-      setJsonError(null);
-      return true;
+  const validateJson = (text: string, isSubmit = false): boolean => {
+    const trimmed = text.trim();
+    if (!trimmed || trimmed === '{}') {
+      if (isSubmit) {
+        setJsonError('Configuration cannot be empty. Please configure at least one section before saving.');
+      } else {
+        setJsonError(null);
+      }
+      return false;
     }
     try {
-      JSON.parse(text);
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed !== 'object' || parsed === null) {
+        setJsonError('Configuration must be a valid JSON object.');
+        return false;
+      }
+      if (Array.isArray(parsed) ? parsed.length === 0 : Object.keys(parsed).length === 0) {
+        if (isSubmit) {
+          setJsonError('Configuration cannot be empty. Please configure at least one section before saving.');
+        } else {
+          setJsonError(null);
+        }
+        return false;
+      }
       setJsonError(null);
       return true;
     } catch (err: unknown) {
@@ -101,8 +118,11 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (!name.trim()) return;
-    if (!validateJson(configurationJson)) return;
+    if (!name.trim()) {
+      setApiError('Configuration name is required.');
+      return;
+    }
+    if (!validateJson(configurationJson, true)) return;
 
     setIsSubmitting(true);
     setApiError(null);
@@ -341,6 +361,25 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
                 </Flex>
                 <Text mt={1} fontSize="12px" color="#991b1b">
                   {apiError}
+                </Text>
+              </Box>
+            )}
+
+            {jsonError && (
+              <Box
+                p={3}
+                borderRadius="6px"
+                bg="#fef2f2"
+                border="1px solid #fecaca"
+                color="#dc2626"
+                fontSize="13px"
+              >
+                <Flex align="center" gap={2}>
+                  <Icon name="alertTriangle" size={16} />
+                  <Text fontWeight="600">Configuration Validation Error</Text>
+                </Flex>
+                <Text mt={1} fontSize="12px" color="#991b1b">
+                  {jsonError}
                 </Text>
               </Box>
             )}
