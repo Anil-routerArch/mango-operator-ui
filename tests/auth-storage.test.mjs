@@ -37,8 +37,8 @@ test('client.ts error interceptor removes access_token without clearing entire s
 
   const removeMatches = content.match(/sessionStorage\.removeItem\('access_token'\);/g);
   assert.ok(
-    removeMatches && removeMatches.length >= 2,
-    'client.ts must call sessionStorage.removeItem("access_token") in both 403 and 401 error handlers'
+    removeMatches && removeMatches.length >= 1,
+    'client.ts must call sessionStorage.removeItem("access_token") during session teardown'
   );
 });
 

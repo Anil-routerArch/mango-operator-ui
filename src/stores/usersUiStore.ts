@@ -4,12 +4,15 @@ import { persist } from 'zustand/middleware';
 export interface UsersUiState {
   mainTab: 'users' | 'policies';
   setMainTab: (tab: 'users' | 'policies') => void;
+  selectedUserId: string | null;
+  setSelectedUserId: (id: string | null) => void;
   selectedPolicyId: string;
   setSelectedPolicyId: (id: string) => void;
   policySubTab: 'overview' | 'permissions';
   setPolicySubTab: (tab: 'overview' | 'permissions') => void;
   userSubTab: 'profile' | 'scoped_access';
   setUserSubTab: (tab: 'profile' | 'scoped_access') => void;
+  resetUsersUiState: () => void;
 }
 
 export const useUsersUiStore = create<UsersUiState>()(
@@ -17,15 +20,32 @@ export const useUsersUiStore = create<UsersUiState>()(
     (set) => ({
       mainTab: 'users',
       setMainTab: (mainTab) => set({ mainTab }),
+      selectedUserId: null,
+      setSelectedUserId: (selectedUserId) =>
+        set((state) => (state.selectedUserId === selectedUserId ? state : { selectedUserId })),
       selectedPolicyId: 'pol-net-op',
       setSelectedPolicyId: (selectedPolicyId) => set({ selectedPolicyId }),
       policySubTab: 'overview',
       setPolicySubTab: (policySubTab) => set({ policySubTab }),
       userSubTab: 'profile',
       setUserSubTab: (userSubTab) => set({ userSubTab }),
+      resetUsersUiState: () =>
+        set({
+          mainTab: 'users',
+          selectedUserId: null,
+          selectedPolicyId: 'pol-net-op',
+          policySubTab: 'overview',
+          userSubTab: 'profile',
+        }),
     }),
     {
       name: 'users_ui_store',
+      partialize: (state) => ({
+        mainTab: state.mainTab,
+        selectedPolicyId: state.selectedPolicyId,
+        policySubTab: state.policySubTab,
+        userSubTab: state.userSubTab,
+      }),
     }
   )
 );

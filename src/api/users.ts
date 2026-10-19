@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { axiosSec, axiosProv, axiosProvV2, getSecBaseUrl } from './client';
+import { axiosSec, axiosProv, axiosProvV2, axiosMdu, getSecBaseUrl } from './client';
 import type { User, CreateUserPayload, UpdateUserPayload } from '@/types/user';
 import type {
   ManagementRole,
@@ -102,6 +102,7 @@ export const useCreateUser = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -119,6 +120,8 @@ export const useUpdateUser = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['users', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['avatar', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -134,6 +137,7 @@ export const useSuspendUser = () => {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       queryClient.invalidateQueries({ queryKey: ['users', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -146,8 +150,15 @@ export const useDeleteUser = () => {
       const { data } = await axiosSec.delete(`user/${userId}`);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, userId) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: ['users', userId] });
+        queryClient.invalidateQueries({ queryKey: ['managementRoles', userId] });
+        queryClient.invalidateQueries({ queryKey: ['avatar', userId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -185,6 +196,7 @@ export const useCreateManagementRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -199,6 +211,7 @@ export const useUpdateManagementRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -213,6 +226,7 @@ export const useDeleteManagementRole = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementRoles'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -281,6 +295,7 @@ export const useCreateManagementPolicy = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -293,8 +308,12 @@ export const useUpdateManagementPolicy = () => {
       const { data } = await axiosProv.put(`managementPolicy/${id}`, payload);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
+      if (variables?.id) {
+        queryClient.invalidateQueries({ queryKey: ['policyOverview', variables.id] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
   });
 };
@@ -307,9 +326,73 @@ export const useDeleteManagementPolicy = () => {
       const { data } = await axiosProv.delete(`managementPolicy/${id}`);
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['managementPolicies'] });
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: ['policyOverview', id] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['policyOverview'] });
     },
+  });
+};
+
+// ==========================================
+// 6b. POLICY OVERVIEW (MANGO-MDU-SERVICE: Port 16010)
+// ==========================================
+export interface PolicyScopeInfo {
+  entityId: string;
+  entityName: string;
+  venueId: string;
+  venueName: string;
+}
+
+export interface UserWithPolicySummary {
+  id: string;
+  name: string;
+  email: string;
+  userRole: string;
+  avatar?: string;
+  scopedAssignmentsCount: number;
+  scopes: PolicyScopeInfo[];
+}
+
+export interface PolicyOverviewResponse {
+  policy: {
+    id: string;
+    name: string;
+    description: string;
+    entity: string;
+    venue: string;
+    created: number;
+    modified: number;
+  };
+  totalUsers: number;
+  totalScopedAssignments: number;
+  totalProperties: number;
+  totalVenues: number;
+  usersWithPolicy: UserWithPolicySummary[];
+}
+
+export const useGetPolicyOverview = (
+  policyId?: string,
+  optionsOrEnabled: { enabled?: boolean } | boolean = true
+) => {
+  const isEnabled =
+    typeof optionsOrEnabled === 'boolean'
+      ? optionsOrEnabled
+      : (optionsOrEnabled?.enabled ?? true);
+
+  const isMduConfigured = Boolean(axiosMdu.defaults.baseURL);
+
+  return useQuery<PolicyOverviewResponse | null>({
+    queryKey: ['policyOverview', policyId],
+    queryFn: async () => {
+      if (!policyId || !axiosMdu.defaults.baseURL) return null;
+      const { data } = await axiosMdu.get<PolicyOverviewResponse>(`policy/${policyId}/overview`);
+      return data;
+    },
+    enabled: Boolean(policyId) && isEnabled && isMduConfigured,
+    staleTime: 30 * 1000,
   });
 };
 

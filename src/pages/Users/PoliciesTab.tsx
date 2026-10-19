@@ -21,6 +21,9 @@ import {
   useUpdateManagementPolicy,
   useCreateManagementPolicy,
   useDeleteManagementPolicy,
+  useGetPolicyOverview,
+  queryClient,
+  axiosMdu,
 } from '@/api';
 import type { ManagementPolicy, ManagementPolicyEntry } from '@/types/managementRole';
 import { toaster } from '@/components/ui/toaster';
@@ -34,6 +37,7 @@ export interface ResourcePermission {
 }
 
 export interface PolicyAssignedUser {
+  id?: string;
   name: string;
   initials: string;
   avatarBg: string;
@@ -286,7 +290,36 @@ const mapApiPolicyToItem = (p: ManagementPolicy): PolicyItem => {
 interface PoliciesTabProps {
   isCreatePolicyOpen?: boolean;
   onCloseCreatePolicy?: () => void;
-  onNavigateToUsers?: () => void;
+  onNavigateToUsers?: (userId?: string) => void;
+}
+
+// Debounce policy ID changes when switching rapidly across un-cached policies
+function useDebouncedPolicyId(policyId?: string, delayMs = 250): string | undefined {
+  const [debouncedId, setDebouncedId] = useState<string | undefined>(policyId);
+
+  useEffect(() => {
+    if (!policyId) {
+      setDebouncedId(undefined);
+      return;
+    }
+
+    // If data is already cached in React Query, update immediately with zero debounce delay
+    const isCached = Boolean(queryClient.getQueryData(['policyOverview', policyId]));
+    if (isCached) {
+      setDebouncedId(policyId);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setDebouncedId(policyId);
+    }, delayMs);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [policyId, delayMs]);
+
+  return debouncedId;
 }
 
 export const PoliciesTab: React.FC<PoliciesTabProps> = ({
@@ -319,6 +352,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
     }
   }, [apiPolicies]);
   const {
+    setMainTab,
+    setSelectedUserId,
+    setUserSubTab,
     selectedPolicyId,
     setSelectedPolicyId,
     policySubTab: activeDetailTab,
@@ -488,6 +524,83 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
       null
     );
   }, [policies, selectedPolicyId, filteredPolicies]);
+
+  // Active state flag: only query overview when the Overview sub-tab is active or permissions are being edited
+  const isOverviewActive = activeDetailTab === 'overview' || isEditing;
+
+  // Debounce policy ID when switching rapidly between un-cached policies
+  const debouncedPolicyId = useDebouncedPolicyId(selectedPolicy?.id, 250);
+
+  // Fetch policy overview from mango-mdu-service
+  const {
+    data: policyOverview,
+    isLoading: isOverviewQueryLoading,
+    isError: isOverviewError,
+    isFetching: isOverviewFetching,
+    refetch: refetchOverview,
+  } = useGetPolicyOverview(debouncedPolicyId, isOverviewActive);
+
+  // Check if MDU service is available in the cluster or configured via environment
+  const isMduConfigured = Boolean(axiosMdu.defaults.baseURL);
+
+  // Active loading state taking debounce settling into account
+  const isOverviewLoading =
+    isOverviewActive &&
+    isMduConfigured &&
+    Boolean(selectedPolicy?.id) &&
+    (isOverviewQueryLoading || debouncedPolicyId !== selectedPolicy?.id);
+
+  // Check if current cached policy overview matches the selected policy
+  const hasValidPolicyData = Boolean(
+    policyOverview && policyOverview.policy?.id === selectedPolicy?.id
+  );
+
+  const overviewStats = useMemo(() => {
+    // If we have valid policy data (either live or cached)
+    if (hasValidPolicyData && policyOverview) {
+      const assignedUsers: PolicyAssignedUser[] = (policyOverview.usersWithPolicy || []).map((u) => {
+        const name = u.name || u.email || 'Unknown User';
+        const initials =
+          name
+            .split(' ')
+            .map((n) => n[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2) || 'U';
+
+        const propertyNames =
+          Array.from(new Set((u.scopes || []).map((s) => s.entityName).filter(Boolean))).join(', ') || '—';
+        const venueNames =
+          Array.from(new Set((u.scopes || []).map((s) => s.venueName).filter(Boolean))).join(', ') || 'All venues';
+
+        return {
+          id: u.id,
+          name,
+          initials,
+          avatarBg: '#2563eb',
+          property: propertyNames,
+          venueScope: venueNames,
+        };
+      });
+
+      return {
+        usedByUsers: policyOverview.totalUsers ?? 0,
+        scopedAssignmentsCount: policyOverview.totalScopedAssignments ?? 0,
+        propertiesCount: policyOverview.totalProperties ?? 0,
+        venuesCount: policyOverview.totalVenues ?? 0,
+        assignedUsers,
+      };
+    }
+
+    // Return empty fallback stats when metrics are unavailable or loading
+    return {
+      usedByUsers: 0,
+      scopedAssignmentsCount: 0,
+      propertiesCount: 0,
+      venuesCount: 0,
+      assignedUsers: [],
+    };
+  }, [hasValidPolicyData, policyOverview]);
 
   // Sync edit state with selectedPolicy
   useEffect(() => {
@@ -1445,27 +1558,82 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 </Box>
               </Box>
 
-              {/* Policy impact callout box */}
-              <Flex
-                p={3}
-                borderRadius="6px"
-                bg="#eff6ff"
-                border="1px solid #bfdbfe"
-                gap={2.5}
-                align="flex-start"
-              >
-                <Box color="#0869ff" mt="1px">
-                  <Icon name="info" size={16} />
-                </Box>
-                <Box>
-                  <Text fontSize="12px" fontWeight="700" color="#1e40af">
-                    Policy impact
-                  </Text>
-                  <Text fontSize="11px" color="#1e40af" mt={0.5}>
-                    {selectedPolicy.usedByUsers} users across {selectedPolicy.scopedAssignmentsCount} scoped assignments will be affected by permission changes.
-                  </Text>
-                </Box>
-              </Flex>
+              {/* Policy impact callout box - visible during editing or if metrics already loaded */}
+              {(isEditing || hasValidPolicyData) && (
+                <Flex
+                  p={3}
+                  borderRadius="6px"
+                  bg={
+                    !isMduConfigured
+                      ? '#f8fafc'
+                      : isOverviewError
+                        ? '#fffbeb'
+                        : '#eff6ff'
+                  }
+                  border="1px solid"
+                  borderColor={
+                    !isMduConfigured
+                      ? '#e2e8f0'
+                      : isOverviewError
+                        ? '#fef3c7'
+                        : '#bfdbfe'
+                  }
+                  gap={2.5}
+                  align="flex-start"
+                >
+                  <Box
+                    color={
+                      !isMduConfigured
+                        ? '#64748b'
+                        : isOverviewError
+                          ? '#d97706'
+                          : '#0869ff'
+                    }
+                    mt="1px"
+                  >
+                    <Icon name="info" size={16} />
+                  </Box>
+                  <Box flex="1">
+                    <Text
+                      fontSize="12px"
+                      fontWeight="700"
+                      color={
+                        !isMduConfigured
+                          ? '#475569'
+                          : isOverviewError
+                            ? '#92400e'
+                            : '#1e40af'
+                      }
+                    >
+                      Policy impact
+                    </Text>
+                    {!isMduConfigured ? (
+                      <Text fontSize="11px" color="#64748b" mt={0.5}>
+                        Policy impact metrics are unavailable because MDU service is not deployed in this cluster.
+                      </Text>
+                    ) : isOverviewLoading && !hasValidPolicyData ? (
+                      <HStack gap={1.5} mt={0.5} align="center">
+                        <Spinner size="xs" color="#1e40af" />
+                        <Text fontSize="11px" color="#1e40af">
+                          Calculating policy impact metrics...
+                        </Text>
+                      </HStack>
+                    ) : isOverviewError && !hasValidPolicyData ? (
+                      <Text fontSize="11px" color="#92400e" mt={0.5}>
+                        Policy impact cannot be loaded from service. Review user assignments before modifying permissions.
+                      </Text>
+                    ) : isOverviewError && hasValidPolicyData ? (
+                      <Text fontSize="11px" color="#92400e" mt={0.5}>
+                        Previously loaded: {overviewStats.usedByUsers} users across {overviewStats.scopedAssignmentsCount} scoped assignments. Refresh failed — verify assignments before saving changes.
+                      </Text>
+                    ) : (
+                      <Text fontSize="11px" color="#1e40af" mt={0.5}>
+                        {overviewStats.usedByUsers} users across {overviewStats.scopedAssignmentsCount} scoped assignments will be affected by permission changes.
+                      </Text>
+                    )}
+                  </Box>
+                </Flex>
+              )}
 
               {/* Bottom Actions - only displayed in Edit Mode for Root */}
               {isEditing && isRoot && (
@@ -1505,14 +1673,108 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                 </Flex>
               )}
             </VStack>
+          ) : !isMduConfigured ? (
+            <Flex
+              p={6}
+              direction="column"
+              align="center"
+              justify="center"
+              border="1px dashed"
+              borderColor={themeColors.panel.border}
+              borderRadius="6px"
+              bg="#f8fafc"
+              textAlign="center"
+              gap={2}
+            >
+              <Box color="#64748b">
+                <Icon name="info" size={20} />
+              </Box>
+              <Text fontSize="13px" fontWeight="600" color="#334155">
+                MDU service not available in this cluster
+              </Text>
+              <Text fontSize="11px" color="#64748b">
+                Policy usage metrics and impact analytics are disabled because mango-mdu-service was not discovered.
+              </Text>
+            </Flex>
+          ) : isOverviewLoading && !hasValidPolicyData ? (
+            <Flex h="200px" justify="center" align="center" direction="column" gap={3}>
+              <Spinner size="md" color="#0869ff" />
+              <Text fontSize="12px" color="#64748b">Loading policy overview...</Text>
+            </Flex>
           ) : (
             /* Overview Subtab */
             <VStack gap={4} align="stretch">
+              {isOverviewError && (
+                <Flex
+                  align="center"
+                  justify="space-between"
+                  bg="#fffbeb"
+                  border="1px solid #fef3c7"
+                  borderRadius="6px"
+                  py={2}
+                  px={3}
+                  fontSize="12px"
+                  color="#92400e"
+                >
+                  <HStack gap={2}>
+                    <Icon name="info" size={15} color="#d97706" />
+                    <Text fontWeight="500">
+                      {hasValidPolicyData
+                        ? 'Unable to refresh metrics from service. Displaying previously loaded data.'
+                        : 'Policy overview metrics could not be loaded from service.'}
+                    </Text>
+                  </HStack>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    color="#b45309"
+                    _hover={{ bg: '#fef3c7' }}
+                    h="24px"
+                    px={2}
+                    fontSize="11px"
+                    loading={isOverviewFetching}
+                    onClick={() => refetchOverview()}
+                  >
+                    <HStack gap={1}>
+                      <Icon name="refresh" size={12} />
+                      <Text>Retry</Text>
+                    </HStack>
+                  </Button>
+                </Flex>
+              )}
+
               {/* Section 1: Usage summary */}
               <Box>
-                <Text fontSize="12px" fontWeight="700" color="#0f172a" mb={2}>
-                  Usage summary
-                </Text>
+                <Flex justify="space-between" align="center" mb={2}>
+                  <HStack gap={2} align="center">
+                    <Text fontSize="12px" fontWeight="700" color="#0f172a">
+                      Usage summary
+                    </Text>
+                    {isOverviewError && hasValidPolicyData && (
+                      <Badge colorScheme="yellow" fontSize="10px" px={1.5} py={0.5} borderRadius="4px">
+                        Refresh failed — cached
+                      </Badge>
+                    )}
+                  </HStack>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    color="#64748b"
+                    _hover={{ color: '#0f172a', bg: '#f1f5f9' }}
+                    h="24px"
+                    px={2}
+                    fontSize="11px"
+                    loading={isOverviewFetching}
+                    disabled={isOverviewFetching || !isMduConfigured}
+                    onClick={() => refetchOverview()}
+                    title="Refresh metrics from service"
+                  >
+                    <HStack gap={1}>
+                      <Icon name="refresh" size={12} />
+                      <Text>Refresh</Text>
+                    </HStack>
+                  </Button>
+                </Flex>
                 <SimpleGrid columns={{ base: 2, sm: 4 }} gap={2.5}>
                   {/* Users */}
                   <Flex
@@ -1531,8 +1793,14 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Users
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {selectedPolicy.usedByUsers}
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError && !hasValidPolicyData ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewLoading && !hasValidPolicyData ? (
+                          <Spinner size="xs" color="#2563eb" />
+                        ) : isOverviewError && !hasValidPolicyData ? (
+                          '—'
+                        ) : (
+                          overviewStats.usedByUsers
+                        )}
                       </Text>
                     </Box>
                   </Flex>
@@ -1554,8 +1822,14 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Scoped assignments
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {selectedPolicy.scopedAssignmentsCount}
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError && !hasValidPolicyData ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewLoading && !hasValidPolicyData ? (
+                          <Spinner size="xs" color="#7c3aed" />
+                        ) : isOverviewError && !hasValidPolicyData ? (
+                          '—'
+                        ) : (
+                          overviewStats.scopedAssignmentsCount
+                        )}
                       </Text>
                     </Box>
                   </Flex>
@@ -1577,8 +1851,14 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Properties
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {selectedPolicy.propertiesCount}
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError && !hasValidPolicyData ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewLoading && !hasValidPolicyData ? (
+                          <Spinner size="xs" color="#16a34a" />
+                        ) : isOverviewError && !hasValidPolicyData ? (
+                          '—'
+                        ) : (
+                          overviewStats.propertiesCount
+                        )}
                       </Text>
                     </Box>
                   </Flex>
@@ -1600,8 +1880,14 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       <Text fontSize="11px" color="#64748b" fontWeight="500" whiteSpace="nowrap">
                         Venues
                       </Text>
-                      <Text fontSize="18px" fontWeight="700" color="#0f172a" lineHeight="1.1">
-                        {selectedPolicy.venuesCount}
+                      <Text fontSize="18px" fontWeight="700" color={isOverviewError && !hasValidPolicyData ? "#94a3b8" : "#0f172a"} lineHeight="1.1">
+                        {isOverviewLoading && !hasValidPolicyData ? (
+                          <Spinner size="xs" color="#ea580c" />
+                        ) : isOverviewError && !hasValidPolicyData ? (
+                          '—'
+                        ) : (
+                          overviewStats.venuesCount
+                        )}
                       </Text>
                     </Box>
                   </Flex>
@@ -1696,11 +1982,59 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     fontSize="11px"
                     fontWeight="600"
                   >
-                    {selectedPolicy.usedByUsers}
+                    {isOverviewLoading && !hasValidPolicyData ? (
+                      <Spinner size="xs" color="#64748b" />
+                    ) : isOverviewError && !hasValidPolicyData ? (
+                      '—'
+                    ) : (
+                      overviewStats.usedByUsers
+                    )}
                   </Flex>
                 </HStack>
 
-                {selectedPolicy.assignedUsers && selectedPolicy.assignedUsers.length > 0 ? (
+                {isOverviewLoading && !hasValidPolicyData ? (
+                  <Flex
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    p={6}
+                    align="center"
+                    justify="center"
+                    direction="column"
+                    gap={2}
+                    bg="#ffffff"
+                  >
+                    <Spinner size="sm" color="#0869ff" />
+                    <Text fontSize="12px" color="#64748b">Loading assigned users...</Text>
+                  </Flex>
+                ) : isOverviewError && !hasValidPolicyData ? (
+                  <Box
+                    border="1px solid"
+                    borderColor={themeColors.panel.border}
+                    borderRadius="6px"
+                    p={4}
+                    textAlign="center"
+                    bg="#ffffff"
+                  >
+                    <Text fontSize="12px" color="#64748b" mb={2}>
+                      Unable to load assigned users from service.
+                    </Text>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      borderColor="#cbd5e1"
+                      color="#475569"
+                      h="26px"
+                      fontSize="11px"
+                      onClick={() => refetchOverview()}
+                    >
+                      <HStack gap={1.5}>
+                        <Icon name="refresh" size={12} />
+                        <Text>Retry request</Text>
+                      </HStack>
+                    </Button>
+                  </Box>
+                ) : overviewStats.assignedUsers && overviewStats.assignedUsers.length > 0 ? (
                   <Box
                     border="1px solid"
                     borderColor={themeColors.panel.border}
@@ -1708,9 +2042,9 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                     overflow="hidden"
                     bg="#ffffff"
                   >
-                    {selectedPolicy.assignedUsers.map((u, idx) => (
+                    {overviewStats.assignedUsers.map((u, idx) => (
                       <Flex
-                        key={u.name + idx}
+                        key={u.id || u.name + idx}
                         align="center"
                         justify="space-between"
                         py={2.5}
@@ -1719,6 +2053,19 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                         borderColor={themeColors.panel.divider}
                         _last={{ borderBottom: 'none' }}
                         fontSize="12px"
+                        cursor={u.id ? 'pointer' : 'default'}
+                        _hover={u.id ? { bg: '#f8fafc' } : undefined}
+                        transition="background-color 0.15s ease"
+                        onClick={() => {
+                          if (!u.id) return;
+                          if (onNavigateToUsers) {
+                            onNavigateToUsers(u.id);
+                          } else {
+                            setSelectedUserId(u.id);
+                            setUserSubTab('profile');
+                            setMainTab('users');
+                          }
+                        }}
                       >
                         {/* User Avatar & Name */}
                         <HStack gap={2.5} flex="1.4" minW={0} align="center">
@@ -1787,7 +2134,7 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                   </Box>
                 )}
 
-                {selectedPolicy.usedByUsers > 0 && (
+                {overviewStats.usedByUsers > 0 && (
                   <Box mt={2}>
                     <Text
                       as="span"
@@ -1795,10 +2142,15 @@ export const PoliciesTab: React.FC<PoliciesTabProps> = ({
                       color="#0869ff"
                       fontWeight="500"
                       cursor="pointer"
-                      _hover={{ textDecoration: 'underline' }}
-                      onClick={onNavigateToUsers}
+                      onClick={() => {
+                        if (onNavigateToUsers) {
+                          onNavigateToUsers();
+                        } else {
+                          setMainTab('users');
+                        }
+                      }}
                     >
-                      View all {selectedPolicy.usedByUsers} users
+                      View all {overviewStats.usedByUsers} users
                     </Text>
                   </Box>
                 )}
