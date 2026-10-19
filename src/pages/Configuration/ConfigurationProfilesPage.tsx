@@ -109,7 +109,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
   onCloseCreate,
 }) => {
   const { selectedProfileId, setSelectedProfileId } = useConfigurationUiStore();
-  const [profiles, setProfiles] = useState<ConfigurationProfile[]>([]);
+  const [rawBlocks, setRawBlocks] = useState<VariableBlockApiResponse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,6 +129,12 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     [venues]
   );
 
+  // Derived mapped profiles that automatically update whenever entities/venues or rawBlocks change
+  const profiles = useMemo(
+    () => rawBlocks.map((b) => mapRawVariableToProfile(b, entityNameMap, venueNameMap)),
+    [rawBlocks, entityNameMap, venueNameMap]
+  );
+
   const [internalModalOpen, setInternalModalOpen] = useState(false);
   const [editingModalProfile, setEditingModalProfile] = useState<ConfigurationProfile | null>(null);
   const isModalOpen = internalModalOpen || Boolean(isCreateOpen);
@@ -141,13 +147,12 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
 
   useEffect(() => {
     let isMounted = true;
+    setIsLoading(true);
     getAllVariableBlocks()
       .then((blocks) => {
         if (!isMounted) return;
-        const mapped = blocks.map((b) =>
-          mapRawVariableToProfile(b, entityNameMap, venueNameMap)
-        );
-        setProfiles(mapped);
+        setRawBlocks(blocks);
+        setError(null);
       })
       .catch((err: unknown) => {
         if (!isMounted) return;
@@ -168,10 +173,16 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     return () => {
       isMounted = false;
     };
-  }, [entityNameMap, venueNameMap, reloadKey]);
+  }, [reloadKey]);
+
+  // If a selectedProfileId was set from a previous session or deleted, clear it when not found after loading
+  useEffect(() => {
+    if (!isLoading && selectedProfileId && !profiles.some((p) => p.id === selectedProfileId)) {
+      setSelectedProfileId(null);
+    }
+  }, [isLoading, selectedProfileId, profiles, setSelectedProfileId]);
 
   const handleRetry = () => {
-    setIsLoading(true);
     setError(null);
     setReloadKey((k) => k + 1);
   };
@@ -203,7 +214,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         notes: savedProfile.notes,
       };
 
-      const isExisting = profiles.some((p) => p.id === savedProfile.id);
+      const isExisting = rawBlocks.some((p) => p.id === savedProfile.id);
       let result: VariableBlockApiResponse;
       if (isExisting) {
         result = await updateVariableBlock(savedProfile.id, payload);
@@ -211,15 +222,14 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         result = await createVariableBlock(payload);
       }
 
-      const mapped = mapRawVariableToProfile(result, entityNameMap, venueNameMap);
-      setProfiles((prev) => {
-        const idx = prev.findIndex((p) => p.id === mapped.id);
+      setRawBlocks((prev) => {
+        const idx = prev.findIndex((p) => p.id === result.id);
         if (idx >= 0) {
           const next = [...prev];
-          next[idx] = mapped;
+          next[idx] = result;
           return next;
         }
-        return [mapped, ...prev];
+        return [result, ...prev];
       });
       toaster.success({
         title: isExisting ? 'Variable Block Updated' : 'Variable Block Created',
@@ -239,19 +249,6 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     }
   };
 
-  // If a profile detail page is opened
-  if (selectedProfileId) {
-    const activeProfile = profiles.find((p) => p.id === selectedProfileId);
-    if (activeProfile) {
-      return (
-        <ProfileEditorPage
-          profile={activeProfile}
-          onBack={() => setSelectedProfileId(null)}
-          onSave={handleSaveProfile}
-        />
-      );
-    }
-  }
 
   const handleOpenEditModal = (profile: ConfigurationProfile) => {
     setEditingModalProfile(profile);
@@ -271,7 +268,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     try {
       setIsDeleting(true);
       await deleteVariableBlock(deleteConfirmProfile.id);
-      setProfiles((prev) => prev.filter((p) => p.id !== deleteConfirmProfile.id));
+      setRawBlocks((prev) => prev.filter((p) => p.id !== deleteConfirmProfile.id));
       toaster.success({
         title: 'Variable Block Deleted',
         description: `Variable block "${deleteConfirmProfile.name}" was deleted successfully.`,
@@ -308,8 +305,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         })),
       };
       const created = await createVariableBlock(payload);
-      const mapped = mapRawVariableToProfile(created, entityNameMap, venueNameMap);
-      setProfiles((prev) => [mapped, ...prev]);
+      setRawBlocks((prev) => [created, ...prev]);
       toaster.success({
         title: 'Variable Block Duplicated',
         description: `Created copy "${created.name}".`,
@@ -331,9 +327,9 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
   // Filter profiles
   const filteredProfiles = profiles.filter((p) => {
     const matchesSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.description.toLowerCase().includes(search.toLowerCase()) ||
-      p.prefix.toLowerCase().includes(search.toLowerCase());
+      (p.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (p.description || '').toLowerCase().includes(search.toLowerCase()) ||
+      (p.prefix || '').toLowerCase().includes(search.toLowerCase());
 
     const matchesSection =
       sectionFilter === 'all' || p.prefix === sectionFilter;
@@ -380,9 +376,36 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     return filteredProfiles.slice(startIndex, startIndex + pageSize);
   }, [filteredProfiles, currentPage, pageSize]);
 
-  const radioProfilesCount = profiles.filter((p) => p.prefix === 'radio').length;
-  const ssidProfilesCount = profiles.filter((p) => p.prefix.startsWith('interface.ssid')).length;
-  const inUseCount = profiles.filter((p) => p.configurations.length > 0).length;
+  const radioProfilesCount = profiles.filter((p) => (p.prefix || '') === 'radio').length;
+  const ssidProfilesCount = profiles.filter((p) => (p.prefix || '').startsWith('interface.ssid')).length;
+  const inUseCount = profiles.filter((p) => (p.configurations || []).length > 0).length;
+
+  // If a profile detail page is opened
+  if (selectedProfileId) {
+    if (isLoading) {
+      return (
+        <Flex direction="column" align="center" justify="center" minH="400px" gap={3}>
+          <Spinner size="lg" color={themeColors.brand.accent} />
+          <Text color={themeColors.text.secondary} fontSize="sm">
+            Loading variable block profile...
+          </Text>
+          <Button size="xs" variant="outline" onClick={() => setSelectedProfileId(null)}>
+            Back to Profiles
+          </Button>
+        </Flex>
+      );
+    }
+    const activeProfile = profiles.find((p) => p.id === selectedProfileId);
+    if (activeProfile) {
+      return (
+        <ProfileEditorPage
+          profile={activeProfile}
+          onBack={() => setSelectedProfileId(null)}
+          onSave={handleSaveProfile}
+        />
+      );
+    }
+  }
 
   return (
     <Box>

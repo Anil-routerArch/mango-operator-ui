@@ -5,12 +5,15 @@ import {
   Flex,
   HStack,
   Input,
+  Spinner,
   Text,
+  VStack,
 } from '@chakra-ui/react';
 import { Header } from '@/layout/Header';
 import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
+import { toaster } from '@/components/ui/toaster';
 import {
   getDefaultConfigurations,
   deleteDefaultConfiguration,
@@ -90,21 +93,21 @@ const mapOwgwDefaultConfigToDeviceConfig = (cfg: DefaultConfigurationApiResponse
 const mapOwprovModularConfigToDeviceConfig = (cfg: ModularConfigurationApiResponse): DeviceConfiguration => {
   return {
     id: cfg.id,
-    name: cfg.name,
+    name: cfg.name || 'Unnamed Configuration',
     description: cfg.description || 'OWPROV Modular Configuration',
     notes: (cfg.notes || []).map((n) => ({
-      note: n.note,
-      created: n.created || Math.floor(Date.now() / 1000),
-      author: n.author,
+      note: typeof n === 'string' ? n : n?.note || '',
+      created: typeof n === 'object' && n ? n.created || Math.floor(Date.now() / 1000) : Math.floor(Date.now() / 1000),
+      author: typeof n === 'object' && n ? n.author : undefined,
     })),
     created: cfg.created || Math.floor(Date.now() / 1000),
     modified: cfg.modified || Math.floor(Date.now() / 1000),
     devicetypes: cfg.deviceTypes && cfg.deviceTypes.length > 0 ? cfg.deviceTypes : ['*'],
-    configuration: (cfg.configuration || []).map((b) => ({
-      name: b.name,
-      description: b.description || '',
-      weight: b.weight,
-      configuration: typeof b.configuration === 'string' ? b.configuration : JSON.stringify(b.configuration),
+    configuration: (cfg.configuration || []).filter(Boolean).map((b) => ({
+      name: b?.name || '',
+      description: b?.description || '',
+      weight: typeof b?.weight === 'number' ? b.weight : 0,
+      configuration: typeof b?.configuration === 'string' ? b.configuration : JSON.stringify(b?.configuration || {}),
     })),
     inuse: cfg.inUse || [],
     variables: Array.from(
@@ -271,6 +274,10 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
   const [isModularConfigModalOpen, setIsModularConfigModalOpen] = useState(false);
   const [editingModularConfig, setEditingModularConfig] = useState<DeviceConfiguration | null>(null);
 
+  const [inUseModalConfig, setInUseModalConfig] = useState<DeviceConfiguration | null>(null);
+  const [deleteConfirmConfig, setDeleteConfirmConfig] = useState<DeviceConfiguration | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Load live default configurations from OWGW and modular configurations from OWPROV on mount
   useEffect(() => {
     let isMounted = true;
@@ -339,8 +346,8 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
   // Filter configurations
   const filteredConfigs = configurations.filter((c) => {
     const matchesSearch =
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.description.toLowerCase().includes(search.toLowerCase());
+      (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (c.description || '').toLowerCase().includes(search.toLowerCase());
 
     const matchesScope =
       scopeFilter === 'all' ||
@@ -398,22 +405,43 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
     return filteredConfigs.slice(startIndex, startIndex + pageSize);
   }, [filteredConfigs, currentPage, pageSize]);
 
-  const handleDeleteConfig = async (id: string) => {
-    const target = configurations.find((c) => c.id === id);
-    if (target?.configType === 'default') {
-      try {
-        await deleteDefaultConfiguration(target.name);
-      } catch (err) {
-        console.warn('Failed to delete default configuration on OWGW:', err);
-      }
-    } else {
-      try {
-        await deleteModularConfiguration(id);
-      } catch (err) {
-        console.warn('Failed to delete modular configuration on OWPROV:', err);
-      }
+  const handleRequestDelete = (cfg: DeviceConfiguration) => {
+    if (cfg.inuse && cfg.inuse.length > 0) {
+      setInUseModalConfig(cfg);
+      return;
     }
-    setConfigurations((prev) => prev.filter((c) => c.id !== id));
+    setDeleteConfirmConfig(cfg);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmConfig) return;
+    try {
+      setIsDeleting(true);
+      if (deleteConfirmConfig.configType === 'default') {
+        await deleteDefaultConfiguration(deleteConfirmConfig.name);
+      } else {
+        await deleteModularConfiguration(deleteConfirmConfig.id);
+      }
+      setConfigurations((prev) => prev.filter((c) => c.id !== deleteConfirmConfig.id));
+      toaster.success({
+        title: 'Configuration Deleted',
+        description: `Configuration "${deleteConfirmConfig.name}" was deleted successfully.`,
+      });
+      setDeleteConfirmConfig(null);
+    } catch (err: unknown) {
+      console.error('Failed to delete configuration:', err);
+      const errorMsg =
+        (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
+          ?.ErrorDescription ||
+        (err as Error)?.message ||
+        'Failed to delete configuration.';
+      toaster.error({
+        title: 'Delete Failed',
+        description: errorMsg,
+      });
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -696,7 +724,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
 
                     <Box as="td" p="12px 16px">
                       <HStack gap={1}>
-                        {c.devicetypes.map((dt, idx) => (
+                        {(c.devicetypes || []).map((dt, idx) => (
                           <Box
                             key={idx}
                             fontSize="11px"
@@ -763,13 +791,13 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                     </Box>
 
                     <Box as="td" p="12px 16px">
-                      {c.configType === 'default' || c.variables.length === 0 ? (
+                      {c.configType === 'default' || !c.variables || c.variables.length === 0 ? (
                         <Text fontSize="12px" color={themeColors.text.muted}>
                           None
                         </Text>
                       ) : (
                         <HStack gap={1.5} wrap="wrap" maxW="240px">
-                          {c.variables.map((vId) => {
+                          {(c.variables || []).map((vId) => {
                             const humanName = variableNameMap.get(vId);
                             return (
                               <Box
@@ -834,7 +862,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
                           borderColor={themeColors.panel.border}
                           color="#dc2626"
                           _hover={{ bg: '#fee2e2' }}
-                          onClick={() => handleDeleteConfig(c.id)}
+                          onClick={() => handleRequestDelete(c)}
                           title="Delete configuration"
                         >
                           <Icon name="trash" size={12} color="#dc2626" />
@@ -1029,6 +1057,213 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
         onSave={handleSaveModularConfig}
         initialConfig={editingModularConfig}
       />
+
+      {/* In-Use Warning Modal */}
+      {inUseModalConfig && (
+        <Box
+          position="fixed"
+          inset="0"
+          bg="rgba(5, 12, 23, 0.54)"
+          display="grid"
+          placeItems="center"
+          zIndex="1200"
+          p={4}
+        >
+          <Box
+            w="min(480px, 95vw)"
+            bg="#ffffff"
+            borderRadius="8px"
+            boxShadow="0 20px 50px rgba(0,0,0,0.3)"
+            overflow="hidden"
+          >
+            <Flex
+              justify="space-between"
+              align="center"
+              p={5}
+              pb={3}
+              borderBottom="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <HStack gap={2}>
+                <Flex
+                  w="30px"
+                  h="30px"
+                  borderRadius="50%"
+                  bg="#fef3c7"
+                  color="#d97706"
+                  align="center"
+                  justify="center"
+                >
+                  <Icon name="alertTriangle" size={16} />
+                </Flex>
+                <Text fontSize="16px" fontWeight="700" color="#0f172a">
+                  Configuration In Use
+                </Text>
+              </HStack>
+              <Button
+                variant="plain"
+                size="xs"
+                p={1}
+                cursor="pointer"
+                onClick={() => setInUseModalConfig(null)}
+              >
+                <Icon name="x" size={18} />
+              </Button>
+            </Flex>
+
+            <Box p={5}>
+              <Text fontSize="13px" color="#334155" mb={3} lineHeight="1.5">
+                Cannot delete <strong>"{inUseModalConfig.name}"</strong> because it is currently assigned to or in use by <strong>{inUseModalConfig.inuse.length}</strong> entity/venue/device(s):
+              </Text>
+              <Box
+                maxH="160px"
+                overflowY="auto"
+                bg="#f8fafc"
+                border="1px solid"
+                borderColor={themeColors.panel.border}
+                borderRadius="6px"
+                p={3}
+                mb={3}
+              >
+                <VStack align="stretch" gap={1.5}>
+                  {inUseModalConfig.inuse.map((item, idx) => (
+                    <HStack key={idx} justify="space-between" fontSize="12px">
+                      <Text fontFamily="monospace" color="#0f172a" fontWeight="500">
+                        {item}
+                      </Text>
+                    </HStack>
+                  ))}
+                </VStack>
+              </Box>
+              <Text fontSize="12px" color="#64748b" lineHeight="1.5">
+                OWPROV enforces referential integrity. Please unassign or remove this configuration from the resources above before deleting it.
+              </Text>
+            </Box>
+
+            <Flex
+              justify="flex-end"
+              p={4}
+              bg="#f8fafc"
+              borderTop="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <Button
+                size="sm"
+                bg={themeColors.brand.primary}
+                color="#ffffff"
+                _hover={{ opacity: 0.9 }}
+                onClick={() => setInUseModalConfig(null)}
+              >
+                Understood
+              </Button>
+            </Flex>
+          </Box>
+        </Box>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmConfig && (
+        <Box
+          position="fixed"
+          inset="0"
+          bg="rgba(5, 12, 23, 0.54)"
+          display="grid"
+          placeItems="center"
+          zIndex="1200"
+          p={4}
+        >
+          <Box
+            w="min(460px, 95vw)"
+            bg="#ffffff"
+            borderRadius="8px"
+            boxShadow="0 20px 50px rgba(0,0,0,0.3)"
+            overflow="hidden"
+          >
+            <Flex
+              justify="space-between"
+              align="center"
+              p={5}
+              pb={3}
+              borderBottom="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <HStack gap={2}>
+                <Flex
+                  w="30px"
+                  h="30px"
+                  borderRadius="50%"
+                  bg="#fee2e2"
+                  color="#dc2626"
+                  align="center"
+                  justify="center"
+                >
+                  <Icon name="trash" size={16} />
+                </Flex>
+                <Text fontSize="16px" fontWeight="700" color="#0f172a">
+                  Delete Configuration
+                </Text>
+              </HStack>
+              <Button
+                variant="plain"
+                size="xs"
+                p={1}
+                cursor="pointer"
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmConfig(null)}
+              >
+                <Icon name="x" size={18} />
+              </Button>
+            </Flex>
+
+            <Box p={5}>
+              <Text fontSize="13px" color="#334155" mb={2} lineHeight="1.5">
+                Are you sure you want to delete configuration <strong>"{deleteConfirmConfig.name}"</strong>?
+              </Text>
+              <Text fontSize="12px" color="#64748b" lineHeight="1.5">
+                This action cannot be undone. The configuration will be permanently removed from{' '}
+                {deleteConfirmConfig.configType === 'default' ? 'OWGW' : 'OWPROV'}.
+              </Text>
+            </Box>
+
+            <Flex
+              justify="flex-end"
+              gap={3}
+              p={4}
+              bg="#f8fafc"
+              borderTop="1px solid"
+              borderColor={themeColors.panel.divider}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                borderColor={themeColors.panel.border}
+                color={themeColors.text.primary}
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmConfig(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                bg="#dc2626"
+                color="#ffffff"
+                _hover={{ bg: '#b91c1c' }}
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+              >
+                {isDeleting ? (
+                  <HStack gap={1.5}>
+                    <Spinner size="xs" color="#ffffff" />
+                    <Text>Deleting...</Text>
+                  </HStack>
+                ) : (
+                  'Delete Configuration'
+                )}
+              </Button>
+            </Flex>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 };

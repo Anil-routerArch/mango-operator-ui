@@ -26,6 +26,7 @@ export const useConfigurationUiStore = create<ConfigurationUiState>()(
     }),
     {
       name: 'configuration_ui_store',
+      partialize: (state) => ({ mainTab: state.mainTab }),
     }
   )
 );
