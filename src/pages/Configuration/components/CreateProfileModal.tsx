@@ -52,7 +52,7 @@ import {
 export interface CreateProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (profile: ConfigurationProfile) => void;
+  onSave: (profile: ConfigurationProfile) => Promise<unknown> | void;
   initialProfile?: ConfigurationProfile | null;
 }
 
@@ -128,7 +128,7 @@ const FieldInfoTooltip: React.FC<{ tooltip?: string }> = ({ tooltip }) => (
 
 interface ProfileModalContentProps {
   onClose: () => void;
-  onSave: (profile: ConfigurationProfile) => void;
+  onSave: (profile: ConfigurationProfile) => Promise<unknown> | void;
   initialProfile?: ConfigurationProfile | null;
 }
 
@@ -138,6 +138,7 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
   initialProfile,
 }) => {
   const isEditing = Boolean(initialProfile);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [deviceGroup, setDeviceGroup] = useState<string>(initialProfile?.deviceGroup || 'ap');
   const [selectedSection, setSelectedSection] = useState<VariablePrefixType>(
@@ -480,8 +481,8 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
     };
   };
 
-  const handleSave = useCallback(() => {
-    if (!name.trim()) return;
+  const handleSave = useCallback(async () => {
+    if (!name.trim() || isSubmitting) return;
 
     const effectivePropId = selectedPropertyId || entities[0]?.id || '';
     const prop = entities.find((p) => p.id === effectivePropId);
@@ -521,10 +522,19 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
       parsedValues: valObj as Record<string, ProfileSettingsValue>,
     };
 
-    onSave(savedProfile);
-    onClose();
+    try {
+      setIsSubmitting(true);
+      await onSave(savedProfile);
+      onClose();
+    } catch (err) {
+      console.error('Failed to save profile in modal:', err);
+      // Keep modal open so the user does not lose their inputs
+    } finally {
+      setIsSubmitting(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    isSubmitting,
     name,
     description,
     deviceGroup,
@@ -1424,6 +1434,7 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
             borderColor={themeColors.panel.border}
             color={themeColors.text.secondary}
             onClick={onClose}
+            disabled={isSubmitting}
           >
             Cancel
           </Button>
@@ -1433,9 +1444,10 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
             color="#ffffff"
             _hover={{ bg: themeColors.brand.accentHover }}
             onClick={handleSave}
-            disabled={!name.trim()}
+            disabled={!name.trim() || isSubmitting}
+            loading={isSubmitting}
           >
-            {isEditing ? 'Save Changes' : 'Create Resource'}
+            {isSubmitting ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Resource'}
           </Button>
         </Flex>
 

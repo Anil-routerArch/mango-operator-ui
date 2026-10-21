@@ -20,6 +20,7 @@ import {
   updateDefaultConfiguration,
   type DefaultConfigurationPayload,
 } from '@/api/defaultConfigurations';
+import { parseApiError } from '@/api';
 
 export interface DefaultConfigModalProps {
   isOpen: boolean;
@@ -202,24 +203,8 @@ export const DefaultConfigModal: React.FC<DefaultConfigModalProps> = ({
         onClose();
       }, 700);
     } catch (err: unknown) {
-      interface ErrorResponse {
-        response?: {
-          data?: {
-            Details?: string;
-            ErrorDescription?: string;
-            error?: string;
-          };
-        };
-        message?: string;
-      }
-      const e = err as ErrorResponse;
-      const errorMsg =
-        e.response?.data?.Details ||
-        e.response?.data?.ErrorDescription ||
-        e.response?.data?.error ||
-        e.message ||
-        'Failed to save default configuration to OWGW';
-      setApiError(errorMsg);
+      console.error('Failed to save default configuration to OWGW:', err);
+      setApiError(parseApiError(err, 'Failed to save default configuration to OWGW'));
     } finally {
       setIsSubmitting(false);
     }

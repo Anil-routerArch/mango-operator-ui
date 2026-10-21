@@ -15,7 +15,7 @@ import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
 import { useConfigurationUiStore } from '@/stores/configurationUiStore';
-import { useGetEntities, useGetVenues } from '@/api';
+import { useGetEntities, useGetVenues, parseApiError, notifyApiError } from '@/api';
 import {
   getAllVariableBlocks,
   createVariableBlock,
@@ -157,12 +157,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
       .catch((err: unknown) => {
         if (!isMounted) return;
         console.error('Failed to load variables from OWPROV:', err);
-        const msg =
-          (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
-            ?.ErrorDescription ||
-          (err as Error)?.message ||
-          'Failed to load variables from OWPROV.';
-        setError(msg);
+        setError(parseApiError(err, 'Failed to load variables from OWPROV.'));
       })
       .finally(() => {
         if (isMounted) {
@@ -198,7 +193,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
     onCloseCreate?.();
   };
 
-  const handleSaveProfile = async (savedProfile: ConfigurationProfile) => {
+  const handleSaveProfile = async (savedProfile: ConfigurationProfile): Promise<VariableBlockApiResponse> => {
     try {
       const payload: Partial<VariableBlockApiResponse> = {
         name: savedProfile.name,
@@ -235,17 +230,11 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
         title: isExisting ? 'Variable Block Updated' : 'Variable Block Created',
         description: `Variable block "${savedProfile.name}" was saved successfully.`,
       });
+      return result;
     } catch (err: unknown) {
       console.error('Failed to save variable block:', err);
-      const errorMsg =
-        (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
-          ?.ErrorDescription ||
-        (err as Error)?.message ||
-        'Failed to save variable to OWPROV.';
-      toaster.error({
-        title: 'Save Failed',
-        description: errorMsg,
-      });
+      notifyApiError(err, 'Failed to save variable to OWPROV.', 'Save Failed');
+      throw err;
     }
   };
 
@@ -276,15 +265,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
       setDeleteConfirmProfile(null);
     } catch (err: unknown) {
       console.error('Failed to delete variable from OWPROV:', err);
-      const errorMsg =
-        (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
-          ?.ErrorDescription ||
-        (err as Error)?.message ||
-        'Failed to delete variable from OWPROV.';
-      toaster.error({
-        title: 'Delete Failed',
-        description: errorMsg,
-      });
+      notifyApiError(err, 'Failed to delete variable from OWPROV.', 'Delete Failed');
     } finally {
       setIsDeleting(false);
     }
@@ -312,15 +293,7 @@ export const ConfigurationProfilesPage: React.FC<ConfigurationProfilesPageProps>
       });
     } catch (err: unknown) {
       console.error('Failed to duplicate variable:', err);
-      const errorMsg =
-        (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
-          ?.ErrorDescription ||
-        (err as Error)?.message ||
-        'Failed to duplicate variable.';
-      toaster.error({
-        title: 'Duplicate Failed',
-        description: errorMsg,
-      });
+      notifyApiError(err, 'Failed to duplicate variable.', 'Duplicate Failed');
     }
   };
 

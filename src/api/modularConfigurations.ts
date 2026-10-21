@@ -50,10 +50,10 @@ export interface ModularConfigurationApiResponse {
 }
 
 /**
- * Retrieve a list of modular configurations from OWPROV
- * GET /api/v1/configuration?withExtendedInfo=true&limit=500&offset=0
+ * Retrieve a single batch of modular configurations from OWPROV
+ * GET /api/v1/configuration?withExtendedInfo=true&limit={limit}&offset={offset}
  */
-export const getModularConfigurations = async (
+export const getModularConfigurationsBatch = async (
   offset: number = 0,
   limit: number = 500
 ): Promise<ModularConfigurationApiResponse[]> => {
@@ -61,6 +61,38 @@ export const getModularConfigurations = async (
     configurations?: ModularConfigurationApiResponse[];
   }>(`configuration?withExtendedInfo=true&limit=${limit}&offset=${offset}`);
   return response.data.configurations || [];
+};
+
+/**
+ * Retrieve modular configurations from OWPROV.
+ * If offset and limit are explicitly provided, returns a single batch.
+ * Otherwise, iteratively fetches all pages until all records are retrieved.
+ */
+export const getModularConfigurations = async (
+  offset?: number,
+  limit?: number
+): Promise<ModularConfigurationApiResponse[]> => {
+  if (typeof offset === 'number' && typeof limit === 'number') {
+    return getModularConfigurationsBatch(offset, limit);
+  }
+
+  const batchSize = limit || 500;
+  let currentOffset = offset || 0;
+  let allConfigs: ModularConfigurationApiResponse[] = [];
+  const MAX_PAGES = 50; // Safety guard: max 25,000 records
+  let pageCount = 0;
+
+  while (pageCount < MAX_PAGES) {
+    const batch = await getModularConfigurationsBatch(currentOffset, batchSize);
+    allConfigs = [...allConfigs, ...batch];
+    pageCount++;
+    if (batch.length < batchSize) {
+      break;
+    }
+    currentOffset += batchSize;
+  }
+
+  return allConfigs;
 };
 
 /**
@@ -159,10 +191,10 @@ export interface VariableBlockApiResponse {
 }
 
 /**
- * Fetch all variable blocks (profiles) from OWPROV
+ * Retrieve a single batch of variable blocks (profiles) from OWPROV
  * GET /api/v1/variable?withExtendedInfo=true&limit={limit}&offset={offset}
  */
-export const getAllVariableBlocks = async (
+export const getVariableBlocksBatch = async (
   limit = 500,
   offset = 0
 ): Promise<VariableBlockApiResponse[]> => {
@@ -170,6 +202,38 @@ export const getAllVariableBlocks = async (
     variableBlocks?: VariableBlockApiResponse[];
   }>(`variable?withExtendedInfo=true&limit=${limit}&offset=${offset}`);
   return response.data?.variableBlocks || [];
+};
+
+/**
+ * Fetch variable blocks (profiles) from OWPROV.
+ * If limit and offset are explicitly provided, returns a single batch.
+ * Otherwise, iteratively fetches all pages until all records are retrieved.
+ */
+export const getAllVariableBlocks = async (
+  limit?: number,
+  offset?: number
+): Promise<VariableBlockApiResponse[]> => {
+  if (typeof offset === 'number' && typeof limit === 'number') {
+    return getVariableBlocksBatch(limit, offset);
+  }
+
+  const batchSize = limit || 500;
+  let currentOffset = offset || 0;
+  let allBlocks: VariableBlockApiResponse[] = [];
+  const MAX_PAGES = 50; // Safety guard: max 25,000 records
+  let pageCount = 0;
+
+  while (pageCount < MAX_PAGES) {
+    const batch = await getVariableBlocksBatch(batchSize, currentOffset);
+    allBlocks = [...allBlocks, ...batch];
+    pageCount++;
+    if (batch.length < batchSize) {
+      break;
+    }
+    currentOffset += batchSize;
+  }
+
+  return allBlocks;
 };
 
 /**
@@ -225,20 +289,18 @@ export const deleteVariableBlock = async (id: string): Promise<void> => {
 /**
  * Fetch specific variable blocks (profiles) by their UUIDs using OWPROV ?select= batch query.
  * GET /api/v1/variable?withExtendedInfo=true&select=uuid1,uuid2
+ *
+ * Propagates backend errors to callers instead of silently returning an empty array,
+ * allowing React Query and fallback mechanisms to properly handle failure states.
  */
 export const getVariableBlocksSelect = async (
   ids: string[]
 ): Promise<VariableBlockApiResponse[]> => {
   if (!ids || ids.length === 0) return [];
-  try {
-    const response = await axiosProv.get<{
-      variableBlocks?: VariableBlockApiResponse[];
-    }>(`variable?withExtendedInfo=true&select=${ids.map((id) => encodeURIComponent(id)).join(',')}`);
-    return response.data?.variableBlocks || [];
-  } catch (err) {
-    console.warn('Could not fetch variable blocks by select:', err);
-    return [];
-  }
+  const response = await axiosProv.get<{
+    variableBlocks?: VariableBlockApiResponse[];
+  }>(`variable?withExtendedInfo=true&select=${ids.map((id) => encodeURIComponent(id)).join(',')}`);
+  return response.data?.variableBlocks || [];
 };
 
 export const useGetVariableBlocksSelect = (ids: string[]) => {

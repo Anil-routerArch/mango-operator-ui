@@ -18,6 +18,7 @@ import {
   useGetVenue,
   useGetEntity,
   useGetVariableBlocksSelect,
+  parseApiError,
 } from '@/api';
 import type { DeviceConfiguration, PlatformType } from '../types/configuration';
 import {
@@ -125,7 +126,11 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
     return Array.from(ids);
   }, [selectedVenue, venueDetails, selectedEntity, entityDetails, initialConfig?.variables]);
 
-  const { data: availableResources = [] } = useGetVariableBlocksSelect(targetVariableIds);
+  const {
+    data: availableResources = [],
+    isError: isVariableBlocksError,
+    error: variableBlocksError,
+  } = useGetVariableBlocksSelect(targetVariableIds);
 
   // Venues filtered by the selected entity
   const filteredVenues = selectedEntity
@@ -458,24 +463,8 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
         onClose();
       }, 700);
     } catch (err: unknown) {
-      interface ErrorResponse {
-        response?: {
-          data?: {
-            Details?: string;
-            ErrorDescription?: string;
-            error?: string;
-          };
-        };
-        message?: string;
-      }
-      const e = err as ErrorResponse;
-      const errorMsg =
-        e.response?.data?.Details ||
-        e.response?.data?.ErrorDescription ||
-        e.response?.data?.error ||
-        e.message ||
-        'Failed to save modular configuration to OWPROV';
-      setApiError(errorMsg);
+      console.error('Failed to save modular configuration to OWPROV:', err);
+      setApiError(parseApiError(err, 'Failed to save modular configuration to OWPROV'));
     } finally {
       setIsSubmitting(false);
     }
@@ -637,6 +626,29 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
           }}
         >
           <VStack gap={5} align="stretch">
+            {/* Variable Blocks Load Warning */}
+            {isVariableBlocksError && (
+              <Box
+                p={3}
+                borderRadius="6px"
+                bg="#fffbeb"
+                border="1px solid #fde68a"
+                color="#92400e"
+                fontSize="12px"
+                display="flex"
+                alignItems="flex-start"
+                gap={2}
+              >
+                <Box mt={0.5}>
+                  <Icon name="alertTriangle" size={15} color="#b45309" />
+                </Box>
+                <Box flex="1">
+                  <Text fontWeight="600">Failed to load referenced variable profiles:</Text>
+                  <Text>{parseApiError(variableBlocksError, 'Could not retrieve variable blocks from OWPROV.')}</Text>
+                </Box>
+              </Box>
+            )}
+
             {/* Alert / Feedback message */}
             {apiError && (
               <Box

@@ -23,6 +23,8 @@ import {
   getAllVariableBlocks,
   useGetEntities,
   useGetVenues,
+  parseApiError,
+  notifyApiError,
   type DefaultConfigurationApiResponse,
   type ModularConfigurationApiResponse,
 } from '@/api';
@@ -167,8 +169,39 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
   onNavigateToProfile,
 }) => {
 
-  const [configurations, setConfigurations] = useState<DeviceConfiguration[]>([]);
-  const [isLoadingConfigs, setIsLoadingConfigs] = useState<boolean>(true);
+  // Independent OWGW State (Default Configurations)
+  const [owgwConfigs, setOwgwConfigs] = useState<DeviceConfiguration[]>([]);
+  const [isOwgwLoading, setIsOwgwLoading] = useState(true);
+  const [owgwError, setOwgwError] = useState<string | null>(null);
+  const [owgwReloadKey, setOwgwReloadKey] = useState(0);
+
+  // Independent OWPROV State (Modular Configurations)
+  const [owprovConfigs, setOwprovConfigs] = useState<DeviceConfiguration[]>([]);
+  const [isOwprovLoading, setIsOwprovLoading] = useState(true);
+  const [owprovError, setOwprovError] = useState<string | null>(null);
+  const [owprovReloadKey, setOwprovReloadKey] = useState(0);
+
+  // Unified configurations derived from both services
+  const configurations = useMemo(
+    () => [...owgwConfigs, ...owprovConfigs],
+    [owgwConfigs, owprovConfigs]
+  );
+  const isLoadingConfigs = isOwgwLoading || isOwprovLoading;
+
+  const refetchOwgw = () => {
+    setOwgwError(null);
+    setOwgwReloadKey((k) => k + 1);
+  };
+
+  const refetchOwprov = () => {
+    setOwprovError(null);
+    setOwprovReloadKey((k) => k + 1);
+  };
+
+  const refetchAll = () => {
+    refetchOwgw();
+    refetchOwprov();
+  };
   const [search, setSearch] = useState('');
   const [scopeFilter, setScopeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -240,7 +273,8 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
           return next;
         });
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        console.warn('Could not fetch variable blocks by select, falling back to getAllVariableBlocks:', err);
         getAllVariableBlocks()
           .then((allBlocks) => {
             if (!isMounted) return;
@@ -252,8 +286,8 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
               return next;
             });
           })
-          .catch((err) => {
-            console.warn('Failed to resolve variable block names:', err);
+          .catch((fallbackErr) => {
+            console.warn('Failed to resolve variable block names:', fallbackErr);
           });
       });
 
@@ -273,56 +307,64 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
   const [deleteConfirmConfig, setDeleteConfirmConfig] = useState<DeviceConfiguration | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [reloadKey, setReloadKey] = useState(0);
-
-  const refetchConfigurations = () => {
-    setReloadKey((prev) => prev + 1);
-  };
-
-  // Load live default configurations from OWGW and modular configurations from OWPROV
+  // Load live default configurations from OWGW
   useEffect(() => {
     let isMounted = true;
-    setIsLoadingConfigs(true);
+    setIsOwgwLoading(true);
 
-    Promise.allSettled([
-      getDefaultConfigurations(),
-      getModularConfigurations(),
-    ])
-      .then(([defaultRes, modularRes]) => {
+    getDefaultConfigurations()
+      .then((configs) => {
         if (!isMounted) return;
-        const liveConfigs: DeviceConfiguration[] = [];
-
-        // 1. Live OWGW Default Configurations
-        if (defaultRes.status === 'fulfilled' && Array.isArray(defaultRes.value)) {
-          liveConfigs.push(...defaultRes.value.map(mapOwgwDefaultConfigToDeviceConfig));
-        } else if (defaultRes.status === 'rejected') {
-          console.warn('Could not fetch default configurations from OWGW:', defaultRes.reason);
-        }
-
-        // 2. Live OWPROV Modular Configurations
-        if (modularRes.status === 'fulfilled' && Array.isArray(modularRes.value)) {
-          liveConfigs.push(...modularRes.value.map(mapOwprovModularConfigToDeviceConfig));
-        } else if (modularRes.status === 'rejected') {
-          console.warn('Could not fetch modular configurations from OWPROV:', modularRes.reason);
-        }
-
-        setConfigurations(liveConfigs);
+        setOwgwConfigs(Array.isArray(configs) ? configs.map(mapOwgwDefaultConfigToDeviceConfig) : []);
+        setOwgwError(null);
+      })
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        console.error('Could not fetch default configurations from OWGW:', err);
+        setOwgwError(parseApiError(err, 'Failed to load default configurations from OWGW.'));
       })
       .finally(() => {
         if (isMounted) {
-          setIsLoadingConfigs(false);
+          setIsOwgwLoading(false);
         }
       });
 
     return () => {
       isMounted = false;
     };
-  }, [reloadKey]);
+  }, [owgwReloadKey]);
+
+  // Load live modular configurations from OWPROV
+  useEffect(() => {
+    let isMounted = true;
+    setIsOwprovLoading(true);
+
+    getModularConfigurations()
+      .then((configs) => {
+        if (!isMounted) return;
+        setOwprovConfigs(Array.isArray(configs) ? configs.map(mapOwprovModularConfigToDeviceConfig) : []);
+        setOwprovError(null);
+      })
+      .catch((err: unknown) => {
+        if (!isMounted) return;
+        console.error('Could not fetch modular configurations from OWPROV:', err);
+        setOwprovError(parseApiError(err, 'Failed to load modular configurations from OWPROV.'));
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsOwprovLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [owprovReloadKey]);
 
   const isTypeModalOpen = isSelectTypeModalOpen || Boolean(isCreateOpen);
 
   const handleSaveDefaultConfig = (saved: DeviceConfiguration) => {
-    setConfigurations((prev) => {
+    setOwgwConfigs((prev) => {
       const idx = prev.findIndex((c) => c.id === saved.id);
       if (idx >= 0) {
         const next = [...prev];
@@ -331,11 +373,11 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
       }
       return [saved, ...prev];
     });
-    refetchConfigurations();
+    refetchOwgw();
   };
 
   const handleSaveModularConfig = (saved: DeviceConfiguration) => {
-    setConfigurations((prev) => {
+    setOwprovConfigs((prev) => {
       const idx = prev.findIndex((c) => c.id === saved.id);
       if (idx >= 0) {
         const next = [...prev];
@@ -344,7 +386,7 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
       }
       return [saved, ...prev];
     });
-    refetchConfigurations();
+    refetchOwprov();
   };
 
   // Filter configurations
@@ -423,27 +465,21 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
       setIsDeleting(true);
       if (deleteConfirmConfig.configType === 'default') {
         await deleteDefaultConfiguration(deleteConfirmConfig.name);
+        setOwgwConfigs((prev) => prev.filter((c) => c.id !== deleteConfirmConfig.id));
+        refetchOwgw();
       } else {
         await deleteModularConfiguration(deleteConfirmConfig.id);
+        setOwprovConfigs((prev) => prev.filter((c) => c.id !== deleteConfirmConfig.id));
+        refetchOwprov();
       }
-      setConfigurations((prev) => prev.filter((c) => c.id !== deleteConfirmConfig.id));
       toaster.success({
         title: 'Configuration Deleted',
         description: `Configuration "${deleteConfirmConfig.name}" was deleted successfully.`,
       });
       setDeleteConfirmConfig(null);
-      refetchConfigurations();
     } catch (err: unknown) {
       console.error('Failed to delete configuration:', err);
-      const errorMsg =
-        (err as { response?: { data?: { ErrorDescription?: string } } })?.response?.data
-          ?.ErrorDescription ||
-        (err as Error)?.message ||
-        'Failed to delete configuration.';
-      toaster.error({
-        title: 'Delete Failed',
-        description: errorMsg,
-      });
+      notifyApiError(err, 'Failed to delete configuration.', 'Delete Failed');
     } finally {
       setIsDeleting(false);
     }
@@ -473,22 +509,42 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
           </Box>
         </Flex>
 
-        <Flex flex="1" minW="200px" border="1px solid" borderColor={themeColors.kpi.border} borderRadius="6px" bg="#ffffff" p="14px 18px" align="center" gap={4}>
-          <Icon name="device" size={26} color="#0891b2" />
+        <Flex
+          flex="1"
+          minW="200px"
+          border="1px solid"
+          borderColor={owgwError ? '#fecaca' : themeColors.kpi.border}
+          borderRadius="6px"
+          bg={owgwError ? '#fff5f5' : '#ffffff'}
+          p="14px 18px"
+          align="center"
+          gap={4}
+        >
+          <Icon name="device" size={26} color={owgwError ? '#dc2626' : '#0891b2'} />
           <Box>
-            <Text fontSize="12px" color={themeColors.text.secondary}>OWGW Defaults</Text>
-            <Text fontSize="22px" fontWeight="700" color={themeColors.text.title}>
-              {configurations.filter((c) => c.configType === 'default').length}
+            <Text fontSize="12px" color={owgwError ? '#dc2626' : themeColors.text.secondary}>OWGW Defaults</Text>
+            <Text fontSize="22px" fontWeight="700" color={owgwError ? '#dc2626' : themeColors.text.title}>
+              {isOwgwLoading ? '...' : owgwError ? 'Error' : configurations.filter((c) => c.configType === 'default').length}
             </Text>
           </Box>
         </Flex>
 
-        <Flex flex="1" minW="200px" border="1px solid" borderColor={themeColors.kpi.border} borderRadius="6px" bg="#ffffff" p="14px 18px" align="center" gap={4}>
-          <Icon name="layers" size={26} color="#0284c7" />
+        <Flex
+          flex="1"
+          minW="200px"
+          border="1px solid"
+          borderColor={owprovError ? '#fecaca' : themeColors.kpi.border}
+          borderRadius="6px"
+          bg={owprovError ? '#fff5f5' : '#ffffff'}
+          p="14px 18px"
+          align="center"
+          gap={4}
+        >
+          <Icon name="layers" size={26} color={owprovError ? '#dc2626' : '#0284c7'} />
           <Box>
-            <Text fontSize="12px" color={themeColors.text.secondary}>OWPROV Modular</Text>
-            <Text fontSize="22px" fontWeight="700" color={themeColors.text.title}>
-              {configurations.filter((c) => c.configType !== 'default').length}
+            <Text fontSize="12px" color={owprovError ? '#dc2626' : themeColors.text.secondary}>OWPROV Modular</Text>
+            <Text fontSize="22px" fontWeight="700" color={owprovError ? '#dc2626' : themeColors.text.title}>
+              {isOwprovLoading ? '...' : owprovError ? 'Error' : configurations.filter((c) => c.configType !== 'default').length}
             </Text>
           </Box>
         </Flex>
@@ -503,6 +559,151 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
           </Box>
         </Flex>
       </Flex>
+
+      {/* 1. Full Failure Error Banner (Both OWGW and OWPROV failed) */}
+      {owgwError && owprovError && !isLoadingConfigs && (
+        <Box
+          p={4}
+          mb={4}
+          borderRadius="6px"
+          bg="#fef2f2"
+          border="1px solid #fecaca"
+        >
+          <Flex align="flex-start" justify="space-between" wrap="wrap" gap={3}>
+            <HStack align="flex-start" gap={3}>
+              <Box color="#dc2626" mt={0.5}>
+                <Icon name="alertTriangle" size={20} />
+              </Box>
+              <Box>
+                <Text fontSize="14px" fontWeight="700" color="#991b1b">
+                  Failed to Load Configurations from Backend Services
+                </Text>
+                <Text fontSize="12px" color="#7f1d1d" mt={0.5}>
+                  Both OWGW (Default Configurations) and OWPROV (Modular Configurations) failed to respond.
+                </Text>
+                <VStack align="stretch" gap={1.5} mt={2.5}>
+                  <Box p={2} bg="#ffffff" borderRadius="4px" border="1px solid #fee2e2" fontSize="12px">
+                    <Text fontWeight="600" color="#991b1b">OWGW Gateway (Default Configurations):</Text>
+                    <Text color="#7f1d1d">{owgwError}</Text>
+                  </Box>
+                  <Box p={2} bg="#ffffff" borderRadius="4px" border="1px solid #fee2e2" fontSize="12px">
+                    <Text fontWeight="600" color="#991b1b">OWPROV Service (Modular Configurations):</Text>
+                    <Text color="#7f1d1d">{owprovError}</Text>
+                  </Box>
+                </VStack>
+              </Box>
+            </HStack>
+            <HStack gap={2}>
+              <Button
+                size="xs"
+                variant="outline"
+                borderColor="#dc2626"
+                color="#dc2626"
+                _hover={{ bg: '#fee2e2' }}
+                onClick={refetchOwgw}
+              >
+                Retry OWGW
+              </Button>
+              <Button
+                size="xs"
+                variant="outline"
+                borderColor="#dc2626"
+                color="#dc2626"
+                _hover={{ bg: '#fee2e2' }}
+                onClick={refetchOwprov}
+              >
+                Retry OWPROV
+              </Button>
+              <Button
+                size="xs"
+                bg="#dc2626"
+                color="#ffffff"
+                _hover={{ bg: '#b91c1c' }}
+                onClick={refetchAll}
+              >
+                <Icon name="refresh" size={12} />
+                <Text ml={1.5}>Retry All</Text>
+              </Button>
+            </HStack>
+          </Flex>
+        </Box>
+      )}
+
+      {/* 2. Partial Load Warning: OWGW Unavailable */}
+      {owgwError && !owprovError && !isLoadingConfigs && (
+        <Box
+          p={3.5}
+          mb={4}
+          borderRadius="6px"
+          bg="#fffbeb"
+          border="1px solid #fde68a"
+        >
+          <Flex align="center" justify="space-between" wrap="wrap" gap={3}>
+            <HStack gap={2.5}>
+              <Box color="#d97706">
+                <Icon name="alertTriangle" size={18} />
+              </Box>
+              <Box>
+                <Text fontSize="13px" fontWeight="700" color="#92400e">
+                  Partial Inventory: OWGW Default Configurations Unavailable
+                </Text>
+                <Text fontSize="12px" color="#b45309">
+                  Could not load Default Configurations from OWGW: {owgwError}. Displaying OWPROV modular configurations only.
+                </Text>
+              </Box>
+            </HStack>
+            <Button
+              size="xs"
+              variant="outline"
+              borderColor="#d97706"
+              color="#92400e"
+              _hover={{ bg: '#fef3c7' }}
+              onClick={refetchOwgw}
+            >
+              <Icon name="refresh" size={12} />
+              <Text ml={1.5}>Retry OWGW</Text>
+            </Button>
+          </Flex>
+        </Box>
+      )}
+
+      {/* 3. Partial Load Warning: OWPROV Unavailable */}
+      {owprovError && !owgwError && !isLoadingConfigs && (
+        <Box
+          p={3.5}
+          mb={4}
+          borderRadius="6px"
+          bg="#fffbeb"
+          border="1px solid #fde68a"
+        >
+          <Flex align="center" justify="space-between" wrap="wrap" gap={3}>
+            <HStack gap={2.5}>
+              <Box color="#d97706">
+                <Icon name="alertTriangle" size={18} />
+              </Box>
+              <Box>
+                <Text fontSize="13px" fontWeight="700" color="#92400e">
+                  Partial Inventory: OWPROV Modular Configurations Unavailable
+                </Text>
+                <Text fontSize="12px" color="#b45309">
+                  Could not load Modular Configurations from OWPROV: {owprovError}. Displaying OWGW default configurations only.
+                </Text>
+              </Box>
+            </HStack>
+            <Button
+              size="xs"
+              variant="outline"
+              borderColor="#d97706"
+              color="#92400e"
+              _hover={{ bg: '#fef3c7' }}
+              onClick={refetchOwprov}
+            >
+              <Icon name="refresh" size={12} />
+              <Text ml={1.5}>Retry OWPROV</Text>
+            </Button>
+          </Flex>
+        </Box>
+      )}
 
       {/* Filter and Search Bar */}
       <Box
@@ -613,11 +814,64 @@ export const ConfigurationsPage: React.FC<ConfigurationsPageProps> = ({
           </Box>
 
           <Box as="tbody">
-            {filteredConfigs.length === 0 ? (
+            {isLoadingConfigs && configurations.length === 0 ? (
               <Box as="tr">
                 <td colSpan={7} style={{ padding: '36px', textAlign: 'center' }}>
-                  <Text fontSize="13px" color={themeColors.text.muted}>
-                    {isLoadingConfigs ? 'Loading configurations...' : 'No configurations found.'}
+                  <VStack gap={2} justify="center">
+                    <Spinner size="md" color={themeColors.brand.accent} />
+                    <Text fontSize="13px" color={themeColors.text.secondary}>
+                      {isOwgwLoading && isOwprovLoading
+                        ? 'Loading configurations from OWGW and OWPROV...'
+                        : isOwgwLoading
+                        ? 'Loading default configurations from OWGW...'
+                        : 'Loading modular configurations from OWPROV...'}
+                    </Text>
+                  </VStack>
+                </td>
+              </Box>
+            ) : owgwError && owprovError && configurations.length === 0 ? (
+              <Box as="tr">
+                <td colSpan={7} style={{ padding: '36px', textAlign: 'center' }}>
+                  <VStack gap={2.5} justify="center">
+                    <Box color="#dc2626">
+                      <Icon name="alertTriangle" size={24} />
+                    </Box>
+                    <Text fontSize="14px" fontWeight="600" color="#dc2626">
+                      Failed to load configurations from backend services
+                    </Text>
+                    <Text fontSize="12px" color={themeColors.text.secondary} maxW="450px" textAlign="center">
+                      Both OWGW (Default Configurations) and OWPROV (Modular Configurations) could not be reached.
+                    </Text>
+                    <HStack gap={2} mt={1}>
+                      <Button size="xs" variant="outline" onClick={refetchOwgw}>
+                        Retry OWGW
+                      </Button>
+                      <Button size="xs" variant="outline" onClick={refetchOwprov}>
+                        Retry OWPROV
+                      </Button>
+                      <Button
+                        size="xs"
+                        bg={themeColors.brand.accent}
+                        color="#ffffff"
+                        _hover={{ bg: themeColors.brand.accentHover }}
+                        onClick={refetchAll}
+                      >
+                        <Icon name="refresh" size={12} />
+                        <Text ml={1.5}>Retry All</Text>
+                      </Button>
+                    </HStack>
+                  </VStack>
+                </td>
+              </Box>
+            ) : filteredConfigs.length === 0 ? (
+              <Box as="tr">
+                <td colSpan={7} style={{ padding: '36px', textAlign: 'center' }}>
+                  <Text fontSize="13px" color={themeColors.text.secondary}>
+                    {owgwError
+                      ? 'No OWPROV configurations match the filters (OWGW defaults failed to load).'
+                      : owprovError
+                      ? 'No OWGW configurations match the filters (OWPROV modular configs failed to load).'
+                      : 'No configurations found.'}
                   </Text>
                 </td>
               </Box>

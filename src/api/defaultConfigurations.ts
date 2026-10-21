@@ -25,10 +25,10 @@ export interface OwgwSuccessResponse {
 }
 
 /**
- * Retrieve a list of default configurations from OWGW
- * GET /api/v1/default_configurations?limit=500&offset=0
+ * Retrieve a single batch of default configurations from OWGW
+ * GET /api/v1/default_configurations?limit={limit}&offset={offset}
  */
-export const getDefaultConfigurations = async (
+export const getDefaultConfigurationsBatch = async (
   offset: number = 0,
   limit: number = 500
 ): Promise<DefaultConfigurationApiResponse[]> => {
@@ -37,6 +37,38 @@ export const getDefaultConfigurations = async (
     defaultConfigurations?: DefaultConfigurationApiResponse[];
   }>(`default_configurations?limit=${limit}&offset=${offset}`);
   return response.data.configurations || response.data.defaultConfigurations || [];
+};
+
+/**
+ * Retrieve default configurations from OWGW.
+ * If offset and limit are explicitly provided, returns a single batch.
+ * Otherwise, iteratively fetches all pages until all records are retrieved.
+ */
+export const getDefaultConfigurations = async (
+  offset?: number,
+  limit?: number
+): Promise<DefaultConfigurationApiResponse[]> => {
+  if (typeof offset === 'number' && typeof limit === 'number') {
+    return getDefaultConfigurationsBatch(offset, limit);
+  }
+
+  const batchSize = limit || 500;
+  let currentOffset = offset || 0;
+  let allConfigs: DefaultConfigurationApiResponse[] = [];
+  const MAX_PAGES = 50; // Safety guard: max 25,000 records
+  let pageCount = 0;
+
+  while (pageCount < MAX_PAGES) {
+    const batch = await getDefaultConfigurationsBatch(currentOffset, batchSize);
+    allConfigs = [...allConfigs, ...batch];
+    pageCount++;
+    if (batch.length < batchSize) {
+      break;
+    }
+    currentOffset += batchSize;
+  }
+
+  return allConfigs;
 };
 
 /**

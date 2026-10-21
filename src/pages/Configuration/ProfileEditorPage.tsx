@@ -48,7 +48,7 @@ import {
 export interface ProfileEditorPageProps {
   profile: ConfigurationProfile;
   onBack: () => void;
-  onSave?: (updatedProfile: ConfigurationProfile) => void;
+  onSave?: (updatedProfile: ConfigurationProfile) => Promise<unknown> | void;
 }
 
 interface MultiPskItem {
@@ -131,6 +131,7 @@ export const ProfileEditorPage: React.FC<ProfileEditorPageProps> = ({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const { data: entities = [] } = useGetEntities();
   const { data: venues = [] } = useGetVenues();
@@ -425,7 +426,8 @@ export const ProfileEditorPage: React.FC<ProfileEditorPageProps> = ({
     return profile.parsedValues;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSaving) return;
     const values = buildCurrentValues();
     const serialized = JSON.stringify(values, null, 2);
 
@@ -463,12 +465,19 @@ export const ProfileEditorPage: React.FC<ProfileEditorPageProps> = ({
       parsedValues: values,
     };
 
-    setProfile(updatedProfile);
-    setHasUnsavedChanges(false);
-    setSaveSuccessMessage(true);
-    setTimeout(() => setSaveSuccessMessage(false), 4000);
-
-    onSave?.(updatedProfile);
+    try {
+      setIsSaving(true);
+      await onSave?.(updatedProfile);
+      setProfile(updatedProfile);
+      setHasUnsavedChanges(false);
+      setSaveSuccessMessage(true);
+      setTimeout(() => setSaveSuccessMessage(false), 4000);
+    } catch (err) {
+      console.error('Failed to save profile changes:', err);
+      // Keep hasUnsavedChanges = true so the user does not lose their work
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const rawJsonString = JSON.stringify(
@@ -507,9 +516,10 @@ export const ProfileEditorPage: React.FC<ProfileEditorPageProps> = ({
             color="#ffffff"
             _hover={{ bg: themeColors.brand.accentHover }}
             onClick={handleSave}
-            disabled={!hasUnsavedChanges}
+            disabled={!hasUnsavedChanges || isSaving}
+            loading={isSaving}
           >
-            Save changes
+            {isSaving ? 'Saving...' : 'Save changes'}
           </Button>
 
           <Button
@@ -1493,8 +1503,10 @@ export const ProfileEditorPage: React.FC<ProfileEditorPageProps> = ({
                 color="#ffffff"
                 _hover={{ bg: themeColors.brand.accentHover }}
                 onClick={handleSave}
+                disabled={isSaving}
+                loading={isSaving}
               >
-                Save profile
+                {isSaving ? 'Saving...' : 'Save profile'}
               </Button>
             </HStack>
           </Flex>
