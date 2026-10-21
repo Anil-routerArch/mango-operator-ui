@@ -54,6 +54,50 @@ const COMMON_DEVICE_MODELS = [
   'wlan_ap_generic',
 ];
 
+/**
+ * Safely extracts and merges uCentral configuration fragments from a DeviceConfiguration's modular blocks
+ * into a single unified uCentral JSON object string for the sections editor.
+ * Ensures the result is always a valid JSON Object, never an array of blocks.
+ */
+const extractMergedUCentralJson = (config?: DeviceConfiguration | null): string => {
+  if (!config) return '';
+
+  if (config.rawConfigurationJson) {
+    try {
+      const parsed = JSON.parse(config.rawConfigurationJson);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return JSON.stringify(parsed, null, 2);
+      }
+    } catch {
+      // Fall through to block extraction
+    }
+  }
+
+  if (config.configuration && Array.isArray(config.configuration) && config.configuration.length > 0) {
+    const merged: Record<string, unknown> = {};
+    for (const block of config.configuration) {
+      if (!block || !block.configuration) continue;
+      let parsedBlock: Record<string, unknown> | null = null;
+      if (typeof block.configuration === 'string') {
+        try {
+          parsedBlock = JSON.parse(block.configuration);
+        } catch {
+          parsedBlock = null;
+        }
+      } else if (typeof block.configuration === 'object') {
+        parsedBlock = block.configuration as Record<string, unknown>;
+      }
+      if (parsedBlock && typeof parsedBlock === 'object' && !Array.isArray(parsedBlock)) {
+        Object.assign(merged, parsedBlock);
+      }
+    }
+    if (Object.keys(merged).length > 0) {
+      return JSON.stringify(merged, null, 2);
+    }
+  }
+  return '';
+};
+
 export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
   isOpen,
   onClose,
@@ -164,13 +208,9 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
 
   // Modular sections state synchronized from ConfigurationSectionsCard
   const [latestState, setLatestState] = useState<ConfigurationSectionsState | null>(null);
-  const [configurationJson, setConfigurationJson] = useState<string>(() => {
-    if (initialConfig?.rawConfigurationJson) return initialConfig.rawConfigurationJson;
-    if (initialConfig?.configuration && initialConfig.configuration.length > 0) {
-      return JSON.stringify(initialConfig.configuration);
-    }
-    return '';
-  });
+  const [configurationJson, setConfigurationJson] = useState<string>(() =>
+    extractMergedUCentralJson(initialConfig)
+  );
 
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -282,63 +322,93 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
 
     // Compile active sections into OWPROV modular configuration blocks
     let modularBlocks: ModularConfigBlock[] = [];
+
+    // Case 1: If user modified sections via ConfigurationSectionsCard
     if (latestState && latestState.activeSections.length > 0) {
       modularBlocks = compileStateToModularConfigurationElements(latestState);
-    }
 
-    // Preserve any unmanaged / custom blocks from initial configuration (TC-CFG-007)
-    if (initialConfig?.configuration && Array.isArray(initialConfig.configuration)) {
-      const UI_MANAGED_KEYS = new Set([
-        'globals',
-        'unit',
-        'metrics',
-        'services',
-        'radios',
-        'interfaces',
-        'third-party',
-      ]);
+      // Preserve any unmanaged / custom blocks from initial configuration that are not UI-managed
+      if (initialConfig?.configuration && Array.isArray(initialConfig.configuration)) {
+        const UI_MANAGED_KEYS = new Set([
+          'globals',
+          'unit',
+          'metrics',
+          'services',
+          'radios',
+          'interfaces',
+          'third-party',
+        ]);
 
-      for (const block of initialConfig.configuration) {
-        if (!block || typeof block !== 'object') continue;
-        let parsed: Record<string, unknown> | null = null;
-        if (typeof block.configuration === 'string') {
-          try {
-            parsed = JSON.parse(block.configuration);
-          } catch {
-            parsed = null;
+        for (const block of initialConfig.configuration) {
+          if (!block || typeof block !== 'object') continue;
+          let parsed: Record<string, unknown> | null = null;
+          if (typeof block.configuration === 'string') {
+            try {
+              parsed = JSON.parse(block.configuration);
+            } catch {
+              parsed = null;
+            }
+          } else if (typeof block.configuration === 'object' && block.configuration !== null) {
+            parsed = block.configuration as Record<string, unknown>;
           }
-        } else if (typeof block.configuration === 'object' && block.configuration !== null) {
-          parsed = block.configuration as Record<string, unknown>;
-        }
 
-        const isUiManaged =
-          parsed &&
-          typeof parsed === 'object' &&
-          Object.keys(parsed).some((k) => UI_MANAGED_KEYS.has(k));
+          const isUiManaged =
+            parsed &&
+            typeof parsed === 'object' &&
+            !Array.isArray(parsed) &&
+            Object.keys(parsed).some((k) => UI_MANAGED_KEYS.has(k));
 
-        if (!isUiManaged) {
-          modularBlocks.push({
-            name: block.name || 'Custom Block',
-            description: block.description || '',
-            weight: typeof block.weight === 'number' ? block.weight : 99,
-            configuration:
-              typeof block.configuration === 'string'
-                ? block.configuration
-                : JSON.stringify(block.configuration, null, 2),
-          });
+          if (!isUiManaged) {
+            modularBlocks.push({
+              name: block.name || 'Custom Block',
+              description: block.description || '',
+              weight: typeof block.weight === 'number' ? block.weight : 99,
+              configuration:
+                typeof block.configuration === 'string'
+                  ? block.configuration
+                  : JSON.stringify(block.configuration, null, 2),
+            });
+          }
         }
       }
+    } else if (
+      initialConfig?.configuration &&
+      Array.isArray(initialConfig.configuration) &&
+      initialConfig.configuration.length > 0
+    ) {
+      // Case 2: Metadata-only edit (user modified name, description, venue, entity, device rules without touching sections).
+      // Preserve original modular blocks with 100% fidelity without recompilation or rewrapping!
+      modularBlocks = initialConfig.configuration.map((b) => ({
+        name: b.name || 'Configuration Block',
+        description: b.description || '',
+        weight: typeof b.weight === 'number' ? b.weight : 1,
+        configuration:
+          typeof b.configuration === 'string'
+            ? b.configuration
+            : JSON.stringify(b.configuration, null, 2),
+      }));
     }
 
-    // Fallback if no blocks were produced: wrap the compiled uCentral JSON into a primary block
+    // Case 3: Fallback if creating from scratch or no blocks produced:
+    // Only wrap configurationJson if it is a valid non-empty uCentral JSON object (never an array!)
     if (modularBlocks.length === 0) {
-      if (configurationJson.trim().length > 0 && configurationJson.trim() !== '{}') {
+      let parsedJson: Record<string, unknown> | null = null;
+      try {
+        const parsed = JSON.parse(configurationJson.trim());
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+          parsedJson = parsed as Record<string, unknown>;
+        }
+      } catch {
+        parsedJson = null;
+      }
+
+      if (parsedJson) {
         modularBlocks = [
           {
             name: 'Main Configuration',
             description: description.trim() || 'Master device configuration',
             weight: 1,
-            configuration: configurationJson,
+            configuration: JSON.stringify(parsedJson, null, 2),
           },
         ];
       } else {
