@@ -744,6 +744,8 @@ export const RadiusProxyRealmsModal: React.FC<RadiusProxyRealmsModalProps> = ({
           isOpen={activeCertModal !== null}
           onClose={() => setActiveCertModal(null)}
           title={activeCertModal}
+          context="configuration.radius-proxy"
+          isPrivateKey={activeCertModal === 'private-key'}
           value={certModalProps.value}
           fileName={certModalProps.filename}
           onSave={handleSaveCert}

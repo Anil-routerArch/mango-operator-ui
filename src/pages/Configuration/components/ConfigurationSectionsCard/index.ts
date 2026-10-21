@@ -12,5 +12,7 @@ export * from './ServicesSection/index';
 export * from './MetricsSection/index';
 export * from './UnitSection/index';
 export * from './ThirdPartySection/index';
+export * from './NatSection/index';
+export * from './EthernetSection/index';
 export * from './types';
 export * from './utils';

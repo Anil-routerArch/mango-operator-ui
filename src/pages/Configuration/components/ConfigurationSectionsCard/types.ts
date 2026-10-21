@@ -8,7 +8,9 @@ export type SubsectionKey =
   | 'services'
   | 'radios'
   | 'interfaces'
-  | 'third-party';
+  | 'third-party'
+  | 'nat'
+  | 'ethernet';
 
 export interface SectionMeta {
   name: string;
@@ -404,6 +406,165 @@ export interface ThirdPartySectionData {
   configuration?: string;
 }
 
+// -------------------------------------------------------------
+// NAT Section Interfaces (OLG Platform)
+// -------------------------------------------------------------
+export type NatProtocol = 'all' | 'tcp' | 'udp' | string;
+
+export interface NatGroupConfig {
+  'port-group'?: string;
+  'network-group'?: string;
+  'mac-group'?: string;
+  'domain-group'?: string;
+  'address-group'?: string;
+}
+
+export interface NatFilterTarget {
+  address?: string;
+  port?: string;
+  fqdn?: string;
+  group?: NatGroupConfig;
+}
+
+export interface NatTranslationOptions {
+  'port-mapping'?: string;
+  'address-mapping'?: string;
+}
+
+export interface SnatTranslation {
+  address: string;
+  port?: string;
+  options?: NatTranslationOptions;
+}
+
+export interface DnatTranslation {
+  address: string;
+  port?: string;
+  redirect?: {
+    port?: string;
+  };
+  options?: NatTranslationOptions;
+}
+
+export interface SnatRule {
+  'rule-id': number;
+  description?: string;
+  disable?: boolean;
+  protocol?: NatProtocol;
+  'out-interface': {
+    name: string;
+    group?: string;
+  };
+  source?: NatFilterTarget;
+  destination?: NatFilterTarget;
+  translation: SnatTranslation;
+}
+
+export interface DnatRule {
+  'rule-id': number;
+  description?: string;
+  disable?: boolean;
+  protocol?: NatProtocol;
+  'in-interface': {
+    name: string;
+    group?: string;
+  };
+  source?: NatFilterTarget;
+  destination?: NatFilterTarget;
+  translation: DnatTranslation;
+}
+
+export interface NatSectionData {
+  meta: SectionMeta;
+  mode?: 'none' | 'snat' | 'dnat';
+  snat: {
+    rules: SnatRule[];
+  };
+  dnat: {
+    rules: DnatRule[];
+  };
+}
+
+// -------------------------------------------------------------
+// Ethernet Section Interfaces (Switch Platform)
+// -------------------------------------------------------------
+export type EthernetDuplex = 'full' | 'half';
+export type LldpAdminStatus = 'rx' | 'tx' | 'rx-tx' | 'disabled';
+
+export interface LldpInterfaceConfig {
+  'lldp-admin-status'?: LldpAdminStatus;
+  'lldp-basic-tlv-mgmt-ip-v4'?: boolean;
+  'lldp-basic-tlv-mgmt-ip-v6'?: boolean;
+  'lldp-basic-tlv-port-descr'?: boolean;
+  'lldp-basic-tlv-sys-capab'?: boolean;
+  'lldp-basic-tlv-sys-descr'?: boolean;
+  'lldp-basic-tlv-sys-name'?: boolean;
+  'lldp-dot1-tlv-proto-ident'?: boolean;
+  'lldp-dot1-tlv-proto-vid'?: boolean;
+  'lldp-dot1-tlv-pvid'?: boolean;
+  'lldp-dot1-tlv-vlan-name'?: boolean;
+  'lldp-dot3-tlv-link-agg'?: boolean;
+  'lldp-dot3-tlv-mac-phy'?: boolean;
+  'lldp-dot3-tlv-max-frame'?: boolean;
+  'lldp-dot3-tlv-poe'?: boolean;
+  'lldp-med-tlv-ext-poe'?: boolean;
+  'lldp-med-tlv-inventory'?: boolean;
+  'lldp-med-tlv-location'?: boolean;
+  'lldp-med-tlv-med-cap'?: boolean;
+  'lldp-med-tlv-network-policy'?: boolean;
+  'lldp-notification'?: boolean;
+  'lldp-med-notification'?: boolean;
+}
+
+export interface EthernetPoeConfig {
+  'admin-mode'?: boolean;
+  detection: string;
+  'power-limit': number;
+  priority: string;
+  'do-reset'?: boolean;
+}
+
+export interface EthernetBpduGuardConfig {
+  enabled?: boolean;
+  'auto-recovery-intvl-secs': number;
+}
+
+export interface EthernetDhcpSnoopConfig {
+  'dhcp-snoop-port-trust'?: boolean;
+}
+
+export interface EthernetStormControlConfig {
+  'broadcast-pps': number;
+  'multicast-pps': number;
+  'unknown-unicast-pps': number;
+}
+
+export interface EthernetVoiceVlanConfig {
+  'voice-vlan-intf-mode': string;
+  'voice-vlan-intf-priority': number;
+  'voice-vlan-intf-detect-voice': string;
+  'voice-vlan-intf-security'?: boolean;
+}
+
+export interface EthernetPortEntry {
+  'select-ports': string[];
+  speed: number;
+  duplex: EthernetDuplex;
+  enabled: boolean;
+  'edge-port'?: boolean;
+  poe?: EthernetPoeConfig;
+  'bpdu-guard'?: EthernetBpduGuardConfig;
+  'dhcp-snoop-port'?: EthernetDhcpSnoopConfig;
+  'storm-control'?: EthernetStormControlConfig;
+  'voice-vlan-intf-config'?: EthernetVoiceVlanConfig;
+  'lldp-interface-config'?: LldpInterfaceConfig;
+}
+
+export interface EthernetSectionData {
+  meta: SectionMeta;
+  configuration: EthernetPortEntry[];
+}
+
 export interface ConfigurationSectionsState {
   activeSections: SubsectionKey[];
   globals: GlobalsSectionData;
@@ -413,4 +574,6 @@ export interface ConfigurationSectionsState {
   radios: RadiosSectionData;
   interfaces: InterfacesSectionData;
   thirdParty: ThirdPartySectionData;
+  nat: NatSectionData;
+  ethernet: EthernetSectionData;
 }

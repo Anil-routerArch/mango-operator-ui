@@ -22,7 +22,6 @@ import {
 } from './components/OtherSectionEditors';
 import { ConfigurationSummaryCard } from './components/ConfigurationSummaryCard';
 import { DiffPreviewModal } from './components/DiffPreviewModal';
-import { DeployConfigModal } from './components/DeployConfigModal';
 import {
   MOCK_PROPERTIES_LIST,
   MOCK_VENUES_LIST,
@@ -54,7 +53,6 @@ export const ConfigurationEditorPage: React.FC<ConfigurationEditorPageProps> = (
   const [activeTab, setActiveTab] = useState<'editor' | 'raw_json' | 'assignments' | 'history'>('editor');
   const [activeSection, setActiveSection] = useState<ConfigSectionType>('radios');
   const [isDiffOpen, setIsDiffOpen] = useState(false);
-  const [isDeployOpen, setIsDeployOpen] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Scope editing
@@ -216,18 +214,6 @@ export const ConfigurationEditorPage: React.FC<ConfigurationEditorPageProps> = (
             onClick={() => setIsDiffOpen(true)}
           >
             Compare changes
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            borderColor="#16a34a"
-            color="#16a34a"
-            bg="#ffffff"
-            _hover={{ bg: '#f0fdf4' }}
-            onClick={() => setIsDeployOpen(true)}
-          >
-            Deploy
           </Button>
         </HStack>
       </Flex>
@@ -571,15 +557,6 @@ export const ConfigurationEditorPage: React.FC<ConfigurationEditorPageProps> = (
             >
               Compare changes
             </Button>
-            <Button
-              size="sm"
-              bg={themeColors.brand.accent}
-              color="#ffffff"
-              _hover={{ bg: themeColors.brand.accentHover }}
-              onClick={() => setIsDeployOpen(true)}
-            >
-              Preview affected devices
-            </Button>
           </HStack>
         </Flex>
       </Box>
@@ -589,14 +566,6 @@ export const ConfigurationEditorPage: React.FC<ConfigurationEditorPageProps> = (
         isOpen={isDiffOpen}
         onClose={() => setIsDiffOpen(false)}
         configName={config.name}
-      />
-      <DeployConfigModal
-        isOpen={isDeployOpen}
-        onClose={() => setIsDeployOpen(false)}
-        config={config}
-        onConfirmDeploy={() => {
-          setConfig((prev) => ({ ...prev, version: prev.version + 1, updatedAt: 'Just now' }));
-        }}
       />
     </Box>
   );

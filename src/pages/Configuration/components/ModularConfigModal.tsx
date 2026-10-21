@@ -821,6 +821,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
                     options={[
                       { value: 'ap', label: 'AP' },
                       { value: 'switch', label: 'Switch' },
+                      { value: 'olg', label: 'OLG' },
                     ]}
                     disabled={isDisabled}
                   />

@@ -184,6 +184,16 @@ export const getInitialSectionsState = (): ConfigurationSectionsState => ({
     customProperties: {},
     configuration: '{}',
   },
+  nat: {
+    meta: { name: 'Nat', description: 'Network address translation rules', weight: 1 },
+    mode: 'none',
+    snat: { rules: [] },
+    dnat: { rules: [] },
+  },
+  ethernet: {
+    meta: { name: 'Ethernet', description: 'Ethernet port configurations', weight: 1 },
+    configuration: [],
+  },
 });
 
 export const compileStateToUCentralJson = (state: ConfigurationSectionsState): string => {
@@ -718,6 +728,151 @@ export const compileStateToUCentralJson = (state: ConfigurationSectionsState): s
     }
   }
 
+  if (state.activeSections.includes('nat')) {
+    const cleanFilterTarget = (target?: any) => {
+      if (!target) return undefined;
+      const out: Record<string, unknown> = {};
+      if (target.address) out.address = target.address;
+      if (target.port) out.port = target.port;
+      if (target.fqdn) out.fqdn = target.fqdn;
+      if (target.group) {
+        const grp: Record<string, unknown> = {};
+        if (target.group['port-group']) grp['port-group'] = target.group['port-group'];
+        if (target.group['network-group']) grp['network-group'] = target.group['network-group'];
+        if (target.group['mac-group']) grp['mac-group'] = target.group['mac-group'];
+        if (target.group['domain-group']) grp['domain-group'] = target.group['domain-group'];
+        if (target.group['address-group']) grp['address-group'] = target.group['address-group'];
+        if (Object.keys(grp).length > 0) out.group = grp;
+      }
+      return Object.keys(out).length > 0 ? out : undefined;
+    };
+
+    const snatRules = (state.nat.snat?.rules || []).map((r) => {
+      const ruleObj: Record<string, unknown> = {
+        'rule-id': Number(r['rule-id']) || 1,
+        disable: Boolean(r.disable),
+        protocol: r.protocol || 'all',
+        'out-interface': {
+          name: r['out-interface']?.name || '',
+          ...(r['out-interface']?.group ? { group: r['out-interface'].group } : {}),
+        },
+        translation: {
+          address: r.translation?.address || '',
+          ...(r.translation?.port ? { port: r.translation.port } : {}),
+          ...(r.translation?.options ? {
+            options: {
+              'port-mapping': r.translation.options['port-mapping'] || 'none',
+              'address-mapping': r.translation.options['address-mapping'] || 'random',
+            }
+          } : {}),
+        },
+      };
+      if (r.description) ruleObj.description = r.description;
+      const src = cleanFilterTarget(r.source);
+      if (src) ruleObj.source = src;
+      const dst = cleanFilterTarget(r.destination);
+      if (dst) ruleObj.destination = dst;
+      return ruleObj;
+    });
+
+    const dnatRules = (state.nat.dnat?.rules || []).map((r) => {
+      const ruleObj: Record<string, unknown> = {
+        'rule-id': Number(r['rule-id']) || 1,
+        disable: Boolean(r.disable),
+        protocol: r.protocol || 'all',
+        'in-interface': {
+          name: r['in-interface']?.name || '',
+          ...(r['in-interface']?.group ? { group: r['in-interface'].group } : {}),
+        },
+        translation: {
+          address: r.translation?.address || '',
+          ...(r.translation?.port ? { port: r.translation.port } : {}),
+          ...(r.translation?.redirect?.port ? { redirect: { port: r.translation.redirect.port } } : {}),
+          ...(r.translation?.options ? {
+            options: {
+              'port-mapping': r.translation.options['port-mapping'] || 'none',
+              'address-mapping': r.translation.options['address-mapping'] || 'random',
+            }
+          } : {}),
+        },
+      };
+      if (r.description) ruleObj.description = r.description;
+      const src = cleanFilterTarget(r.source);
+      if (src) ruleObj.source = src;
+      const dst = cleanFilterTarget(r.destination);
+      if (dst) ruleObj.destination = dst;
+      return ruleObj;
+    });
+
+    const natObj: Record<string, unknown> = {};
+    if (snatRules.length > 0) natObj.snat = { rules: snatRules };
+    if (dnatRules.length > 0) natObj.dnat = { rules: dnatRules };
+    doc.nat = natObj;
+  }
+
+  if (state.activeSections.includes('ethernet')) {
+    const ethernetArray = (state.ethernet.configuration || []).map((entry) => {
+      const item: Record<string, unknown> = {
+        'select-ports': entry['select-ports'] || [],
+        speed: Number(entry.speed) || 1000,
+        duplex: entry.duplex || 'full',
+        enabled: entry.enabled !== false,
+      };
+      if (entry['edge-port'] !== undefined) {
+        item['edge-port'] = Boolean(entry['edge-port']);
+      }
+      if (entry['bpdu-guard']) {
+        item['bpdu-guard'] = {
+          enabled: Boolean(entry['bpdu-guard'].enabled),
+          'auto-recovery-intvl-secs': Number(entry['bpdu-guard']['auto-recovery-intvl-secs']) || 300,
+        };
+      }
+      if (entry['dhcp-snoop-port']) {
+        item['dhcp-snoop-port'] = {
+          'dhcp-snoop-port-trust': Boolean(entry['dhcp-snoop-port']['dhcp-snoop-port-trust']),
+        };
+      }
+      if (entry['storm-control']) {
+        item['storm-control'] = {
+          'broadcast-pps': Number(entry['storm-control']['broadcast-pps']) || 500,
+          'multicast-pps': Number(entry['storm-control']['multicast-pps']) || 500,
+          'unknown-unicast-pps': Number(entry['storm-control']['unknown-unicast-pps']) || 500,
+        };
+      }
+      if (entry.poe) {
+        item.poe = {
+          'admin-mode': entry.poe['admin-mode'] !== false,
+          detection: entry.poe.detection || '4pt-dot3af',
+          'power-limit': Number(entry.poe['power-limit']) || 30000,
+          priority: entry.poe.priority || 'high',
+          'do-reset': Boolean(entry.poe['do-reset']),
+        };
+      }
+      if (entry['voice-vlan-intf-config']) {
+        item['voice-vlan-intf-config'] = {
+          'voice-vlan-intf-mode': entry['voice-vlan-intf-config']['voice-vlan-intf-mode'] || 'auto',
+          'voice-vlan-intf-priority': Number(entry['voice-vlan-intf-config']['voice-vlan-intf-priority']) || 6,
+          'voice-vlan-intf-detect-voice': entry['voice-vlan-intf-config']['voice-vlan-intf-detect-voice'] || 'oui',
+          'voice-vlan-intf-security': Boolean(entry['voice-vlan-intf-config']['voice-vlan-intf-security']),
+        };
+      }
+      if (entry['lldp-interface-config']) {
+        const lldpConfig: Record<string, unknown> = {};
+        if (entry['lldp-interface-config']['lldp-admin-status']) {
+          lldpConfig['lldp-admin-status'] = entry['lldp-interface-config']['lldp-admin-status'];
+        }
+        for (const [k, v] of Object.entries(entry['lldp-interface-config'])) {
+          if (k !== 'lldp-admin-status') {
+            lldpConfig[k] = Boolean(v);
+          }
+        }
+        item['lldp-interface-config'] = lldpConfig;
+      }
+      return item;
+    });
+    doc.ethernet = ethernetArray;
+  }
+
   return JSON.stringify(doc, null, 2);
 };
 export interface ModularConfigBlock {
@@ -753,6 +908,10 @@ export const compileStateToModularConfigurationElements = (
         ? state.radios.meta
         : section === 'interfaces'
         ? state.interfaces.meta
+        : section === 'nat'
+        ? state.nat.meta
+        : section === 'ethernet'
+        ? state.ethernet.meta
         : state.thirdParty.meta;
 
     const jsonKey = section;
@@ -811,7 +970,7 @@ export const parseUCentralJsonToSectionsState = (
 
       if (parsedBlock && typeof parsedBlock === 'object') {
         Object.assign(mergedDoc, parsedBlock);
-        const sectionKeys = ['globals', 'unit', 'metrics', 'services', 'radios', 'interfaces', 'third-party'] as const;
+        const sectionKeys = ['globals', 'unit', 'metrics', 'services', 'radios', 'interfaces', 'third-party', 'nat', 'ethernet'] as const;
         for (const k of sectionKeys) {
           if (k in parsedBlock) {
             const stateKey = k === 'third-party' ? 'thirdParty' : k;
@@ -1519,10 +1678,130 @@ export const parseUCentralJsonToSectionsState = (
     base.thirdParty.configuration = JSON.stringify(base.thirdParty.customProperties, null, 2);
   }
 
+  // 8. NAT (OLG Platform)
+  if (doc.nat && typeof doc.nat === 'object') {
+    detectedSections.push('nat');
+    const natDoc = doc.nat as Record<string, unknown>;
+    const snatObj = (natDoc.snat as Record<string, unknown>) || {};
+    const dnatObj = (natDoc.dnat as Record<string, unknown>) || {};
+
+    const rawSnatRules = Array.isArray(snatObj.rules) ? snatObj.rules : [];
+    const rawDnatRules = Array.isArray(dnatObj.rules) ? dnatObj.rules : [];
+
+    base.nat.snat.rules = rawSnatRules.map((r: any, idx: number) => ({
+      'rule-id': Number(r['rule-id']) || idx + 1,
+      description: r.description ? String(r.description) : '',
+      disable: Boolean(r.disable),
+      protocol: r.protocol ? String(r.protocol) : 'all',
+      'out-interface': {
+        name: r['out-interface']?.name ? String(r['out-interface'].name) : '',
+        ...(r['out-interface']?.group ? { group: String(r['out-interface'].group) } : {}),
+      },
+      source: r.source ? {
+        address: r.source.address ? String(r.source.address) : undefined,
+        port: r.source.port ? String(r.source.port) : undefined,
+        fqdn: r.source.fqdn ? String(r.source.fqdn) : undefined,
+        group: r.source.group ? { ...r.source.group } : undefined,
+      } : undefined,
+      destination: r.destination ? {
+        address: r.destination.address ? String(r.destination.address) : undefined,
+        port: r.destination.port ? String(r.destination.port) : undefined,
+        fqdn: r.destination.fqdn ? String(r.destination.fqdn) : undefined,
+        group: r.destination.group ? { ...r.destination.group } : undefined,
+      } : undefined,
+      translation: {
+        address: r.translation?.address ? String(r.translation.address) : '',
+        port: r.translation?.port ? String(r.translation.port) : undefined,
+        options: r.translation?.options ? {
+          'port-mapping': r.translation.options['port-mapping'] ? String(r.translation.options['port-mapping']) : 'none',
+          'address-mapping': r.translation.options['address-mapping'] ? String(r.translation.options['address-mapping']) : 'random',
+        } : undefined,
+      },
+    }));
+
+    base.nat.dnat.rules = rawDnatRules.map((r: any, idx: number) => ({
+      'rule-id': Number(r['rule-id']) || idx + 1,
+      description: r.description ? String(r.description) : '',
+      disable: Boolean(r.disable),
+      protocol: r.protocol ? String(r.protocol) : 'all',
+      'in-interface': {
+        name: r['in-interface']?.name ? String(r['in-interface'].name) : '',
+        ...(r['in-interface']?.group ? { group: String(r['in-interface'].group) } : {}),
+      },
+      source: r.source ? {
+        address: r.source.address ? String(r.source.address) : undefined,
+        port: r.source.port ? String(r.source.port) : undefined,
+        fqdn: r.source.fqdn ? String(r.source.fqdn) : undefined,
+        group: r.source.group ? { ...r.source.group } : undefined,
+      } : undefined,
+      destination: r.destination ? {
+        address: r.destination.address ? String(r.destination.address) : undefined,
+        port: r.destination.port ? String(r.destination.port) : undefined,
+        fqdn: r.destination.fqdn ? String(r.destination.fqdn) : undefined,
+        group: r.destination.group ? { ...r.destination.group } : undefined,
+      } : undefined,
+      translation: {
+        address: r.translation?.address ? String(r.translation.address) : '',
+        port: r.translation?.port ? String(r.translation.port) : undefined,
+        redirect: r.translation?.redirect ? {
+          port: r.translation.redirect.port ? String(r.translation.redirect.port) : undefined,
+        } : undefined,
+        options: r.translation?.options ? {
+          'port-mapping': r.translation.options['port-mapping'] ? String(r.translation.options['port-mapping']) : 'none',
+          'address-mapping': r.translation.options['address-mapping'] ? String(r.translation.options['address-mapping']) : 'random',
+        } : undefined,
+      },
+    }));
+  }
+
+  // 9. Ethernet (Switch Platform)
+  if (Array.isArray(doc.ethernet) || Array.isArray(doc.Ethernet)) {
+    detectedSections.push('ethernet');
+    const ethList = (Array.isArray(doc.ethernet) ? doc.ethernet : doc.Ethernet) as Record<string, unknown>[];
+    base.ethernet.configuration = ethList.map((e: any) => ({
+      'select-ports': Array.isArray(e['select-ports']) ? e['select-ports'].map(String) : [],
+      speed: Number(e.speed) || 1000,
+      duplex: e.duplex === 'half' ? 'half' : 'full',
+      enabled: e.enabled !== false,
+      'edge-port': e['edge-port'] !== undefined ? Boolean(e['edge-port']) : undefined,
+      poe: e.poe ? {
+        'admin-mode': e.poe['admin-mode'] !== false,
+        detection: e.poe.detection ? String(e.poe.detection) : '4pt-dot3af',
+        'power-limit': Number(e.poe['power-limit']) || 30000,
+        priority: e.poe.priority ? String(e.poe.priority) : 'high',
+        'do-reset': Boolean(e.poe['do-reset']),
+      } : undefined,
+      'bpdu-guard': e['bpdu-guard'] ? {
+        enabled: Boolean(e['bpdu-guard'].enabled),
+        'auto-recovery-intvl-secs': Number(e['bpdu-guard']['auto-recovery-intvl-secs']) || 300,
+      } : undefined,
+      'dhcp-snoop-port': e['dhcp-snoop-port'] ? {
+        'dhcp-snoop-port-trust': Boolean(e['dhcp-snoop-port']['dhcp-snoop-port-trust']),
+      } : undefined,
+      'storm-control': e['storm-control'] ? {
+        'broadcast-pps': Number(e['storm-control']['broadcast-pps']) || 500,
+        'multicast-pps': Number(e['storm-control']['multicast-pps']) || 500,
+        'unknown-unicast-pps': Number(e['storm-control']['unknown-unicast-pps']) || 500,
+      } : undefined,
+      'voice-vlan-intf-config': e['voice-vlan-intf-config'] ? {
+        'voice-vlan-intf-mode': e['voice-vlan-intf-config']['voice-vlan-intf-mode'] || 'auto',
+        'voice-vlan-intf-priority': Number(e['voice-vlan-intf-config']['voice-vlan-intf-priority']) || 6,
+        'voice-vlan-intf-detect-voice': e['voice-vlan-intf-config']['voice-vlan-intf-detect-voice'] || 'oui',
+        'voice-vlan-intf-security': Boolean(e['voice-vlan-intf-config']['voice-vlan-intf-security']),
+      } : undefined,
+      'lldp-interface-config': e['lldp-interface-config'] ? {
+        'lldp-admin-status': e['lldp-interface-config']['lldp-admin-status'] || 'rx-tx',
+        ...e['lldp-interface-config'],
+      } : undefined,
+    }));
+  }
+
   // Desired order of tabs
   const sectionPrecedence: SubsectionKey[] = [
     'interfaces',
     'radios',
+    'ethernet',
+    'nat',
     'services',
     'metrics',
     'unit',

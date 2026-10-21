@@ -245,6 +245,8 @@ export const OpenFlow: React.FC<OpenFlowProps> = ({
           isOpen={activeCertField !== null}
           onClose={() => setActiveCertField(null)}
           title={activeCertField}
+          context="configuration.open-flow"
+          isPrivateKey={activeCertField === 'private-key'}
           value={currentCert.value}
           fileName={currentCert.filename}
           onSave={handleSaveCert}

@@ -247,6 +247,8 @@ export const Ieee8021x: React.FC<Ieee8021xProps> = ({ data, onChange, disabled =
           isOpen={activeCertField !== null}
           onClose={() => setActiveCertField(null)}
           title={activeCertField}
+          context="configuration.ieee8021x"
+          isPrivateKey={activeCertField === 'private-key'}
           value={currentCert.value}
           fileName={currentCert.filename}
           onSave={handleSaveCert}

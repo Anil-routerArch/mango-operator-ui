@@ -633,6 +633,8 @@ const ProfileModalContent: React.FC<ProfileModalContentProps> = ({
                 onChange={setDeviceGroup}
                 options={[
                   { value: 'ap', label: 'ap' },
+                  { value: 'switch', label: 'switch' },
+                  { value: 'olg', label: 'olg' },
                   { value: '*', label: 'All Devices (*)' },
                 ]}
               />

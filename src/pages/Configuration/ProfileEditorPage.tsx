@@ -717,6 +717,8 @@ export const ProfileEditorPage: React.FC<ProfileEditorPageProps> = ({
                         }}
                         options={[
                           { value: 'ap', label: 'ap (Access Points)' },
+                          { value: 'switch', label: 'switch (Network Switches)' },
+                          { value: 'olg', label: 'olg (OpenLAN Gateway)' },
                           { value: '*', label: 'All Devices (*)' },
                         ]}
                       />

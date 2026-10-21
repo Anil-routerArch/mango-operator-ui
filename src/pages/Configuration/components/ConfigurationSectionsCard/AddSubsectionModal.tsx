@@ -9,31 +9,66 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import type { SubsectionKey } from './types';
+import type { PlatformType } from '../../types/configuration';
 
 interface AddSubsectionModalProps {
   isOpen: boolean;
   onClose: () => void;
   activeSections: SubsectionKey[];
   onAddSection: (section: SubsectionKey) => void;
+  platform?: PlatformType;
 }
 
-const AVAILABLE_SUBSECTIONS: { key: SubsectionKey; label: string }[] = [
-  { key: 'globals', label: 'Globals' },
-  { key: 'unit', label: 'Unit' },
-  { key: 'metrics', label: 'Metrics' },
-  { key: 'services', label: 'Services' },
-  { key: 'radios', label: 'Radios' },
-  { key: 'interfaces', label: 'Interfaces' },
-  { key: 'third-party', label: 'Third Party' },
-];
+export const getSubsectionsForPlatform = (
+  platform?: PlatformType
+): { key: SubsectionKey; label: string }[] => {
+  if (platform === 'olg') {
+    return [
+      { key: 'globals', label: 'Globals' },
+      { key: 'unit', label: 'Unit' },
+      { key: 'metrics', label: 'Metrics' },
+      { key: 'services', label: 'Services' },
+      { key: 'radios', label: 'Radios' },
+      { key: 'interfaces', label: 'Interfaces' },
+      { key: 'third-party', label: 'Third Party' },
+      { key: 'nat', label: 'Nat' },
+    ];
+  }
+
+  if (platform === 'switch') {
+    return [
+      { key: 'globals', label: 'Globals' },
+      { key: 'unit', label: 'Unit' },
+      { key: 'metrics', label: 'Metrics' },
+      { key: 'services', label: 'Services' },
+      { key: 'ethernet', label: 'Ethernet' },
+      { key: 'interfaces', label: 'Interfaces' },
+      { key: 'third-party', label: 'Third Party' },
+    ];
+  }
+
+  // Default: AP (Access Point)
+  return [
+    { key: 'globals', label: 'Globals' },
+    { key: 'unit', label: 'Unit' },
+    { key: 'metrics', label: 'Metrics' },
+    { key: 'services', label: 'Services' },
+    { key: 'radios', label: 'Radios' },
+    { key: 'interfaces', label: 'Interfaces' },
+    { key: 'third-party', label: 'Third Party' },
+  ];
+};
 
 export const AddSubsectionModal: React.FC<AddSubsectionModalProps> = ({
   isOpen,
   onClose,
   activeSections,
   onAddSection,
+  platform = 'ap',
 }) => {
   if (!isOpen) return null;
+
+  const availableSubsections = getSubsectionsForPlatform(platform);
 
   return (
     <Box
@@ -82,7 +117,7 @@ export const AddSubsectionModal: React.FC<AddSubsectionModalProps> = ({
         {/* Modal Body - Pill buttons matching OWPROV */}
         <Box p={6}>
           <VStack gap={2.5} align="center">
-            {AVAILABLE_SUBSECTIONS.map((sub) => {
+            {availableSubsections.map((sub) => {
               const isAdded = activeSections.includes(sub.key);
               return (
                 <Button

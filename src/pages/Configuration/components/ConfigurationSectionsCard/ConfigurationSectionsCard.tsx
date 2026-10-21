@@ -24,6 +24,8 @@ import { ServicesSection } from './ServicesSection/index';
 import { MetricsSection } from './MetricsSection/index';
 import { UnitSection } from './UnitSection/index';
 import { ThirdPartySection } from './ThirdPartySection/index';
+import { NatSection } from './NatSection/index';
+import { EthernetSection } from './EthernetSection/index';
 
 import { getInitialSectionsState, compileStateToUCentralJson, parseUCentralJsonToSectionsState } from './utils';
 import type { VariableBlockApiResponse } from '@/api/modularConfigurations';
@@ -39,6 +41,7 @@ interface ConfigurationSectionsCardProps {
 }
 
 export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps> = ({
+  platform = 'ap',
   initialJson,
   initialState,
   onStateChange,
@@ -101,8 +104,27 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
     ) {
       list.push('Radios section is active but no radio bands are configured.');
     }
+    if (
+      sectionsState.activeSections.includes('nat') &&
+      sectionsState.nat.snat.rules.length === 0 &&
+      sectionsState.nat.dnat.rules.length === 0
+    ) {
+      list.push('NAT section is active but no SNAT or DNAT rules are configured.');
+    }
+    if (
+      sectionsState.activeSections.includes('ethernet') &&
+      sectionsState.ethernet.configuration.length === 0
+    ) {
+      list.push('Ethernet section is active but no port rules are configured.');
+    }
     return list;
   }, [sectionsState]);
+
+  const interfaceNameOptions = useMemo(() => {
+    return sectionsState.interfaces.interfaces
+      .map((i) => ({ label: i.name, value: i.name }))
+      .filter((o) => o.value);
+  }, [sectionsState.interfaces.interfaces]);
 
   const updateState = (next: ConfigurationSectionsState) => {
     setSectionsState(next);
@@ -291,6 +313,8 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 radios: 'Radios',
                 interfaces: 'Interfaces',
                 'third-party': 'Third Party',
+                nat: 'Nat',
+                ethernet: 'Ethernet',
               };
 
               return (
@@ -470,6 +494,27 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
                 isDefaultConfig={isDefaultConfig}
               />
             )}
+
+            {currentTab === 'nat' && (
+              <NatSection
+                data={sectionsState.nat}
+                onChange={(nat) => updateState({ ...sectionsState, nat })}
+                onDeleteSection={() => handleDeleteSection('nat')}
+                interfaceNameOptions={interfaceNameOptions}
+                disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
+              />
+            )}
+
+            {currentTab === 'ethernet' && (
+              <EthernetSection
+                data={sectionsState.ethernet}
+                onChange={(ethernet) => updateState({ ...sectionsState, ethernet })}
+                onDeleteSection={() => handleDeleteSection('ethernet')}
+                disabled={disabled}
+                isDefaultConfig={isDefaultConfig}
+              />
+            )}
           </>
         )}
       </Box>
@@ -480,6 +525,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
         onClose={() => setIsAddOpen(false)}
         activeSections={sectionsState.activeSections}
         onAddSection={handleAddSection}
+        platform={platform}
       />
 
       <ExpertModeModal
