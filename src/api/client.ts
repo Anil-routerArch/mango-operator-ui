@@ -7,25 +7,27 @@ declare global {
   }
 }
 
-// 1. Resolve OWSEC & OWPROV Base URLs from Runtime Environment (window._env_) or Build-time (.env)
+// 1. Resolve OWSEC & Optional Microservice Base URLs from Runtime Environment (window._env_) or Build-time (.env)
+// Note: Only OWSEC requires a pre-configured URL to authenticate; all other microservices (OWPROV, OWGW, etc.)
+// are dynamically discovered from OWSEC's /api/v1/systemEndpoints registry at runtime unless explicitly overridden.
 export const getSecBaseUrl = (): string => {
   const raw = window._env_?.VITE_UCENTRALSEC_URL || import.meta.env?.VITE_UCENTRALSEC_URL || 'https://openwifi.wlan.local:16001';
   return `${raw.replace(/\/+$/, '')}/api/v1`;
 };
 
-export const getProvBaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env?.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
-  return `${raw.replace(/\/+$/, '')}/api/v1`;
+export const getProvBaseUrl = (): string | undefined => {
+  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env?.VITE_UCENTRALPROV_URL;
+  return raw ? `${raw.replace(/\/+$/, '')}/api/v1` : undefined;
 };
 
-export const getProvV2BaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env?.VITE_UCENTRALPROV_URL || 'https://openwifi.wlan.local:16005';
-  return `${raw.replace(/\/+$/, '')}/api/v2`;
+export const getProvV2BaseUrl = (): string | undefined => {
+  const raw = window._env_?.VITE_UCENTRALPROV_URL || import.meta.env?.VITE_UCENTRALPROV_URL;
+  return raw ? `${raw.replace(/\/+$/, '')}/api/v2` : undefined;
 };
 
-export const getGwBaseUrl = (): string => {
-  const raw = window._env_?.VITE_UCENTRALGW_URL || import.meta.env.VITE_UCENTRALGW_URL || 'https://openwifi.wlan.local:16002';
-  return `${raw.replace(/\/+$/, '')}/api/v1`;
+export const getGwBaseUrl = (): string | undefined => {
+  const raw = window._env_?.VITE_UCENTRALGW_URL || import.meta.env?.VITE_UCENTRALGW_URL;
+  return raw ? `${raw.replace(/\/+$/, '')}/api/v1` : undefined;
 };
 export const getMduBaseUrl = (): string | undefined => {
   const raw = window._env_?.VITE_MANGO_MDU_URL || import.meta.env?.VITE_MANGO_MDU_URL;
@@ -55,20 +57,23 @@ export const axiosMdu: AxiosInstance = axios.create({
   ...(initialMduBaseUrl ? { baseURL: initialMduBaseUrl } : {}),
 });
 
-// OWPROV API v1 and v2 clients (dynamically updated upon endpoint discovery or defaulting to 16005)
+// OWPROV API v1 and v2 clients (dynamically updated upon endpoint discovery from OWSEC systemEndpoints)
+const initialProvBaseUrl = getProvBaseUrl();
 export const axiosProv: AxiosInstance = axios.create({
   ...defaultClientConfig,
-  baseURL: getProvBaseUrl(),
+  ...(initialProvBaseUrl ? { baseURL: initialProvBaseUrl } : {}),
 });
+const initialProvV2BaseUrl = getProvV2BaseUrl();
 export const axiosProvV2: AxiosInstance = axios.create({
   ...defaultClientConfig,
-  baseURL: getProvV2BaseUrl(),
+  ...(initialProvV2BaseUrl ? { baseURL: initialProvV2BaseUrl } : {}),
 });
 
-// Additional OpenWiFi Services (all sharing the same uniform configuration)
+// OWGW client (dynamically updated upon endpoint discovery from OWSEC systemEndpoints)
+const initialGwBaseUrl = getGwBaseUrl();
 export const axiosGw: AxiosInstance = axios.create({
   ...defaultClientConfig,
-  baseURL: getGwBaseUrl(),
+  ...(initialGwBaseUrl ? { baseURL: initialGwBaseUrl } : {}),
 });
 export const axiosFms: AxiosInstance = axios.create(defaultClientConfig);
 export const axiosSub: AxiosInstance = axios.create(defaultClientConfig);

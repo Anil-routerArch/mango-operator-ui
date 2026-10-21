@@ -126,6 +126,28 @@ export const getEndpointUri = (serviceType: string): string | undefined => {
 };
 
 /**
+ * Check if OWPROV service is available (either dynamically discovered in the cluster
+ * or explicitly configured via VITE_UCENTRALPROV_URL)
+ */
+export const isProvAvailable = (): boolean => {
+  return Boolean(
+    useEndpointsStore.getState().endpoints['owprov'] ||
+    axiosProv.defaults.baseURL
+  );
+};
+
+/**
+ * Check if OWGW service is available (either dynamically discovered in the cluster
+ * or explicitly configured via VITE_UCENTRALGW_URL)
+ */
+export const isGwAvailable = (): boolean => {
+  return Boolean(
+    useEndpointsStore.getState().endpoints['owgw'] ||
+    axiosGw.defaults.baseURL
+  );
+};
+
+/**
  * Check if MDU service is available (either dynamically discovered in the cluster
  * or explicitly configured via VITE_MANGO_MDU_URL)
  */
