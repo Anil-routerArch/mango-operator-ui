@@ -115,3 +115,4 @@ test('NoteItem interface supports createdBy and author', () => {
     'NoteItem must support optional author property'
   );
 });
+
