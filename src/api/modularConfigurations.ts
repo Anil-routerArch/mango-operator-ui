@@ -36,7 +36,7 @@ export interface ModularConfigurationApiResponse {
   deviceGroup?: string;
   deviceTypes?: string[];
   deviceRules?: DeviceRulesPayload;
-  notes?: Array<{ note: string; created?: number; author?: string }>;
+  notes?: Array<{ note: string; created?: number; author?: string; createdBy?: string }>;
   entity?: string;
   venue?: string;
   subscriber?: string;
@@ -176,7 +176,7 @@ export interface VariableBlockApiResponse {
   description?: string;
   created?: number;
   modified?: number;
-  notes?: Array<{ note: string; created?: number; author?: string }>;
+  notes?: Array<{ note: string; created?: number; author?: string; createdBy?: string }>;
   entity?: string;
   entityName?: string;
   venue?: string;

@@ -49,6 +49,7 @@ export interface NoteItem {
   note: string;
   created: number; // Unix timestamp
   author?: string;
+  createdBy?: string;
 }
 
 // Corresponds directly to OWPROV 'variables' table

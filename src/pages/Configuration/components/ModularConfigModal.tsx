@@ -6,6 +6,7 @@ import {
   HStack,
   Input,
   SimpleGrid,
+  Table,
   Text,
   VStack,
 } from '@chakra-ui/react';
@@ -112,9 +113,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
     initialConfig?.platform || (initialConfig?.deviceGroup as PlatformType) || 'ap'
   );
   const [description, setDescription] = useState<string>(initialConfig?.description || '');
-  const [note, setNote] = useState<string>(
-    initialConfig?.notes?.[0]?.note || ''
-  );
+  const [newNote, setNewNote] = useState<string>('');
   const [deviceTypes, setDeviceTypes] = useState<string[]>(
     initialConfig?.devicetypes?.length ? initialConfig.devicetypes : ['*']
   );
@@ -445,7 +444,7 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
         rrm,
         firmwareUpgrade,
       },
-      notes: note.trim() ? [{ note: note.trim() }] : undefined,
+      notes: newNote.trim() ? [{ note: newNote.trim() }] : undefined,
       entity: payloadEntity,
       venue: payloadVenue,
       variables: finalVarIds,
@@ -484,8 +483,14 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
         deviceGroup: platform,
         devicetypes: deviceTypes.length > 0 ? deviceTypes : ['*'],
         rawConfigurationJson: configurationJson,
-        notes: note.trim()
-          ? [{ note: note.trim(), created: Math.floor(Date.now() / 1000) }]
+        notes: newNote.trim()
+          ? [
+              ...(initialConfig?.notes || []),
+              {
+                note: newNote.trim(),
+                created: Math.floor(Date.now() / 1000),
+              },
+            ]
           : initialConfig?.notes || [],
         created: initialConfig?.created || Math.floor(Date.now() / 1000),
         modified: Math.floor(Date.now() / 1000),
@@ -1029,21 +1034,66 @@ export const ModularConfigModal: React.FC<ModularConfigModalProps> = ({
                   />
                 </Box>
 
-                {/* 2. Note */}
+                {/* 2. Add Note */}
                 <Box>
                   <Text fontSize="12px" fontWeight="600" color={themeColors.text.title} mb={1}>
-                    Note
+                    Add Note
                   </Text>
                   <Input
                     size="sm"
                     bg="#ffffff"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    placeholder="Optional note"
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    placeholder="Add a new note to configuration history (optional)"
                     disabled={isDisabled}
                   />
                 </Box>
               </SimpleGrid>
+
+              {/* Note History (Read-only log of existing notes) */}
+              {initialConfig?.notes && initialConfig.notes.length > 0 && (
+                <Box mt={3} p={3} bg="#f8fafc" borderRadius="md" border="1px solid" borderColor={themeColors.panel.border}>
+                  <Flex justify="space-between" align="center" mb={2}>
+                    <Text fontSize="12px" fontWeight="600" color={themeColors.text.title}>
+                      Note History ({initialConfig.notes.length})
+                    </Text>
+                  </Flex>
+                  <Box maxH="140px" overflowY="auto" borderRadius="sm" border="1px solid" borderColor="#e2e8f0" bg="#ffffff">
+                    <Table.Root size="sm" variant="outline">
+                      <Table.Header bg="#f1f5f9">
+                        <Table.Row>
+                          <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b" py={1.5} px={3} w="160px">
+                            DATE
+                          </Table.ColumnHeader>
+                          <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b" py={1.5} px={3} w="180px">
+                            AUTHOR
+                          </Table.ColumnHeader>
+                          <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b" py={1.5} px={3}>
+                            NOTE
+                          </Table.ColumnHeader>
+                        </Table.Row>
+                      </Table.Header>
+                      <Table.Body>
+                        {[...initialConfig.notes]
+                          .sort((a, b) => (b.created || 0) - (a.created || 0))
+                          .map((n, idx) => (
+                            <Table.Row key={`note-${idx}`} _hover={{ bg: '#f8fafc' }}>
+                              <Table.Cell py={1.5} px={3} fontSize="11px" color="#64748b" whiteSpace="nowrap">
+                                {n.created ? new Date(n.created * 1000).toLocaleString() : '—'}
+                              </Table.Cell>
+                              <Table.Cell py={1.5} px={3} fontSize="11px" color="#334155" fontWeight="500" whiteSpace="nowrap">
+                                {n.author || (n as any).createdBy || '—'}
+                              </Table.Cell>
+                              <Table.Cell py={1.5} px={3} fontSize="12px" color="#1e293b">
+                                {n.note}
+                              </Table.Cell>
+                            </Table.Row>
+                          ))}
+                      </Table.Body>
+                    </Table.Root>
+                  </Box>
+                </Box>
+              )}
             </Box>
 
             {/* Configuration Sections Card (OWPROV Modular Mode with isDefaultConfig=false) */}

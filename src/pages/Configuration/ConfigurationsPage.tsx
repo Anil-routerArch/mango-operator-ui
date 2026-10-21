@@ -100,7 +100,8 @@ const mapOwprovModularConfigToDeviceConfig = (cfg: ModularConfigurationApiRespon
     notes: (cfg.notes || []).map((n) => ({
       note: typeof n === 'string' ? n : n?.note || '',
       created: typeof n === 'object' && n ? n.created || Math.floor(Date.now() / 1000) : Math.floor(Date.now() / 1000),
-      author: typeof n === 'object' && n ? n.author : undefined,
+      author: typeof n === 'object' && n ? (n.author || n.createdBy) : undefined,
+      createdBy: typeof n === 'object' && n ? (n.createdBy || n.author) : undefined,
     })),
     created: cfg.created || Math.floor(Date.now() / 1000),
     modified: cfg.modified || Math.floor(Date.now() / 1000),
