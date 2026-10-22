@@ -258,6 +258,56 @@ export const useGetVenues = () => {
   });
 };
 
+export interface VenueDetail {
+  id: string;
+  name: string;
+  description?: string;
+  entity?: string;
+  variables?: string[];
+  configurations?: string[];
+  children?: string[];
+  devices?: string[];
+  [key: string]: unknown;
+}
+
+export interface EntityDetail {
+  id: string;
+  name: string;
+  description?: string;
+  parent?: string;
+  variables?: string[];
+  configurations?: string[];
+  venues?: string[];
+  devices?: string[];
+  [key: string]: unknown;
+}
+
+export const useGetVenue = (id?: string | null) => {
+  return useQuery({
+    queryKey: ['venue', id],
+    queryFn: async () => {
+      if (!id) return null;
+      const { data } = await axiosProv.get<VenueDetail>(`venue/${encodeURIComponent(id)}?withExtendedInfo=true`);
+      return data;
+    },
+    enabled: Boolean(id),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useGetEntity = (id?: string | null) => {
+  return useQuery({
+    queryKey: ['entity', id],
+    queryFn: async () => {
+      if (!id) return null;
+      const { data } = await axiosProv.get<EntityDetail>(`entity/${encodeURIComponent(id)}?withExtendedInfo=true`);
+      return data;
+    },
+    enabled: Boolean(id),
+    staleTime: 30 * 1000,
+  });
+};
+
 // ==========================================
 // 6. MANAGEMENT POLICIES (OWPROV Port 16005)
 // ==========================================

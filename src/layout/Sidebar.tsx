@@ -5,6 +5,9 @@ import { Icon, type IconName } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import mduLogo from '@/assets/mdu-logo.png';
 
+import { useConfigurationUiStore } from '@/stores/configurationUiStore';
+import { useUsersUiStore } from '@/stores/usersUiStore';
+
 interface NavItem {
   icon: IconName;
   label: string;
@@ -27,7 +30,9 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: 'NETWORK',
-    items: [{ icon: 'settings', label: 'Configuration', path: '/configuration' }],
+    items: [
+      { icon: 'sliders', label: 'Configurations', path: '/configurations' },
+    ],
   },
   {
     title: 'ADMINISTRATION',
@@ -159,8 +164,24 @@ export const Sidebar: React.FC = () => {
                   location.pathname === item.path ||
                   (item.path === '/dashboard' && (location.pathname === '/' || location.pathname === ''));
 
+                const handleClick = () => {
+                  if (item.path === '/configurations') {
+                    useConfigurationUiStore.getState().setMainTab('configurations');
+                    useConfigurationUiStore.getState().setSelectedConfigId(null);
+                    useConfigurationUiStore.getState().setSelectedProfileId(null);
+                    useConfigurationUiStore.getState().setIsCreatingConfig(false);
+                  } else if (item.path === '/users') {
+                    useUsersUiStore.getState().setMainTab('users');
+                  }
+                };
+
                 return (
-                  <NavLink key={item.label} to={item.path} style={{ textDecoration: 'none' }}>
+                  <NavLink
+                    key={item.label}
+                    to={item.path}
+                    style={{ textDecoration: 'none' }}
+                    onClick={handleClick}
+                  >
                     <Flex
                       align="center"
                       gap={3}

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { AppRoutes } from '@/router';
 import { Toaster } from '@/components/ui/toaster';
 import { queryClient } from '@/api';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export const App: React.FC = () => {
   const { initializeAuth } = useAuthStore();
@@ -17,7 +18,9 @@ export const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <HashRouter>
-        <AppRoutes />
+        <ErrorBoundary fallbackTitle="Application Shell Error">
+          <AppRoutes />
+        </ErrorBoundary>
         <Toaster />
       </HashRouter>
     </QueryClientProvider>

@@ -3,6 +3,7 @@ import { Box, Flex } from '@chakra-ui/react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { themeColors } from '@/theme';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 export const AppLayout: React.FC = () => {
   return (
@@ -22,7 +23,9 @@ export const AppLayout: React.FC = () => {
         bg={themeColors.panel.bg}
         boxSizing="border-box"
       >
-        <Outlet />
+        <ErrorBoundary fallbackTitle="Configuration View Error">
+          <Outlet />
+        </ErrorBoundary>
       </Box>
     </Flex>
   );
