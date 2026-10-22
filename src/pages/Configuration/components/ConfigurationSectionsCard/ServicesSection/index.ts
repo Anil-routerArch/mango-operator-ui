@@ -28,6 +28,7 @@ export type { DhcpRelayVlanItem } from './DhcpRelayVlansModal';
 export { Ieee8021xUsersModal } from './Ieee8021xUsersModal';
 export type { Ieee8021xUserItem } from './Ieee8021xUsersModal';
 export { CertificateUploadModal } from './CertificateUploadModal';
+export { PrivateKeyUploadModal } from './PrivateKeyUploadModal';
 export { CreatableMultiSelect } from './CreatableMultiSelect';
 export { RadiusProxyRealmsModal } from './RadiusProxyRealmsModal';
 export type { RadiusProxyRealmItem } from './RadiusProxyRealmsModal';

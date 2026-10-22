@@ -5,6 +5,7 @@ import { Icon } from '@/components/icons/Icon';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { OPEN_FLOW_MODES } from './servicesConstants';
 import { CertificateUploadModal } from './CertificateUploadModal';
+import { PrivateKeyUploadModal } from './PrivateKeyUploadModal';
 import type { ServicesSectionData } from '../types';
 
 interface OpenFlowProps {
@@ -240,13 +241,26 @@ export const OpenFlow: React.FC<OpenFlowProps> = ({
       </Box>
 
       {/* Certificate Upload Modal */}
-      {activeCertField && (
+      {activeCertField && activeCertField !== 'private-key' && (
         <CertificateUploadModal
           isOpen={activeCertField !== null}
           onClose={() => setActiveCertField(null)}
           title={activeCertField}
           context="configuration.open-flow"
-          isPrivateKey={activeCertField === 'private-key'}
+          value={currentCert.value}
+          fileName={currentCert.filename}
+          onSave={handleSaveCert}
+          disabled={isInputDisabled}
+        />
+      )}
+
+      {/* Private Key Upload Modal */}
+      {activeCertField === 'private-key' && (
+        <PrivateKeyUploadModal
+          isOpen={activeCertField !== null}
+          onClose={() => setActiveCertField(null)}
+          title={activeCertField}
+          context="configuration.open-flow"
           value={currentCert.value}
           fileName={currentCert.filename}
           onSave={handleSaveCert}

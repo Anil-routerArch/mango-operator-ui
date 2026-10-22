@@ -5,6 +5,7 @@ import { Icon } from '@/components/icons/Icon';
 import { ToggleSwitch } from '../ToggleSwitch';
 import { Ieee8021xUsersModal, type Ieee8021xUserItem } from './Ieee8021xUsersModal';
 import { CertificateUploadModal } from './CertificateUploadModal';
+import { PrivateKeyUploadModal } from './PrivateKeyUploadModal';
 import type { ServicesSectionData } from '../types';
 
 interface Ieee8021xProps {
@@ -242,13 +243,26 @@ export const Ieee8021x: React.FC<Ieee8021xProps> = ({ data, onChange, disabled =
       />
 
       {/* Certificate Upload Modal */}
-      {activeCertField && (
+      {activeCertField && activeCertField !== 'private-key' && (
         <CertificateUploadModal
           isOpen={activeCertField !== null}
           onClose={() => setActiveCertField(null)}
           title={activeCertField}
           context="configuration.ieee8021x"
-          isPrivateKey={activeCertField === 'private-key'}
+          value={currentCert.value}
+          fileName={currentCert.filename}
+          onSave={handleSaveCert}
+          disabled={disabled}
+        />
+      )}
+
+      {/* Private Key Upload Modal */}
+      {activeCertField === 'private-key' && (
+        <PrivateKeyUploadModal
+          isOpen={activeCertField !== null}
+          onClose={() => setActiveCertField(null)}
+          title={activeCertField}
+          context="configuration.ieee8021x"
           value={currentCert.value}
           fileName={currentCert.filename}
           onSave={handleSaveCert}

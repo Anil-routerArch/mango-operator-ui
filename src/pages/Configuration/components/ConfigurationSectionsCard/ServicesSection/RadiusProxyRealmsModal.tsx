@@ -14,6 +14,7 @@ import { themeColors } from '@/theme';
 import { SelectDropdown } from '@/components/ui/SelectDropdown';
 import { ToggleSwitch } from '../ToggleSwitch';
 import { CertificateUploadModal } from './CertificateUploadModal';
+import { PrivateKeyUploadModal } from './PrivateKeyUploadModal';
 
 export interface RadiusProxyRealmItem {
   realm: string;
@@ -382,6 +383,7 @@ export const RadiusProxyRealmsModal: React.FC<RadiusProxyRealmsModalProps> = ({
                         secret <Text as="span" color="#dc2626">*</Text>
                       </Text>
                       <Input
+                        type="password"
                         value={secret}
                         onChange={(e) => setSecret(e.target.value)}
                         borderRadius="8px"
@@ -448,6 +450,7 @@ export const RadiusProxyRealmsModal: React.FC<RadiusProxyRealmsModalProps> = ({
                         private-key-password <Text as="span" color="#dc2626">*</Text>
                       </Text>
                       <Input
+                        type="password"
                         value={privateKeyPassword}
                         onChange={(e) => setPrivateKeyPassword(e.target.value)}
                         borderRadius="8px"
@@ -569,8 +572,8 @@ export const RadiusProxyRealmsModal: React.FC<RadiusProxyRealmsModalProps> = ({
                           <Table.Cell py={3} px={4} fontSize="13px" color="#475569">
                             {r.port}
                           </Table.Cell>
-                          <Table.Cell py={3} px={4} fontSize="13px" color="#475569">
-                            {r.secret}
+                          <Table.Cell py={3} px={4} fontSize="13px" fontFamily="monospace" color="#64748b">
+                            {r.secret ? '••••••••' : '—'}
                           </Table.Cell>
                           <Table.Cell py={3} px={4} textAlign="right">
                             {!disabled && (
@@ -739,13 +742,26 @@ export const RadiusProxyRealmsModal: React.FC<RadiusProxyRealmsModalProps> = ({
       </Box>
 
       {/* Nested Certificate Modal */}
-      {activeCertModal && (
+      {activeCertModal && activeCertModal !== 'private-key' && (
         <CertificateUploadModal
           isOpen={activeCertModal !== null}
           onClose={() => setActiveCertModal(null)}
           title={activeCertModal}
           context="configuration.radius-proxy"
-          isPrivateKey={activeCertModal === 'private-key'}
+          value={certModalProps.value}
+          fileName={certModalProps.filename}
+          onSave={handleSaveCert}
+          disabled={disabled}
+        />
+      )}
+
+      {/* Nested Private Key Modal */}
+      {activeCertModal === 'private-key' && (
+        <PrivateKeyUploadModal
+          isOpen={activeCertModal !== null}
+          onClose={() => setActiveCertModal(null)}
+          title={activeCertModal}
+          context="configuration.radius-proxy"
           value={certModalProps.value}
           fileName={certModalProps.filename}
           onSave={handleSaveCert}
