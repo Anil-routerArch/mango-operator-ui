@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { axiosProv, axiosGw, axiosMdu, getMduBaseUrl } from './client';
+import { axiosProv, axiosGw, axiosMdu, axiosFms, getMduBaseUrl } from './client';
 import type {
   InventoryTagApiResponse,
   GatewayDeviceApiResponse,
@@ -130,8 +130,8 @@ export const hydrateTagsWithGatewayStatus = async (
       name: tag.name || liveGw?.compatible || tag.serialNumber,
       description: tag.description,
       model: liveGw?.compatible || tag.deviceType || 'Universal AP',
-      deviceGroup: resolvedPlatform,
-      deviceType: resolvedPlatform,
+      deviceGroup: tag.deviceGroup || resolvedPlatform,
+      deviceType: tag.deviceType || liveGw?.compatible || 'asus_rt-ax53u',
       connected: isConnected,
       sanity: sanityScore,
       ipAddress: liveGw?.ipAddress || '-',
@@ -1049,8 +1049,8 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         name: tag?.name || gw?.compatible || serialNumber,
         description: tag?.description,
         model: resolvedModel,
-        deviceGroup: resolvedPlatform,
-        deviceType: resolvedPlatform,
+        deviceGroup: tag?.deviceGroup || resolvedPlatform,
+        deviceType: tag?.deviceType || resolvedModel,
         manufacturer: resolvedManufacturer,
         devicePassword: gw?.devicePassword || 'openwifi',
         connected: isConnected,
@@ -1347,5 +1347,30 @@ export const useStartTelemetry = () => {
     },
   });
 };
+
+export interface DeviceTypeInfoResponse {
+  deviceTypes?: string[];
+  deviceClasses?: string[];
+  deviceTypesByClass?: Record<string, string[]>;
+}
+
+export const getDeviceTypeInfo = async (): Promise<DeviceTypeInfoResponse | null> => {
+  try {
+    const res = await axiosFms.get<DeviceTypeInfoResponse>('firmwares?deviceSet=true');
+    return res.data;
+  } catch (err) {
+    console.warn('Failed to fetch device type info from FMS:', err);
+    return null;
+  }
+};
+
+export const useGetDeviceTypeInfo = () => {
+  return useQuery({
+    queryKey: ['get-device-type-info'],
+    queryFn: getDeviceTypeInfo,
+    staleTime: Infinity,
+  });
+};
+
 
 

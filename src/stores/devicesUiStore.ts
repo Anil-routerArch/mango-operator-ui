@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type DevicesMainTab = 'all' | 'dashboard' | 'blacklist';
-export type DeviceWorkspaceTab = 'overview' | 'radios' | 'configuration' | 'activity' | 'diagnostics';
+export type DeviceWorkspaceTab = 'overview' | 'configuration' | 'activity';
 export type DeviceConfigSubTab = 'main' | 'special' | 'computed' | 'overrides' | 'notes' | 'state';
 
 export interface DevicesUiState {

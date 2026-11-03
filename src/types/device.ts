@@ -1,5 +1,5 @@
 export type DevicesMainTab = 'all' | 'dashboard' | 'blacklist';
-export type DeviceWorkspaceTab = 'overview' | 'radios' | 'configuration' | 'activity' | 'diagnostics';
+export type DeviceWorkspaceTab = 'overview' | 'configuration' | 'activity';
 export type DeviceConfigSubTab = 'main' | 'special' | 'computed' | 'overrides' | 'notes' | 'state';
 
 export interface DeviceNote {
@@ -43,6 +43,7 @@ export interface InventoryTagApiResponse {
   name: string;
   description?: string;
   deviceType?: string;
+  deviceGroup?: string;
   devClass?: string;
   entity?: string;
   venue?: string;
@@ -51,9 +52,9 @@ export interface InventoryTagApiResponse {
   deviceRules?: DeviceRules;
   doNotAllowOverrides?: boolean;
   notes?: DeviceNote[];
+  state?: string;
   qrCode?: string;
   realMacAddress?: string;
-  state?: string;
   tags?: string[];
   created?: number;
   modified?: number;
@@ -90,6 +91,7 @@ export interface GatewayDeviceApiResponse {
   simulated?: boolean;
   restrictedDevice?: boolean;
   notes?: DeviceNote[];
+  state?: string;
   configuration?: unknown;
 }
 
@@ -131,6 +133,7 @@ export interface DeviceWithStatusApiResponse {
   venue?: string;
   subscriber?: string;
   notes?: DeviceNote[];
+  state?: string;
   createdTimestamp?: number;
   modified?: number;
 }
@@ -309,6 +312,7 @@ export interface UnifiedFleetDevice {
   createdTimestamp?: number;
   modified?: number;
   notes?: DeviceNote[];
+  state?: string;
   unitLoad?: [number, number, number] | number[];
   unitUptime?: number;
   unitLocaltime?: number;
@@ -457,6 +461,7 @@ export interface ConfigurationOverride {
   parameterType: 'string' | 'boolean' | 'integer' | string;
   parameterValue: string;
   source?: string;
+  reason?: string;
   modified?: number;
 }
 

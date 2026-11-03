@@ -2,12 +2,9 @@ import React from 'react';
 import { Box, Flex, Spinner, Text } from '@chakra-ui/react';
 import { themeColors } from '@/theme';
 import { DeviceHeader } from './DeviceHeader';
-import { DeviceOfflineBanner } from './DeviceOfflineBanner';
 import { DeviceOverviewTab } from './tabs/OverviewTab';
-import { DeviceRadiosTab } from './tabs/RadiosTab';
 import { DeviceConfigTab } from './tabs/ConfigurationTab';
 import { DeviceActivityTab } from './tabs/ActivityTab';
-import { DeviceDiagnosticsTab } from './tabs/DiagnosticsTab';
 import { useDevicesUiStore } from '@/stores/devicesUiStore';
 import { useDeviceOverview } from '@/api/devices';
 import type { DeviceWorkspaceTab, UnifiedFleetDevice } from '@/types/device';
@@ -23,10 +20,8 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
 
   const tabs: Array<{ id: DeviceWorkspaceTab; label: string }> = [
     { id: 'overview', label: 'Overview' },
-    { id: 'radios', label: 'Radios' },
     { id: 'configuration', label: 'Configuration' },
     { id: 'activity', label: 'Activity' },
-    { id: 'diagnostics', label: 'Diagnostics' },
   ];
 
   if (isLoading && !device) {
@@ -70,14 +65,10 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
     switch (workspaceTab) {
       case 'overview':
         return <DeviceOverviewTab device={activeDevice} />;
-      case 'radios':
-        return <DeviceRadiosTab device={activeDevice} />;
       case 'configuration':
         return <DeviceConfigTab device={activeDevice} />;
       case 'activity':
         return <DeviceActivityTab device={activeDevice} />;
-      case 'diagnostics':
-        return <DeviceDiagnosticsTab device={activeDevice} />;
       default:
         return <DeviceOverviewTab device={activeDevice} />;
     }
@@ -92,12 +83,7 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
         isLoading={isFetching}
       />
 
-      {/* Conditional Alert Banner when device is offline */}
-      {!activeDevice.connected && (
-        <DeviceOfflineBanner lastContact={activeDevice.lastContact} />
-      )}
-
-      {/* Master 5 Tabs Navigation Bar matching Figma visual mockup */}
+      {/* Master Tabs Navigation Bar matching Figma visual mockup */}
       <Box mb={6} borderBottom="1px solid" borderColor={themeColors.panel.divider}>
         <Flex gap={8} overflowX="auto">
           {tabs.map((tab) => {

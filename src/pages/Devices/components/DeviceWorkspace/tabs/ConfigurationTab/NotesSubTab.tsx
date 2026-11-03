@@ -1,53 +1,106 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
   Flex,
   Input,
+  Spinner,
   Text,
   VStack,
 } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
-import type { UnifiedFleetDevice } from '@/types/device';
+import { useUpdateDeviceTag, formatRelativeTime } from '@/api/devices';
+import type { UnifiedFleetDevice, DeviceNote } from '@/types/device';
 
 export interface NotesSubTabProps {
   device: UnifiedFleetDevice;
 }
 
 export const NotesSubTab: React.FC<NotesSubTabProps> = ({ device }) => {
-  const [notes, setNotes] = useState([
-    {
-      date: '7 days ago',
-      author: 'system',
-      text: 'Auto-provisioned and assigned to Building B venue.',
-    },
-    {
-      date: '2 days ago',
-      author: 'admin@mangocloud.io',
-      text: 'Updated channel plan to 20MHz on 2.4G due to high interference in hallway.',
-    },
-  ]);
-
+  const [notes, setNotes] = useState<Array<{ date: string; author: string; text: string }>>([]);
   const [newNote, setNewNote] = useState('');
+  const updateMutation = useUpdateDeviceTag();
 
-  const handleAddNote = () => {
+  useEffect(() => {
+    const rawNotes: DeviceNote[] = device.provTag?.notes || device.notes || [];
+    if (rawNotes.length > 0) {
+      setNotes(
+        [...rawNotes]
+          .sort((a, b) => (b.created || 0) - (a.created || 0))
+          .map((n) => ({
+            date: n.created ? formatRelativeTime(n.created) : 'Recent',
+            author: n.author || n.createdBy || 'system',
+            text: n.note,
+          }))
+      );
+    } else {
+      setNotes([
+        {
+          date: 'Recent',
+          author: 'system',
+          text: 'Auto-provisioned device tag.',
+        },
+      ]);
+    }
+  }, [device]);
+
+  const handleAddNote = async () => {
     if (!newNote.trim()) return;
-    setNotes([
-      {
-        date: 'Just now',
-        author: 'Current User',
-        text: newNote.trim(),
-      },
-      ...notes,
-    ]);
-    setNewNote('');
-    toaster.create({
-      title: 'Note Added',
-      description: 'Device operational note saved.',
-      type: 'success',
-    });
+    try {
+      const resolvedType =
+        device.provTag?.deviceType ||
+        (device.deviceType && !['ap', 'switch', 'olg'].includes(device.deviceType) ? device.deviceType : device.model) ||
+        'asus_rt-ax53u';
+      const resolvedGroup =
+        device.provTag?.deviceGroup ||
+        (['ap', 'switch', 'olg'].includes(device.deviceGroup) ? device.deviceGroup : 'ap');
+
+      await updateMutation.mutateAsync({
+        serialNumber: device.serialNumber,
+        payload: {
+          name: device.name || device.serialNumber,
+          description: device.description || '',
+          notes: [{ note: newNote.trim() }],
+          deviceType: resolvedType,
+          deviceGroup: resolvedGroup,
+          devClass: device.provTag?.devClass || 'venue',
+          deviceConfiguration: device.provTag?.deviceConfiguration ?? (device.configId || ''),
+          deviceRules: {
+            firmwareUpgrade: (device.provTag?.deviceRules?.firmwareUpgrade as string) || 'inherit',
+            rcOnly: (device.provTag?.deviceRules?.rcOnly as string) || 'inherit',
+            rrm: (device.provTag?.deviceRules?.rrm as string) || 'inherit',
+          },
+          doNotAllowOverrides: Boolean(device.provTag?.doNotAllowOverrides),
+          entity: device.provTag?.entity || device.entityId || '',
+          venue: device.provTag?.venue || device.venueId || '',
+          subscriber: device.provTag?.subscriber ?? (device.subscriberId || ''),
+          state: device.provTag?.state ?? (device.state || ''),
+        },
+      });
+
+      setNotes([
+        {
+          date: 'Just now',
+          author: 'Current User',
+          text: newNote.trim(),
+        },
+        ...notes,
+      ]);
+      setNewNote('');
+      toaster.create({
+        title: 'Note Added',
+        description: 'Device operational note saved.',
+        type: 'success',
+      });
+    } catch (err: unknown) {
+      toaster.create({
+        title: 'Save Failed',
+        description: err instanceof Error ? err.message : 'Could not add note',
+        type: 'error',
+      });
+    }
   };
 
   return (
@@ -79,10 +132,11 @@ export const NotesSubTab: React.FC<NotesSubTabProps> = ({ device }) => {
             color="#ffffff"
             _hover={{ bg: themeColors.brand.primaryHover }}
             onClick={handleAddNote}
+            disabled={updateMutation.isPending}
             gap={1.5}
             flexShrink={0}
           >
-            <Icon name="plus" size={14} />
+            {updateMutation.isPending ? <Spinner size="xs" /> : <Icon name="plus" size={14} />}
             Add Note
           </Button>
         </Flex>

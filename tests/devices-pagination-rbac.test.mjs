@@ -286,8 +286,8 @@ test('DeviceOverviewTab renders the complete OpenWiFi OWGW card architecture and
   assert.ok(content.includes('<DeviceCommandsLogsCard'), 'Must render DeviceCommandsLogsCard');
   assert.ok(content.includes('<DeviceNotesCard'), 'Must render DeviceNotesCard');
 
-  // Verify derived attention conditions feature is preserved without duplication
-  assert.ok(content.includes('<DeviceAttentionConditionsCard'), 'Must retain derived DeviceAttentionConditionsCard');
+  // Verify hardcoded attention conditions feature has been removed
+  assert.strictEqual(content.includes('<DeviceAttentionConditionsCard'), false, 'Must not render DeviceAttentionConditionsCard');
 });
 
 test('DeviceCommandsLogsCard supports extensive OpenWiFi APIs with newest=true, limit, and +25 Show More pagination', () => {
@@ -702,8 +702,12 @@ test('DeviceDetailsCard and useDeviceOverview resolve platform deviceType (olg/a
     'devices.ts must resolve platform type using normalizePlatformDeviceType'
   );
   assert.ok(
-    devicesApiContent.includes('deviceType: resolvedPlatform'),
-    'devices.ts must set deviceType to the resolved platform (ap/switch/olg)'
+    devicesApiContent.includes('deviceGroup: tag?.deviceGroup || resolvedPlatform'),
+    'devices.ts must set deviceGroup to the resolved platform (ap/switch/olg)'
+  );
+  assert.ok(
+    devicesApiContent.includes('deviceType: tag?.deviceType || resolvedModel'),
+    'devices.ts must preserve the device model/type in deviceType matching OWPROV'
   );
   assert.ok(
     devicesApiContent.includes('model: resolvedModel'),
@@ -767,6 +771,250 @@ test('DeviceHeader renders all 13 OpenWiFi Gateway command actions and integrati
       `DeviceHeader must mount modal: ${modal}`
     );
   }
+});
+
+test('DeviceConfigTab implements all 6 OWPROV provisioning subtabs and all 11 Main tab fields', () => {
+  const configTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'DeviceConfigTab.tsx'
+  );
+  const configTabContent = fs.readFileSync(configTabPath, 'utf-8');
+
+  // Verify all 6 OWPROV sub-tabs
+  const expectedSubTabs = [
+    { id: 'main', label: 'Main' },
+    { id: 'special', label: 'Device-Specific Configuration' },
+    { id: 'computed', label: 'Computed Configuration' },
+    { id: 'overrides', label: 'Configuration Overrides' },
+    { id: 'notes', label: 'Notes' },
+    { id: 'state', label: 'State' },
+  ];
+
+  for (const st of expectedSubTabs) {
+    assert.ok(
+      configTabContent.includes(`id: '${st.id}'`) && configTabContent.includes(`label: '${st.label}'`),
+      `DeviceConfigTab must contain subtab ${st.label} (${st.id})`
+    );
+  }
+
+  // Verify MainConfigSubTab contains all 11 fields from OWPROV EditTagModal
+  const mainTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'MainConfigSubTab.tsx'
+  );
+  const mainTabContent = fs.readFileSync(mainTabPath, 'utf-8');
+
+  const expectedFields = [
+    'Serial Number',
+    'Name',
+    'Description',
+    'Device Group',
+    'Device Type',
+    'Parent',
+    'Release Candidates Only',
+    'RRM',
+    'Firmware Upgrade',
+    'Device Class',
+    'Ignore Configuration Overrides',
+  ];
+
+  for (const field of expectedFields) {
+    assert.ok(
+      mainTabContent.includes(field),
+      `MainConfigSubTab must render field: ${field}`
+    );
+  }
+
+  // Verify MainConfigSubTab sends exact OWPROV payload structure (including deviceGroup and deviceType)
+  assert.ok(mainTabContent.includes('deviceGroup,'), 'MainConfigSubTab payload must include deviceGroup');
+  assert.ok(mainTabContent.includes('deviceType,'), 'MainConfigSubTab payload must include deviceType');
+  assert.ok(mainTabContent.includes('deviceConfiguration:'), 'MainConfigSubTab payload must include deviceConfiguration');
+  assert.ok(mainTabContent.includes('notes:'), 'MainConfigSubTab payload must include notes');
+
+  // Verify StateSubTab exists and handles JSON formatting & state mutations
+  const stateTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'StateSubTab.tsx'
+  );
+  assert.ok(fs.existsSync(stateTabPath), 'StateSubTab.tsx must exist');
+  const stateContent = fs.readFileSync(stateTabPath, 'utf-8');
+  assert.ok(stateContent.includes('useUpdateDeviceTag'), 'StateSubTab must wire useUpdateDeviceTag mutation');
+  assert.ok(stateContent.includes('Textarea'), 'StateSubTab must render a single clean Textarea matching OWPROV');
+
+  // Verify DeviceSpecificConfigSubTab renders Base Information with RRM, Firmware Upgrade, RC Only, and Trash
+  const specialTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'DeviceSpecificConfigSubTab.tsx'
+  );
+  assert.ok(fs.existsSync(specialTabPath), 'DeviceSpecificConfigSubTab.tsx must exist');
+  const specialContent = fs.readFileSync(specialTabPath, 'utf-8');
+  assert.ok(specialContent.includes('Base Information'), 'DeviceSpecificConfigSubTab must render Base Information header');
+  assert.ok(specialContent.includes('RRM'), 'DeviceSpecificConfigSubTab must render RRM field');
+  assert.ok(specialContent.includes('Firmware Upgrade'), 'DeviceSpecificConfigSubTab must render Firmware Upgrade field');
+  assert.ok(specialContent.includes('Release Candidates Only'), 'DeviceSpecificConfigSubTab must render Release Candidates Only toggle');
+  assert.ok(specialContent.includes('trash'), 'DeviceSpecificConfigSubTab must render trash delete button');
+  assert.ok(specialContent.includes('ConfigurationSectionsCard'), 'DeviceSpecificConfigSubTab must render ConfigurationSectionsCard');
+
+  // Verify workspace tabs no longer include radios or diagnostics
+  const typesPath = path.join(ROOT_DIR, 'src', 'types', 'device.ts');
+  const typesContent = fs.readFileSync(typesPath, 'utf-8');
+  assert.ok(
+    typesContent.includes("export type DeviceWorkspaceTab = 'overview' | 'configuration' | 'activity';"),
+    'DeviceWorkspaceTab must only include overview, configuration, activity'
+  );
+});
+
+test('Device Type and Device Group options integrate with FMS firmwares?deviceSet=true API matching OWPROV', () => {
+  const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+  const devicesApiContent = fs.readFileSync(devicesApiPath, 'utf-8');
+
+  // Verify useGetDeviceTypeInfo queries FMS
+  assert.ok(
+    devicesApiContent.includes("useGetDeviceTypeInfo"),
+    'devices.ts must export useGetDeviceTypeInfo'
+  );
+  assert.ok(
+    devicesApiContent.includes("axiosFms.get<DeviceTypeInfoResponse>('firmwares?deviceSet=true')"),
+    'devices.ts must query axiosFms firmwares?deviceSet=true matching OWPROV'
+  );
+
+  // Verify MainConfigSubTab consumes useGetDeviceTypeInfo for dynamic deviceClasses & deviceTypesByClass
+  const mainTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'MainConfigSubTab.tsx'
+  );
+  const mainTabContent = fs.readFileSync(mainTabPath, 'utf-8');
+  assert.ok(
+    mainTabContent.includes('useGetDeviceTypeInfo'),
+    'MainConfigSubTab must consume useGetDeviceTypeInfo'
+  );
+  assert.ok(
+    mainTabContent.includes('fmsDeviceTypeInfo?.deviceClasses'),
+    'MainConfigSubTab must map deviceClasses from FMS'
+  );
+  assert.ok(
+    mainTabContent.includes('fmsDeviceTypeInfo?.deviceTypesByClass'),
+    'MainConfigSubTab must map deviceTypesByClass from FMS'
+  );
+});
+
+test('Parent dropdown dynamically fetches and groups Entities and Venues matching OWPROV', () => {
+  const mainTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'MainConfigSubTab.tsx'
+  );
+  const mainTabContent = fs.readFileSync(mainTabPath, 'utf-8');
+
+  // Verify hooks for entities & venues
+  assert.ok(
+    mainTabContent.includes('useGetEntities') && mainTabContent.includes('useGetVenues'),
+    'MainConfigSubTab must consume both useGetEntities and useGetVenues'
+  );
+
+  // Verify optgroup rendering for Entities and Venues
+  assert.ok(
+    mainTabContent.includes('<optgroup label="Entities">') && mainTabContent.includes('<optgroup label="Venues">'),
+    'MainConfigSubTab must group parent options with optgroup for Entities and Venues'
+  );
+
+  // Verify ent: and ven: prefix handling on save
+  assert.ok(
+    mainTabContent.includes("parent.startsWith('ent:') ? parent.slice(4) : ''"),
+    'MainConfigSubTab must extract entity UUID when prefix is ent:'
+  );
+  assert.ok(
+    mainTabContent.includes("parent.startsWith('ven:') ? parent.slice(4) : ''"),
+    'MainConfigSubTab must extract venue UUID when prefix is ven:'
+  );
+});
+
+test('Configuration Overrides tab matches OWPROV features with create, column select, table, edit/delete, and pagination', () => {
+  const overridesTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'OverridesSubTab.tsx'
+  );
+  assert.ok(fs.existsSync(overridesTabPath), 'OverridesSubTab.tsx must exist');
+
+  const content = fs.readFileSync(overridesTabPath, 'utf-8');
+
+  // 1. Backend hooks
+  assert.ok(content.includes('useDeviceOverrides'), 'Must consume useDeviceOverrides query');
+  assert.ok(content.includes('useUpdateDeviceOverrides'), 'Must consume useUpdateDeviceOverrides mutation');
+
+  // 2. Create Override Modal and Parameter Builder
+  assert.ok(content.includes('Create Configuration Override'), 'Must provide Create Configuration Override modal');
+  assert.ok(content.includes('radios'), 'Must support radios parameter builder prefix');
+  assert.ok(content.includes('channel'), 'Must support channel parameter');
+  assert.ok(content.includes('tx-power'), 'Must support tx-power parameter');
+  assert.ok(content.includes('dBm (Valid range: 1 - 32)'), 'Must enforce tx-power 1-32 dBm range validation');
+  assert.ok(content.includes('already exists'), 'Must provide duplicate parameter validation');
+  assert.ok(content.includes('64'), 'Must enforce 64 character limit on reason');
+
+  // 3. Column Picker
+  assert.ok(content.includes('Columns'), 'Must include Columns picker button');
+  assert.ok(content.includes('Toggle Columns'), 'Must render column toggle menu');
+  assert.ok(content.includes('AVAILABLE_COLUMNS'), 'Must define available columns');
+  assert.ok(content.includes('LOCAL_STORAGE_HIDDEN_COLUMNS_KEY'), 'Must persist hidden columns to localStorage');
+
+  // 4. Data Table and Row Actions
+  assert.ok(content.includes('handleHeaderSort'), 'Must support sorting by clicking table column headers');
+  assert.ok(content.includes('Edit Configuration Override'), 'Must provide Edit modal for existing overrides');
+  assert.ok(content.includes('Delete Configuration Override'), 'Must provide Delete confirmation dialog');
+
+  // 5. Pagination Controls
+  assert.ok(content.includes('Go to page'), 'Must provide Go to page navigation');
+  assert.ok(content.includes('Show '), 'Must provide page size dropdown');
+  assert.ok(content.includes('chevronsLeft') && content.includes('chevronsRight'), 'Must provide first/last pagination buttons');
+  assert.ok(content.includes('chevronLeft') && content.includes('chevronRight'), 'Must provide prev/next pagination buttons');
 });
 
 

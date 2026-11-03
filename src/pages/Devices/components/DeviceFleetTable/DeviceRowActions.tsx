@@ -129,7 +129,7 @@ export const DeviceRowActions: React.FC<DeviceRowActionsProps> = ({
         color="#ffffff"
         _hover={{ bg: '#0891b2', transform: 'scale(1.08)' }}
         transition="all 0.15s ease"
-        onClick={() => onSelect(serial, 'diagnostics')}
+        onClick={() => onSelect(serial, 'overview')}
         title="Diagnostics & health checks"
       >
         <Icon name="wrench" size={13} color="#ffffff" />

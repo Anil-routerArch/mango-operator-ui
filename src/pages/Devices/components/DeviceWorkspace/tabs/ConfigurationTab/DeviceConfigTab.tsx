@@ -8,6 +8,7 @@ import { DeviceSpecificConfigSubTab } from './DeviceSpecificConfigSubTab';
 import { ComputedConfigSubTab } from './ComputedConfigSubTab';
 import { OverridesSubTab } from './OverridesSubTab';
 import { NotesSubTab } from './NotesSubTab';
+import { StateSubTab } from './StateSubTab';
 import type { UnifiedFleetDevice, DeviceConfigSubTab } from '@/types/device';
 
 export interface DeviceConfigTabProps {
@@ -23,6 +24,7 @@ export const DeviceConfigTab: React.FC<DeviceConfigTabProps> = ({ device }) => {
     { id: 'computed', label: 'Computed Configuration' },
     { id: 'overrides', label: 'Configuration Overrides' },
     { id: 'notes', label: 'Notes' },
+    { id: 'state', label: 'State' },
   ];
 
   const renderActiveSubTab = () => {
@@ -37,6 +39,8 @@ export const DeviceConfigTab: React.FC<DeviceConfigTabProps> = ({ device }) => {
         return <OverridesSubTab device={device} />;
       case 'notes':
         return <NotesSubTab device={device} />;
+      case 'state':
+        return <StateSubTab device={device} />;
       default:
         return <MainConfigSubTab device={device} />;
     }

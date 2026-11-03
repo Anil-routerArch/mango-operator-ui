@@ -9,7 +9,6 @@ export * from './DeviceLiveTelemetryCard';
 export * from './DeviceIdentityCard';
 export * from './DeviceAvailabilityCard';
 export * from './DeviceCertificateCard';
-export * from './DeviceAttentionConditionsCard';
 export * from './DeviceRecentActivityCard';
 export * from './DeviceOverviewTab';
 
