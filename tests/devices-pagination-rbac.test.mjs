@@ -882,6 +882,14 @@ test('DeviceConfigTab implements all 6 OWPROV provisioning subtabs and all 11 Ma
   assert.ok(specialContent.includes('Release Candidates Only'), 'DeviceSpecificConfigSubTab must render Release Candidates Only toggle');
   assert.ok(specialContent.includes('trash'), 'DeviceSpecificConfigSubTab must render trash delete button');
   assert.ok(specialContent.includes('ConfigurationSectionsCard'), 'DeviceSpecificConfigSubTab must render ConfigurationSectionsCard');
+  assert.ok(
+    specialContent.includes('configData?.configuration'),
+    'DeviceSpecificConfigSubTab must populate currentJson from configData.configuration'
+  );
+  assert.ok(
+    specialContent.includes('updateModularConfiguration') && specialContent.includes('createModularConfiguration'),
+    'DeviceSpecificConfigSubTab must save modular configurations via modularConfiguration APIs'
+  );
 
   // Verify workspace tabs no longer include radios or diagnostics
   const typesPath = path.join(ROOT_DIR, 'src', 'types', 'device.ts');
@@ -897,6 +905,10 @@ test('Device Type and Device Group options integrate with FMS firmwares?deviceSe
   const devicesApiContent = fs.readFileSync(devicesApiPath, 'utf-8');
 
   // Verify useGetDeviceTypeInfo queries FMS
+  assert.ok(
+    devicesApiContent.includes("`inventory/${clean}?withExtendedInfo=true`"),
+    'useDeviceOverview must fetch inventory with withExtendedInfo=true to populate configuration'
+  );
   assert.ok(
     devicesApiContent.includes("useGetDeviceTypeInfo"),
     'devices.ts must export useGetDeviceTypeInfo'

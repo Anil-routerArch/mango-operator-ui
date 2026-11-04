@@ -1011,7 +1011,7 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
       const clean = normalizeSerial(serialNumber);
 
       const [tagRes, gwRes, statusRes, statsRes] = await Promise.allSettled([
-        axiosProv.get<InventoryTagApiResponse>(`inventory/${clean}`),
+        axiosProv.get<InventoryTagApiResponse>(`inventory/${clean}?withExtendedInfo=true`),
         axiosMdu.get<GatewayDeviceApiResponse>(`devices/${clean}`),
         axiosMdu.get<DeviceWithStatusApiResponse>(`devices/${clean}/status`),
         axiosMdu.get<{ data?: DeviceStatisticsPayload; raw?: DeviceStatisticsPayload }>(
@@ -1093,6 +1093,7 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         subscriberEmail: tag?.extendedInfo?.subscriber?.email || 'b5930152-566c-4d16-91f9-814267088e36',
         configId: tag?.deviceConfiguration,
         configName: tag?.extendedInfo?.deviceConfiguration?.name,
+        configuration: (tag?.extendedInfo?.deviceConfiguration as any)?.configuration || undefined,
         blacklisted: Boolean(status?.blackListed || gw?.blackListed),
         simulated: Boolean(status?.simulated || gw?.simulated),
         restricted: Boolean(status?.restrictedDevice || gw?.restrictedDevice),
