@@ -64,28 +64,68 @@ export const getApiErrorMessage = (
       /downstream\s+(owprov|owgw|owsec)\s+returned\s+status\s+\d+/i.test(cleanMessage) ||
       lowerMessage === 'downstream error';
 
-    // If cleanMessage has a real, specific reason from the backend
-    if (cleanMessage && !isGenericDownstream) {
+    // 1. If 403 Forbidden, normalize all permission names (e.g. "DELETE", "CREATE", "UPDATE", "READ") to "Access denied"
+    if (status === 403) {
+      const isPermissionOrAction = [
+        'delete',
+        'create',
+        'update',
+        'read',
+        'get',
+        'post',
+        'put',
+        'patch',
+        'forbidden',
+        'access denied',
+        'not authorized',
+        'unauthorized',
+      ].includes(lowerMessage);
+
       if (
-        lowerMessage === 'forbidden' ||
+        !cleanMessage ||
+        isGenericDownstream ||
+        isPermissionOrAction ||
         lowerMessage.includes('access denied') ||
         lowerMessage.includes('not authorized')
       ) {
         return 'Access denied';
       }
-      if (lowerMessage === 'unauthorized' || lowerMessage === 'unauthorized.') {
-        return 'Unauthorized';
-      }
-      if (lowerMessage === 'not found' || lowerMessage === 'not found.') {
-        return 'Not found';
-      }
-      if (lowerMessage === 'internal server error' || lowerMessage === 'internal server error.') {
-        return 'Server error';
-      }
-      if (lowerMessage === 'bad gateway' || lowerMessage === 'service unavailable') {
-        return 'Server error';
-      }
+      return cleanMessage;
+    }
 
+    // 2. If 401 Unauthorized
+    if (status === 401 || lowerMessage === 'unauthorized' || lowerMessage === 'unauthorized.') {
+      return 'Unauthorized';
+    }
+
+    // 3. If 404 Not Found
+    if (status === 404 || lowerMessage === 'not found' || lowerMessage === 'not found.') {
+      return 'Not found';
+    }
+
+    // 4. If 500 / 502 / 503 / 504 Server Error
+    if (
+      status === 500 ||
+      status === 502 ||
+      status === 503 ||
+      status === 504 ||
+      lowerMessage === 'server error' ||
+      lowerMessage === 'internal server error' ||
+      lowerMessage === 'bad gateway' ||
+      lowerMessage === 'service unavailable'
+    ) {
+      if (
+        cleanMessage &&
+        !isGenericDownstream &&
+        !['internal server error', 'bad gateway', 'service unavailable'].includes(lowerMessage)
+      ) {
+        return cleanMessage;
+      }
+      return 'Server error';
+    }
+
+    // 5. If cleanMessage has a real, specific reason from the backend
+    if (cleanMessage && !isGenericDownstream) {
       // Domain-specific permissions mappings if encountered
       if (lowerMessage.includes('requester has no role on the target scope')) {
         return 'You can only assign access within a scope that is already assigned to you.';
@@ -104,15 +144,8 @@ export const getApiErrorMessage = (
     }
 
     // Determine reason by HTTP status code if no custom body
-    if (status === 403) return 'Access denied';
-    if (status === 401) return 'Unauthorized';
-    if (status === 404) return 'Not found';
     if (status === 400) return 'Bad request';
     if (status === 409) return 'Conflict: Resource in use';
-    if (status === 500) return 'Server error';
-    if (status === 502 || status === 503 || status === 504) {
-      return 'Server error';
-    }
 
     if (error.message && !error.message.startsWith('Request failed with status code')) {
       return error.message;
