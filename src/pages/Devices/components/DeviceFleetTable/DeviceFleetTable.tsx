@@ -179,20 +179,21 @@ export const DeviceFleetTable: React.FC = () => {
   };
 
   const handleConfirmDelete = async () => {
-    if (!deleteTargetSerial) return;
+    const targetSerial = deleteTargetSerial;
+    if (!targetSerial) return;
+    setDeleteTargetSerial(null);
     try {
-      await deleteMutation.mutateAsync(deleteTargetSerial);
+      await deleteMutation.mutateAsync(targetSerial);
       toaster.create({
         title: 'Device Removed',
-        description: `Device ${deleteTargetSerial} successfully removed from inventory`,
+        description: `Device ${targetSerial} successfully removed from inventory`,
         type: 'success',
       });
-      setDeleteTargetSerial(null);
       refetch();
     } catch (err: unknown) {
       toaster.create({
         title: 'Delete Failed',
-        description: getApiErrorMessage(err, `Could not delete device ${deleteTargetSerial}`),
+        description: getApiErrorMessage(err, `Could not delete device ${targetSerial}`),
         type: 'error',
       });
     }
@@ -754,6 +755,7 @@ export const DeviceFleetTable: React.FC = () => {
           alignItems="center"
           justifyContent="center"
           p={4}
+          onClick={() => setDeleteTargetSerial(null)}
         >
           <Box
             bg="#ffffff"
@@ -762,6 +764,7 @@ export const DeviceFleetTable: React.FC = () => {
             maxW="420px"
             w="100%"
             boxShadow="0 10px 25px rgba(0,0,0,0.2)"
+            onClick={(e) => e.stopPropagation()}
           >
             <VStack gap={3} align="start">
               <HStack gap={2} color="#dc2626">

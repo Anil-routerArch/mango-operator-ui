@@ -37,10 +37,10 @@ export const DeviceActionConfirmModal: React.FC<DeviceActionConfirmModalProps> =
   if (!isOpen) return null;
 
   const handleConfirm = async () => {
+    onClose();
     try {
       setLoading(true);
       await onConfirm();
-      onClose();
     } catch {
       // Handled by caller / toaster
     } finally {
@@ -85,6 +85,7 @@ export const DeviceActionConfirmModal: React.FC<DeviceActionConfirmModalProps> =
       placeItems="center"
       zIndex="1200"
       p={4}
+      onClick={onClose}
     >
       <Box
         w="min(460px, 95vw)"
@@ -94,6 +95,7 @@ export const DeviceActionConfirmModal: React.FC<DeviceActionConfirmModalProps> =
         overflow="hidden"
         border="1px solid"
         borderColor={themeColors.panel.border}
+        onClick={(e) => e.stopPropagation()}
       >
         <Box p={6}>
           <HStack gap={4} align="flex-start">
