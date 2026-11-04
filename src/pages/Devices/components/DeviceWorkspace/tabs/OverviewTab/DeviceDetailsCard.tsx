@@ -32,13 +32,14 @@ export const DeviceDetailsCard: React.FC<DeviceDetailsCardProps> = ({ device }) 
   const [isCapabilitiesOpen, setIsCapabilitiesOpen] = useState(false);
   const [isInspectDetailsOpen, setIsInspectDetailsOpen] = useState(false);
 
-  const password = device.devicePassword || 'openwifi';
+  const password = device.devicePassword;
   const mac = device.macAddress || device.serialNumber;
   const formattedMac = mac.includes(':')
     ? mac
     : mac.replace(/(.{2})(?=.)/g, '$1:');
 
   const handleCopyPassword = () => {
+    if (!password) return;
     navigator.clipboard.writeText(password);
     toaster.create({
       title: 'Copied',
@@ -103,39 +104,43 @@ export const DeviceDetailsCard: React.FC<DeviceDetailsCardProps> = ({ device }) 
           Password:
         </GridItem>
         <GridItem color={themeColors.text.primary}>
-          <HStack gap={2}>
-            <Text fontFamily="mono" fontSize="13px">
-              {showPassword ? password : '••••••••••••'}
-            </Text>
-            <IconButton
-              size="xs"
-              variant="ghost"
-              onClick={() => setShowPassword(!showPassword)}
-              title={showPassword ? 'Hide password' : 'Show password'}
-            >
-              <Icon name={showPassword ? 'eyeOff' : 'eye'} size={13} />
-            </IconButton>
-            <Button
-              size="xs"
-              colorPalette="teal"
-              variant="solid"
-              onClick={handleCopyPassword}
-              px={2}
-              py={0.5}
-              h="22px"
-              fontSize="11px"
-              fontWeight="600"
-            >
-              Copy
-            </Button>
-          </HStack>
+          {password ? (
+            <HStack gap={2}>
+              <Text fontFamily="mono" fontSize="13px">
+                {showPassword ? password : '••••••••••••'}
+              </Text>
+              <IconButton
+                size="xs"
+                variant="ghost"
+                onClick={() => setShowPassword(!showPassword)}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Icon name={showPassword ? 'eyeOff' : 'eye'} size={13} />
+              </IconButton>
+              <Button
+                size="xs"
+                colorPalette="teal"
+                variant="solid"
+                onClick={handleCopyPassword}
+                px={2}
+                py={0.5}
+                h="22px"
+                fontSize="11px"
+                fontWeight="600"
+              >
+                Copy
+              </Button>
+            </HStack>
+          ) : (
+            '-'
+          )}
         </GridItem>
 
         <GridItem fontWeight="600" color={themeColors.text.title}>
           Manufacturer:
         </GridItem>
         <GridItem color={themeColors.text.primary}>
-          {device.manufacturer || 'ASUS RT-AX53U'}
+          {device.manufacturer || '-'}
         </GridItem>
 
         <GridItem fontWeight="600" color={themeColors.text.title}>
@@ -177,14 +182,14 @@ export const DeviceDetailsCard: React.FC<DeviceDetailsCardProps> = ({ device }) 
             Venue:
           </GridItem>
           <GridItem color={themeColors.text.primary}>
-            {device.venueName || 'anilbeheraapril13@gmail.com'}
+            {device.venueName || '-'}
           </GridItem>
 
           <GridItem fontWeight="600" color={themeColors.text.title}>
             Subscriber:
           </GridItem>
           <GridItem color={themeColors.text.primary} wordBreak="break-all" fontFamily="mono" fontSize="12px">
-            {device.subscriberId || device.subscriberEmail || 'b5930152-566c-4d16-91f9-814267088e36'}
+            {device.subscriberEmail || device.subscriberId || '-'}
           </GridItem>
         </Grid>
       </Box>

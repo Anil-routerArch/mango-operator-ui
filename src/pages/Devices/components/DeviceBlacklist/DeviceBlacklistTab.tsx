@@ -31,18 +31,7 @@ export const DeviceBlacklistTab: React.FC = () => {
   const addMutation = useAddDeviceToBlacklist();
   const removeMutation = useRemoveDeviceFromBlacklist();
 
-  // Fallback demo blacklist if none returned
-  const blacklistItems: BlacklistDevice[] = React.useMemo(() => {
-    if (blacklist && blacklist.length > 0) return blacklist;
-    return [
-      {
-        serialNumber: '00:11:22:33:44:55',
-        reason: 'Rogue AP spoofing SSID',
-        created: Math.floor(Date.now() / 1000) - 86400 * 5,
-        author: 'sec-admin',
-      },
-    ];
-  }, [blacklist]);
+  const blacklistItems: BlacklistDevice[] = blacklist ?? [];
 
   const handleAdd = async () => {
     if (!newMac.trim()) {
@@ -144,45 +133,66 @@ export const DeviceBlacklistTab: React.FC = () => {
           <Box w="80px" textAlign="right">Action</Box>
         </Flex>
 
-        {/* Table Rows */}
-        {blacklistItems.map((item, idx) => (
-          <Flex
-            key={idx}
-            align="center"
-            py={3}
-            px={4}
-            borderBottom="1px solid"
-            borderColor={themeColors.panel.divider}
-            fontSize="12px"
-            _last={{ borderBottom: 'none' }}
-            _hover={{ bg: '#fafbfc' }}
-          >
-            <Box flex="1.5" fontWeight="600" color="#dc2626" fontFamily="monospace">
-              {item.serialNumber}
-            </Box>
-            <Box flex="2" color={themeColors.text.primary}>
-              {item.reason}
-            </Box>
-            <Box flex="1" color={themeColors.text.muted}>
-              {item.created ? new Date(item.created * 1000).toLocaleDateString() : '-'}
-            </Box>
-            <Box flex="1" color={themeColors.text.secondary}>
-              {item.author || 'admin'}
-            </Box>
-            <Box w="80px" textAlign="right">
-              <Button
-                size="xs"
-                variant="outline"
-                color="#dc2626"
-                borderColor="#fca5a5"
-                _hover={{ bg: '#fee2e2' }}
-                onClick={() => setDeviceToRemove(item)}
-              >
-                Unblock
-              </Button>
-            </Box>
+        {/* Table Rows / Empty State */}
+        {isLoading ? (
+          <Flex justify="center" align="center" py={12} gap={2}>
+            <Spinner size="sm" color={themeColors.brand.accent} />
+            <Text fontSize="13px" color={themeColors.text.muted}>
+              Loading blacklisted devices...
+            </Text>
           </Flex>
-        ))}
+        ) : blacklistItems.length === 0 ? (
+          <Flex direction="column" align="center" justify="center" py={12} px={4} textAlign="center">
+            <Box color={themeColors.text.muted} mb={2}>
+              <Icon name="shield" size={32} />
+            </Box>
+            <Text fontSize="14px" fontWeight="600" color={themeColors.text.title} mb={1}>
+              No Blacklisted Devices
+            </Text>
+            <Text fontSize="12px" color={themeColors.text.muted} maxW="380px">
+              No devices or MAC addresses are currently blocked from connecting to the gateway.
+            </Text>
+          </Flex>
+        ) : (
+          blacklistItems.map((item, idx) => (
+            <Flex
+              key={idx}
+              align="center"
+              py={3}
+              px={4}
+              borderBottom="1px solid"
+              borderColor={themeColors.panel.divider}
+              fontSize="12px"
+              _last={{ borderBottom: 'none' }}
+              _hover={{ bg: '#fafbfc' }}
+            >
+              <Box flex="1.5" fontWeight="600" color="#dc2626" fontFamily="monospace">
+                {item.serialNumber}
+              </Box>
+              <Box flex="2" color={themeColors.text.primary}>
+                {item.reason}
+              </Box>
+              <Box flex="1" color={themeColors.text.muted}>
+                {item.created ? new Date(item.created * 1000).toLocaleDateString() : '-'}
+              </Box>
+              <Box flex="1" color={themeColors.text.secondary}>
+                {item.author || 'admin'}
+              </Box>
+              <Box w="80px" textAlign="right">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  color="#dc2626"
+                  borderColor="#fca5a5"
+                  _hover={{ bg: '#fee2e2' }}
+                  onClick={() => setDeviceToRemove(item)}
+                >
+                  Unblock
+                </Button>
+              </Box>
+            </Flex>
+          ))
+        )}
       </Box>
 
       {/* Add to Blacklist Modal */}

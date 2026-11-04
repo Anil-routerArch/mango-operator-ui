@@ -129,10 +129,10 @@ export const hydrateTagsWithGatewayStatus = async (
       serialNumber: tag.serialNumber,
       name: tag.name || liveGw?.compatible || tag.serialNumber,
       description: tag.description,
-      model: liveGw?.compatible || tag.deviceType || 'Universal AP',
+      model: liveGw?.compatible || tag.deviceType || '-',
       deviceGroup: tag.deviceGroup || resolvedPlatform,
       platform: tag.platform || resolvedPlatform.toUpperCase(),
-      deviceType: tag.deviceType || liveGw?.compatible || 'asus_rt-ax53u',
+      deviceType: tag.deviceType || liveGw?.compatible || resolvedPlatform,
       connected: isConnected,
       sanity: sanityScore,
       ipAddress: liveGw?.ipAddress || '-',
@@ -140,7 +140,7 @@ export const hydrateTagsWithGatewayStatus = async (
       memoryUsedPct: liveGw?.memoryUsed,
       load: liveGw?.load,
       temperature: liveGw?.temperature,
-      firmware: liveGw?.firmware || 'TIP-v4.2',
+      firmware: liveGw?.firmware || '-',
       uptimeSeconds: liveGw?.started ? Math.floor(Date.now() / 1000) - liveGw.started : undefined,
       started: liveGw?.started,
       locale: liveGw?.locale,
@@ -1025,8 +1025,13 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
       const status = statusRes.status === 'fulfilled' ? statusRes.value.data : undefined;
       const stats = statsRes.status === 'fulfilled' ? statsRes.value.data : undefined;
 
+      // If neither inventory tag nor gateway device nor status record was found, the device does not exist
+      if (!tag && !gw && !status) {
+        return null;
+      }
+
       const isConnected = Boolean(status?.connected);
-      const sanityScore = status?.sanity ?? (isConnected ? 100 : 42);
+      const sanityScore = status?.sanity ?? (isConnected ? 100 : 0);
 
       const lastContactNum = status?.lastContact
         ? typeof status.lastContact === 'string'
@@ -1042,8 +1047,8 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         status?.deviceType,
         tag?.deviceType || gw?.compatible,
       );
-      const resolvedModel = gw?.compatible || tag?.deviceType || 'asus_rt-ax53u';
-      const resolvedManufacturer = gw?.manufacturer || 'ASUS RT-AX53U';
+      const resolvedModel = gw?.compatible || tag?.deviceType || '-';
+      const resolvedManufacturer = gw?.manufacturer || undefined;
 
       const unified: UnifiedFleetDevice = {
         serialNumber,
@@ -1054,45 +1059,39 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         platform: tag?.platform || resolvedPlatform.toUpperCase(),
         deviceType: tag?.deviceType || resolvedModel,
         manufacturer: resolvedManufacturer,
-        devicePassword: gw?.devicePassword || 'openwifi',
+        devicePassword: gw?.devicePassword || undefined,
         connected: isConnected,
-        connectReason: status?.connectReason || 'Coldboot',
+        connectReason: status?.connectReason || undefined,
         sanity: sanityScore,
         ipAddress: status?.ipAddress || '-',
         macAddress: gw?.macAddress || serialNumber,
-        locale: gw?.locale || status?.locale || 'US',
-        revision: gw?.firmware ? gw.firmware.replace(/^TIP-/, '') : 'TIP-v4.2.4-1a0ba9bf',
+        locale: gw?.locale || status?.locale || undefined,
+        revision: gw?.firmware ? gw.firmware.replace(/^TIP-/, '') : undefined,
         certificateExpiry: gw?.certificateExpiryDate,
         certificateExpiryDate: gw?.certificateExpiryDate,
-        certificateIssuerName: status?.certificateIssuerName || 'MangoCloud Issuer,C=IN,ST=UP,O=Router Architects,OU=MangoCloud',
+        certificateIssuerName: status?.certificateIssuerName || undefined,
         createdTimestamp: gw?.createdTimestamp || tag?.created,
         modified: gw?.modified || tag?.modified,
-        notes: gw?.notes || tag?.notes || [
-          {
-            created: Math.floor(Date.now() / 1000) - 12 * 86400,
-            note: 'Auto-provisioned.',
-            createdBy: 'System',
-          },
-        ],
-        unitLoad: statsPayload?.unit?.load || [0.24, 0.20, 0.23],
-        unitUptime: statsPayload?.unit?.uptime || (status?.started ? Math.floor(Date.now() / 1000) - status.started : 2147),
-        unitLocaltime: statsPayload?.unit?.localtime || Math.floor(Date.now() / 1000),
-        unitMemoryTotal: statsPayload?.unit?.memory?.total || 256000000,
-        unitMemoryFree: statsPayload?.unit?.memory?.free || 149340000,
-        memoryUsedPct: status?.memoryUsed ?? 41.66,
-        load: status?.load ?? 0.24,
-        temperature: status?.temperature ?? 61,
-        firmware: gw?.firmware || status?.firmware || 'TIP-v4.2.4-1a0ba9bf',
-        uptimeSeconds: status?.started ? Math.floor(Date.now() / 1000) - status.started : 2147,
+        notes: gw?.notes || tag?.notes || [],
+        unitLoad: statsPayload?.unit?.load,
+        unitUptime: statsPayload?.unit?.uptime || (status?.started ? Math.floor(Date.now() / 1000) - status.started : undefined),
+        unitLocaltime: statsPayload?.unit?.localtime,
+        unitMemoryTotal: statsPayload?.unit?.memory?.total,
+        unitMemoryFree: statsPayload?.unit?.memory?.free,
+        memoryUsedPct: status?.memoryUsed,
+        load: status?.load,
+        temperature: status?.temperature,
+        firmware: gw?.firmware || status?.firmware || '-',
+        uptimeSeconds: status?.started ? Math.floor(Date.now() / 1000) - status.started : undefined,
         lastContact: lastContactNum,
         lastContactTimestamp: lastContactNum,
         lastContactText: formatRelativeTime(lastContactNum),
         entityId: tag?.entity,
-        entityName: tag?.extendedInfo?.entity?.name || '-',
+        entityName: tag?.extendedInfo?.entity?.name,
         venueId: tag?.venue,
-        venueName: tag?.extendedInfo?.venue?.name || 'anilbeheraapril13@gmail.com',
+        venueName: tag?.extendedInfo?.venue?.name,
         subscriberId: tag?.subscriber,
-        subscriberEmail: tag?.extendedInfo?.subscriber?.email || 'b5930152-566c-4d16-91f9-814267088e36',
+        subscriberEmail: tag?.extendedInfo?.subscriber?.email,
         configId: tag?.deviceConfiguration,
         configName: tag?.extendedInfo?.deviceConfiguration?.name,
         configuration: (tag?.extendedInfo?.deviceConfiguration as any)?.configuration || undefined,

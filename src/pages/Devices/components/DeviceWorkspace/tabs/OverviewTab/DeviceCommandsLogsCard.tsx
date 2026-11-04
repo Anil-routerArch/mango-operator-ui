@@ -835,7 +835,7 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
                         <Table.Cell color={themeColors.text.muted}>{formatRelative(cmd.completed || cmd.submitted)}</Table.Cell>
                       )}
                       {isColVisible('errorCode') && (
-                        <Table.Cell fontFamily="mono">{cmd.errorCode ?? 2}</Table.Cell>
+                        <Table.Cell fontFamily="mono">{cmd.errorCode !== undefined ? cmd.errorCode : '-'}</Table.Cell>
                       )}
                       {isColVisible('actions') && (
                         <Table.Cell>
@@ -1091,7 +1091,7 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
                         <Table.Cell>{formatRelative(rb.recorded)}</Table.Cell>
                       )}
                       {isColVisible('rebootReason') && (
-                        <Table.Cell fontFamily="mono">{rb.log || 'Coldboot initiated by operator'}</Table.Cell>
+                        <Table.Cell fontFamily="mono">{rb.log || '-'}</Table.Cell>
                       )}
                       {isColVisible('actions') && (
                         <Table.Cell textAlign="center">
