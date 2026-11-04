@@ -10,7 +10,7 @@ export interface DeviceNote {
 }
 
 export interface DeviceRules {
-  rrm?: 'inherit' | 'on' | 'off' | string;
+  rrm?: 'inherit' | 'no' | 'enabled' | string;
   rcOnly?: 'inherit' | 'yes' | 'no' | string;
   firmwareUpgrade?: 'inherit' | 'yes' | 'no' | string;
 }

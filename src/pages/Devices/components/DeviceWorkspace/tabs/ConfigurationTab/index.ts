@@ -5,4 +5,6 @@ export * from './OverridesSubTab';
 export * from './NotesSubTab';
 export * from './StateSubTab';
 export * from './DeviceConfigTab';
+export * from './RrmEditorField';
+export * from './rrmHelper';
 

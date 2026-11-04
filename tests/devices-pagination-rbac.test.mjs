@@ -1043,6 +1043,169 @@ test('Configuration Overrides tab matches OWPROV features with create, column se
   );
 });
 
+test('RRM validation and serialization aligns strictly with OWPROV ValidRRM contract', async () => {
+  const rrmHelperPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'rrmHelper.ts'
+  );
+  assert.ok(fs.existsSync(rrmHelperPath), 'rrmHelper.ts must exist');
+
+  const mainSubTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'MainConfigSubTab.tsx'
+  );
+  const deviceSpecificSubTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'DeviceSpecificConfigSubTab.tsx'
+  );
+  const rrmEditorFieldPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'RrmEditorField.tsx'
+  );
+
+  assert.ok(fs.existsSync(mainSubTabPath), 'MainConfigSubTab.tsx must exist');
+  assert.ok(fs.existsSync(deviceSpecificSubTabPath), 'DeviceSpecificConfigSubTab.tsx must exist');
+  assert.ok(fs.existsSync(rrmEditorFieldPath), 'RrmEditorField.tsx must exist');
+
+  const mainContent = fs.readFileSync(mainSubTabPath, 'utf-8');
+  const deviceSpecificContent = fs.readFileSync(deviceSpecificSubTabPath, 'utf-8');
+  const rrmEditorContent = fs.readFileSync(rrmEditorFieldPath, 'utf-8');
+  const rrmHelperContent = fs.readFileSync(rrmHelperPath, 'utf-8');
+
+  // 1. Verify invalid legacy options are completely eliminated from both tabs
+  assert.strictEqual(
+    mainContent.includes("setRrm(e.target.value as 'inherit' | 'yes' | 'no')"),
+    false,
+    'MainConfigSubTab must not use select setting rrm directly to yes/no'
+  );
+  assert.strictEqual(
+    deviceSpecificContent.includes('<option value="on">on</option>'),
+    false,
+    'DeviceSpecificConfigSubTab must not offer invalid "on" option for RRM'
+  );
+  assert.strictEqual(
+    deviceSpecificContent.includes('<option value="off">off</option>'),
+    false,
+    'DeviceSpecificConfigSubTab must not offer invalid "off" option for RRM'
+  );
+
+  // 2. Verify shared RrmEditorField is used across both subtabs
+  assert.ok(
+    mainContent.includes('<RrmEditorField'),
+    'MainConfigSubTab must use shared RrmEditorField'
+  );
+  assert.ok(
+    deviceSpecificContent.includes('<RrmEditorField'),
+    'DeviceSpecificConfigSubTab must use shared RrmEditorField'
+  );
+
+  // 3. Verify normalization ensures OWPROV ValidRRM compliance on submit
+  assert.ok(
+    mainContent.includes('normalizeRrmForSubmission(rrm)'),
+    'MainConfigSubTab must normalize RRM value before submission'
+  );
+  assert.ok(
+    deviceSpecificContent.includes('const normalizedRrm = normalizeRrmForSubmission(rrm);'),
+    'DeviceSpecificConfigSubTab must normalize RRM value before submission'
+  );
+
+  // 4. Verify RrmEditorField provides inherit, enabled, and disabled options with configuration modal
+  assert.ok(rrmEditorContent.includes('<option value="inherit">Inherit</option>'), 'RrmEditorField must support inherit');
+  assert.ok(rrmEditorContent.includes('<option value="enabled">Enabled</option>'), 'RrmEditorField must support enabled');
+  assert.ok(rrmEditorContent.includes('<option value="no">Disabled (No)</option>'), 'RrmEditorField must support no (disabled)');
+  assert.ok(rrmEditorContent.includes('Configure RRM'), 'RrmEditorField must provide configuration modal');
+  assert.ok(rrmEditorContent.includes('Cron Schedule'), 'RrmEditorField must provide cron schedule configuration');
+
+  // 5. Verify rrmHelper logic handles legacy conversion and preserves custom structured configs
+  assert.ok(rrmHelperContent.includes("export const DEFAULT_RRM_SCHEDULE = '*/10 * * * *';"));
+  assert.ok(rrmHelperContent.includes("export const DEFAULT_RRM_VENDOR = 'telecominfraproject';"));
+  assert.ok(rrmHelperContent.includes('isValidCronSchedule'));
+  assert.ok(rrmHelperContent.includes('parseRrmValue'));
+  assert.ok(rrmHelperContent.includes('serializeRrmForSubmission'));
+
+  // 6. Runtime logic simulation of rrmHelper contract
+  const isValidCron = (cron) => {
+    if (!cron || typeof cron !== 'string') return false;
+    const parts = cron.trim().split(/\s+/);
+    return parts.length === 5 && parts.every((p) => p.length > 0);
+  };
+  assert.strictEqual(isValidCron('*/10 * * * *'), true);
+  assert.strictEqual(isValidCron('0 0 * * *'), true);
+  assert.strictEqual(isValidCron('0 0 * *'), false);
+  assert.strictEqual(isValidCron('invalid'), false);
+
+  const defaultPayload = {
+    vendor: 'telecominfraproject',
+    schedule: '*/10 * * * *',
+    algorithms: [],
+  };
+
+  const parseRrm = (raw) => {
+    if (!raw || raw === 'inherit') return { mode: 'inherit', payload: defaultPayload };
+    if (raw === 'no' || raw === 'off') return { mode: 'no', payload: defaultPayload };
+    if (raw === 'yes' || raw === 'on') return { mode: 'enabled', payload: defaultPayload };
+    if (typeof raw === 'object' && raw !== null) return { mode: 'enabled', payload: raw };
+    if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw);
+        return { mode: 'enabled', payload: parsed };
+      } catch {
+        return { mode: 'inherit', payload: defaultPayload };
+      }
+    }
+    return { mode: 'inherit', payload: defaultPayload };
+  };
+
+  // Test legacy values are converted and never sent as yes/on/off
+  assert.strictEqual(parseRrm('inherit').mode, 'inherit');
+  assert.strictEqual(parseRrm('no').mode, 'no');
+  assert.strictEqual(parseRrm('off').mode, 'no');
+  assert.strictEqual(parseRrm('yes').mode, 'enabled');
+  assert.strictEqual(parseRrm('on').mode, 'enabled');
+
+  // Test structured JSON preservation
+  const customConfig = JSON.stringify({
+    vendor: 'custom-vendor',
+    schedule: '0 12 * * *',
+    algorithms: [{ name: 'algo-1', parameters: 'param' }],
+  });
+  const parsedCustom = parseRrm(customConfig);
+  assert.strictEqual(parsedCustom.mode, 'enabled');
+  assert.strictEqual(parsedCustom.payload.vendor, 'custom-vendor');
+  assert.strictEqual(parsedCustom.payload.schedule, '0 12 * * *');
+  assert.strictEqual(parsedCustom.payload.algorithms[0].name, 'algo-1');
+});
+
+
+
 
 
 

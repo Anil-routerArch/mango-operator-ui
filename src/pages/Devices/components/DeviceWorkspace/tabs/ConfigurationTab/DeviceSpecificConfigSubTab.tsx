@@ -24,6 +24,8 @@ import type { ConfigurationSectionsState } from '@/pages/Configuration/component
 import { compileStateToModularConfigurationElements } from '@/pages/Configuration/components/ConfigurationSectionsCard/utils';
 import type { PlatformType } from '@/pages/Configuration/types/configuration';
 import type { UnifiedFleetDevice } from '@/types/device';
+import { RrmEditorField } from './RrmEditorField';
+import { normalizeRrmForSubmission } from './rrmHelper';
 
 export interface DeviceSpecificConfigSubTabProps {
   device: UnifiedFleetDevice;
@@ -41,16 +43,13 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
   }, [device]);
 
   // Initial values for Base Information fields matching OWPROV
-  const initialRrm = useMemo<'inherit' | 'on' | 'off'>(() => {
-    const val = (
+  const initialRrm = useMemo<string>(() => {
+    const raw =
       device.provTag?.deviceRules?.rrm ||
       (device as any).deviceRules?.rrm ||
       (device as any).rrm ||
-      'inherit'
-    ).toLowerCase();
-    if (val === 'on' || val === 'yes') return 'on';
-    if (val === 'off' || val === 'no') return 'off';
-    return 'inherit';
+      'inherit';
+    return typeof raw === 'object' && raw !== null ? JSON.stringify(raw) : String(raw);
   }, [device]);
 
   const initialFirmwareUpgrade = useMemo<'inherit' | 'yes' | 'no'>(() => {
@@ -74,7 +73,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
     return val === true || val === 'yes' || val === 'true';
   }, [device]);
 
-  const [rrm, setRrm] = useState<'inherit' | 'on' | 'off'>(initialRrm);
+  const [rrm, setRrm] = useState<string>(initialRrm);
   const [firmwareUpgrade, setFirmwareUpgrade] = useState<'inherit' | 'yes' | 'no'>(initialFirmwareUpgrade);
   const [firmwareRCOnly, setFirmwareRCOnly] = useState<boolean>(initialFirmwareRCOnly);
 
@@ -95,8 +94,8 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
   useEffect(() => {
     if (configData?.deviceRules) {
       if (configData.deviceRules.rrm) {
-        const val = configData.deviceRules.rrm.toLowerCase();
-        setRrm(val === 'on' || val === 'yes' ? 'on' : val === 'off' || val === 'no' ? 'off' : 'inherit');
+        const raw = configData.deviceRules.rrm;
+        setRrm(typeof raw === 'object' && raw !== null ? JSON.stringify(raw) : String(raw));
       }
       if (configData.deviceRules.firmwareUpgrade) {
         const val = configData.deviceRules.firmwareUpgrade.toLowerCase();
@@ -265,6 +264,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       // 1. Determine modular blocks to save:
       // If user modified sections, compile latestSectionsState.
       // Otherwise preserve existing blocks from configData.
+      const normalizedRrm = normalizeRrmForSubmission(rrm);
       let blocksToSave: ModularConfigElementPayload[] = [];
       if (latestSectionsState) {
         blocksToSave = compileStateToModularConfigurationElements(latestSectionsState);
@@ -280,7 +280,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           deviceGroup: resolvedGroup,
           deviceTypes: [resolvedType],
           deviceRules: {
-            rrm,
+            rrm: normalizedRrm,
             firmwareUpgrade,
             rcOnly: firmwareRCOnly ? 'yes' : 'no',
           },
@@ -294,7 +294,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           deviceGroup: resolvedGroup,
           deviceTypes: [resolvedType],
           deviceRules: {
-            rrm,
+            rrm: normalizedRrm,
             firmwareUpgrade,
             rcOnly: firmwareRCOnly ? 'yes' : 'no',
           },
@@ -317,7 +317,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           devClass: device.provTag?.devClass || 'venue',
           deviceConfiguration: activeConfigId || '',
           deviceRules: {
-            rrm,
+            rrm: normalizedRrm,
             firmwareUpgrade,
             rcOnly: firmwareRCOnly ? 'yes' : 'no',
           },
@@ -385,43 +385,13 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
 
           <Flex wrap="wrap" gap={8} align="flex-start">
             {/* RRM * */}
-            <Box>
-              <Text fontSize="12px" fontWeight="600" color="#475569" mb={1.5}>
-                RRM <Text as="span" color="#ef4444">*</Text>
-              </Text>
-              <Box position="relative" width="120px">
-                <select
-                  value={rrm}
-                  onChange={(e) => setRrm(e.target.value as 'inherit' | 'on' | 'off')}
-                  style={{
-                    width: '100%',
-                    height: '34px',
-                    padding: '4px 28px 4px 10px',
-                    fontSize: '13px',
-                    color: themeColors.text.title,
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '6px',
-                    appearance: 'none',
-                    cursor: 'pointer',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="inherit">inherit</option>
-                  <option value="on">on</option>
-                  <option value="off">off</option>
-                </select>
-                <Box
-                  position="absolute"
-                  right="8px"
-                  top="50%"
-                  transform="translateY(-50%)"
-                  pointerEvents="none"
-                  color="#64748b"
-                >
-                  <Icon name="chevronDown" size={14} />
-                </Box>
-              </Box>
+            <Box minW="150px">
+              <RrmEditorField
+                value={rrm}
+                onChange={setRrm}
+                required
+                disabled={isSaving}
+              />
             </Box>
 
             {/* Firmware Upgrade * */}
