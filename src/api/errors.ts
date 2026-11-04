@@ -4,6 +4,8 @@ import { toaster } from '@/components/ui/toaster';
 export interface OpenWiFiErrorResponse {
   ErrorCode?: number;
   ErrorDescription?: string;
+  ErrorDetails?: string;
+  errorDetails?: string;
   Details?: string;
   ErrorText?: string;
   error?: string;
@@ -35,6 +37,8 @@ export const getApiErrorMessage = (
     rawMessage = data;
   } else if (data && typeof data === 'object') {
     rawMessage =
+      data.ErrorDetails ||
+      data.errorDetails ||
       data.Details ||
       data.ErrorDescription ||
       data.ErrorText ||

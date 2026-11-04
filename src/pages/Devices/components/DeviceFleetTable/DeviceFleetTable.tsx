@@ -22,6 +22,7 @@ import {
   usePushDeviceConfig,
   useDeleteDeviceFromFleet,
 } from '@/api/devices';
+import { getApiErrorMessage } from '@/api/errors';
 import { toaster } from '@/components/ui/toaster';
 import { DevicePaginationControls } from './DevicePaginationControls';
 import { DeviceRowActions } from './DeviceRowActions';
@@ -183,7 +184,7 @@ export const DeviceFleetTable: React.FC = () => {
       await deleteMutation.mutateAsync(deleteTargetSerial);
       toaster.create({
         title: 'Device Removed',
-        description: `Device ${deleteTargetSerial} successfully deleted`,
+        description: `Device ${deleteTargetSerial} successfully removed from inventory`,
         type: 'success',
       });
       setDeleteTargetSerial(null);
@@ -191,7 +192,7 @@ export const DeviceFleetTable: React.FC = () => {
     } catch (err: unknown) {
       toaster.create({
         title: 'Delete Failed',
-        description: err instanceof Error ? err.message : 'Could not delete device',
+        description: getApiErrorMessage(err, `Could not delete device ${deleteTargetSerial}`),
         type: 'error',
       });
     }
