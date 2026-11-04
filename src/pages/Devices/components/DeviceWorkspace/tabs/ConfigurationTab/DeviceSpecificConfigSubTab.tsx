@@ -7,14 +7,21 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { useUpdateDeviceTag } from '@/api/devices';
-import { getModularConfigurationById } from '@/api/modularConfigurations';
+import {
+  getModularConfigurationById,
+  createModularConfiguration,
+  updateModularConfiguration,
+  deleteModularConfiguration,
+  type ModularConfigElementPayload,
+} from '@/api/modularConfigurations';
 import { toaster } from '@/components/ui/toaster';
 import { ConfigurationSectionsCard } from '@/pages/Configuration/components/ConfigurationSectionsCard';
 import type { ConfigurationSectionsState } from '@/pages/Configuration/components/ConfigurationSectionsCard/types';
+import { compileStateToModularConfigurationElements } from '@/pages/Configuration/components/ConfigurationSectionsCard/utils';
 import type { PlatformType } from '@/pages/Configuration/types/configuration';
 import type { UnifiedFleetDevice } from '@/types/device';
 
@@ -102,8 +109,23 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
     }
   }, [configData]);
 
-  // Initial config sections - empty by default so user can select each section on their own
+  const [latestSectionsState, setLatestSectionsState] = useState<ConfigurationSectionsState | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Initial config sections derived from configData or device.configuration
   const initialJson = useMemo(() => {
+    if (
+      configData?.configuration &&
+      Array.isArray(configData.configuration) &&
+      configData.configuration.length > 0
+    ) {
+      try {
+        return JSON.stringify(configData.configuration, null, 2);
+      } catch {
+        // fallback
+      }
+    }
     if (
       device.configuration &&
       typeof device.configuration === 'object' &&
@@ -116,14 +138,24 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       }
     }
     return '{}';
-  }, [device]);
+  }, [configData, device]);
 
   const [currentJson, setCurrentJson] = useState(initialJson);
   const updateMutation = useUpdateDeviceTag();
 
-  // Keep currentJson in sync if device configuration updates
+  // Keep currentJson in sync if configData or device.configuration updates
   useEffect(() => {
     if (
+      configData?.configuration &&
+      Array.isArray(configData.configuration) &&
+      configData.configuration.length > 0
+    ) {
+      try {
+        setCurrentJson(JSON.stringify(configData.configuration, null, 2));
+      } catch {
+        // ignore
+      }
+    } else if (
       device.configuration &&
       typeof device.configuration === 'object' &&
       Object.keys(device.configuration).length > 0
@@ -133,12 +165,13 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       } catch {
         // ignore
       }
-    } else {
+    } else if (!device.configId) {
       setCurrentJson('{}');
     }
-  }, [device.configuration]);
+  }, [configData, device.configuration, device.configId]);
 
-  const handleStateChange = (_state: ConfigurationSectionsState, compiled: string) => {
+  const handleStateChange = (state: ConfigurationSectionsState, compiled: string) => {
+    setLatestSectionsState(state);
     setCurrentJson(compiled);
   };
 
@@ -147,6 +180,9 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       return;
     }
     try {
+      setIsSaving(true);
+      const configId = device.configId || device.provTag?.deviceConfiguration;
+
       const resolvedType =
         device.provTag?.deviceType ||
         (device.deviceType && !['ap', 'switch', 'olg'].includes(device.deviceType) ? device.deviceType : device.model) ||
@@ -175,13 +211,28 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           venue: device.provTag?.venue || device.venueId || '',
           subscriber: device.provTag?.subscriber ?? (device.subscriberId || ''),
           state: device.provTag?.state ?? (device.state || ''),
-          configuration: {},
         } as any,
       });
+
+      if (configId) {
+        try {
+          await deleteModularConfiguration(configId);
+        } catch {
+          // ignore if already deleted or in-use
+        }
+      }
+
       setRrm('inherit');
       setFirmwareUpgrade('no');
       setFirmwareRCOnly(false);
       setCurrentJson('{}');
+      setLatestSectionsState(null);
+      if (configId) {
+        queryClient.invalidateQueries({ queryKey: ['modular-configuration-device', configId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', device.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', device.serialNumber] });
+
       toaster.create({
         title: 'Configuration Reset',
         description: 'Device-specific configuration and base rules have been reset.',
@@ -193,24 +244,15 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         description: err instanceof Error ? err.message : 'Could not delete device configuration',
         type: 'error',
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleSave = async () => {
     try {
-      let configObj: Record<string, unknown> | undefined;
-      if (currentJson && currentJson.trim()) {
-        try {
-          configObj = JSON.parse(currentJson);
-        } catch {
-          toaster.create({
-            title: 'Invalid JSON',
-            description: 'Could not parse configuration sections to valid JSON',
-            type: 'error',
-          });
-          return;
-        }
-      }
+      setIsSaving(true);
+      const configId = device.configId || device.provTag?.deviceConfiguration;
 
       const resolvedType =
         device.provTag?.deviceType ||
@@ -220,6 +262,50 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         device.provTag?.deviceGroup ||
         (['ap', 'switch', 'olg'].includes(device.deviceGroup) ? device.deviceGroup : 'ap');
 
+      // 1. Determine modular blocks to save:
+      // If user modified sections, compile latestSectionsState.
+      // Otherwise preserve existing blocks from configData.
+      let blocksToSave: ModularConfigElementPayload[] = [];
+      if (latestSectionsState) {
+        blocksToSave = compileStateToModularConfigurationElements(latestSectionsState);
+      } else if (configData?.configuration && Array.isArray(configData.configuration)) {
+        blocksToSave = configData.configuration;
+      }
+
+      let activeConfigId = configId;
+
+      // 2. If configuration exists, update via PUT /api/v1/configuration/{id}
+      if (activeConfigId) {
+        await updateModularConfiguration(activeConfigId, {
+          deviceGroup: resolvedGroup,
+          deviceTypes: [resolvedType],
+          deviceRules: {
+            rrm,
+            firmwareUpgrade,
+            rcOnly: firmwareRCOnly ? 'yes' : 'no',
+          },
+          configuration: blocksToSave,
+        });
+      } else if (blocksToSave.length > 0) {
+        // Create new device-specific modular configuration in OWPROV
+        const res = await createModularConfiguration({
+          name: `device:${device.serialNumber}`,
+          description: 'Device-specific configuration',
+          deviceGroup: resolvedGroup,
+          deviceTypes: [resolvedType],
+          deviceRules: {
+            rrm,
+            firmwareUpgrade,
+            rcOnly: firmwareRCOnly ? 'yes' : 'no',
+          },
+          configuration: blocksToSave,
+        });
+        if (res?.id) {
+          activeConfigId = res.id;
+        }
+      }
+
+      // 3. Update inventory tag with deviceRules and deviceConfiguration ID
       await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
         payload: {
@@ -229,7 +315,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           deviceType: resolvedType,
           deviceGroup: resolvedGroup,
           devClass: device.provTag?.devClass || 'venue',
-          deviceConfiguration: device.provTag?.deviceConfiguration ?? (device.configId || ''),
+          deviceConfiguration: activeConfigId || '',
           deviceRules: {
             rrm,
             firmwareUpgrade,
@@ -240,9 +326,14 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           venue: device.provTag?.venue || device.venueId || '',
           subscriber: device.provTag?.subscriber ?? (device.subscriberId || ''),
           state: device.provTag?.state ?? (device.state || ''),
-          configuration: configObj as any,
         } as any,
       });
+
+      if (activeConfigId) {
+        queryClient.invalidateQueries({ queryKey: ['modular-configuration-device', activeConfigId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', device.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', device.serialNumber] });
 
       toaster.create({
         title: 'Device Configuration Saved',
@@ -255,6 +346,8 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         description: err instanceof Error ? err.message : 'Could not save device configuration',
         type: 'error',
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -418,11 +511,11 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
             color="#ffffff"
             _hover={{ bg: themeColors.brand.primaryHover }}
             onClick={handleSave}
-            disabled={updateMutation.isPending}
+            disabled={isSaving || updateMutation.isPending}
             gap={1.5}
             px={5}
           >
-            {updateMutation.isPending ? <Spinner size="xs" /> : <Icon name="check" size={14} />}
+            {isSaving || updateMutation.isPending ? <Spinner size="xs" /> : <Icon name="check" size={14} />}
             Save Configuration
           </Button>
         </Flex>
