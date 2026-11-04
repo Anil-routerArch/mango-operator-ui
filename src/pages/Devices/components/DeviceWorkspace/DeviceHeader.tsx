@@ -112,6 +112,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
   };
 
   const handleDelete = async () => {
+    setIsDeleteOpen(false);
     try {
       await deleteMutation.mutateAsync(device.serialNumber);
       toaster.create({

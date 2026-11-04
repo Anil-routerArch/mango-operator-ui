@@ -36,20 +36,32 @@ export const getApiErrorMessage = (
   if (typeof data === 'string' && data.trim()) {
     rawMessage = data;
   } else if (data && typeof data === 'object') {
-    rawMessage =
-      data.ErrorDetails ||
-      data.errorDetails ||
-      data.Details ||
-      data.ErrorDescription ||
-      data.ErrorText ||
-      data.error ||
-      data.Error ||
-      data.message ||
-      '';
+    const details = data.ErrorDetails || data.errorDetails || data.Details;
+    const desc = data.ErrorDescription || data.ErrorText || data.error || data.Error || data.message;
+
+    // Prefer details if it has real content not containing generic downstream wrappers
+    if (details && !/downstream/i.test(details)) {
+      rawMessage = details;
+    } else if (desc && !/downstream/i.test(desc)) {
+      rawMessage = desc;
+    } else {
+      rawMessage = details || desc || '';
+    }
   }
 
   const cleanMessage = stripErrorCodePrefix(rawMessage);
   const lowerMessage = cleanMessage.toLowerCase();
+
+  // If the message is a residual downstream status wrapper, normalize to user-friendly status message
+  if (/downstream\s+(owprov|owgw|owsec)\s+returned\s+status\s+\d+/i.test(cleanMessage) || lowerMessage === 'downstream error') {
+    if (error.response?.status === 403) return 'You do not have permission to perform this action.';
+    if (error.response?.status === 401) return 'Session expired or unauthorized. Please sign in again.';
+    if (error.response?.status === 404) return 'The requested device or resource was not found.';
+    if (error.response?.status === 500) return 'Internal server error. Please try again later.';
+    if (error.response?.status === 502 || error.response?.status === 503) {
+      return 'Service temporarily unavailable. Please try again later.';
+    }
+  }
 
   if (!cleanMessage) {
     if (error.code === 'ECONNABORTED') return 'Request timed out. Please check your network connection.';
