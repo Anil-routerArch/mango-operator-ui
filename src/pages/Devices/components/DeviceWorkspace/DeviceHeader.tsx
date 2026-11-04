@@ -105,7 +105,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Reboot Failed',
-        description: err instanceof Error ? err.message : 'Failed to send reboot command',
+        description: getApiErrorMessage(err, 'Failed to send reboot command'),
         type: 'error',
       });
     }
@@ -124,7 +124,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Delete Failed',
-        description: getApiErrorMessage(err, `Failed to delete device ${device.serialNumber}`),
+        description: getApiErrorMessage(err, 'Failed to delete device'),
         type: 'error',
       });
     }
@@ -151,7 +151,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Terminal Launch Failed',
-        description: err instanceof Error ? err.message : 'Unable to initiate RTTY session (device may be offline)',
+        description: getApiErrorMessage(err, 'Unable to initiate RTTY session (device may be offline)'),
         type: 'error',
       });
     }
@@ -168,7 +168,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Blink Command Failed',
-        description: err instanceof Error ? err.message : 'Failed to blink LEDs',
+        description: getApiErrorMessage(err, 'Failed to blink LEDs'),
         type: 'error',
       });
     }

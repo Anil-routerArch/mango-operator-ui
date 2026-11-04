@@ -137,7 +137,7 @@ export const DeviceFleetTable: React.FC = () => {
     } catch (err: unknown) {
       toaster.create({
         title: 'Reboot Failed',
-        description: err instanceof Error ? err.message : 'Failed to reboot device',
+        description: getApiErrorMessage(err, 'Failed to reboot device'),
         type: 'error',
       });
     }
@@ -154,7 +154,7 @@ export const DeviceFleetTable: React.FC = () => {
     } catch (err: unknown) {
       toaster.create({
         title: 'Scan Request Failed',
-        description: err instanceof Error ? err.message : 'Failed to request scan',
+        description: getApiErrorMessage(err, 'Failed to request scan'),
         type: 'error',
       });
     }
@@ -172,7 +172,7 @@ export const DeviceFleetTable: React.FC = () => {
     } catch (err: unknown) {
       toaster.create({
         title: 'Sync Failed',
-        description: err instanceof Error ? err.message : 'Failed to push configuration',
+        description: getApiErrorMessage(err, 'Failed to push configuration'),
         type: 'error',
       });
     }
@@ -193,7 +193,7 @@ export const DeviceFleetTable: React.FC = () => {
     } catch (err: unknown) {
       toaster.create({
         title: 'Delete Failed',
-        description: getApiErrorMessage(err, `Could not delete device ${targetSerial}`),
+        description: getApiErrorMessage(err, 'Failed to delete device'),
         type: 'error',
       });
     }
