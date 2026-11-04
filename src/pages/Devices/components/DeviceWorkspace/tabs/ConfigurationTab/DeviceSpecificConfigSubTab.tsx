@@ -198,7 +198,6 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           notes: (device.provTag?.notes || device.notes || []).map((n) => ({ note: n.note })),
           deviceType: resolvedType,
           deviceGroup: resolvedGroup,
-          platform: resolvedGroup.toUpperCase(),
           devClass: device.provTag?.devClass || 'venue',
           deviceConfiguration: '',
           deviceRules: {
@@ -315,7 +314,6 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           notes: (device.provTag?.notes || device.notes || []).map((n) => ({ note: n.note })),
           deviceType: resolvedType,
           deviceGroup: resolvedGroup,
-          platform: resolvedGroup.toUpperCase(),
           devClass: device.provTag?.devClass || 'venue',
           deviceConfiguration: activeConfigId || '',
           deviceRules: {

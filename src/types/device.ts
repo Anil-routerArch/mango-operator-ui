@@ -44,7 +44,6 @@ export interface InventoryTagApiResponse {
   description?: string;
   deviceType?: string;
   deviceGroup?: string;
-  platform?: string;
   devClass?: string;
   entity?: string;
   venue?: string;
@@ -285,7 +284,6 @@ export interface UnifiedFleetDevice {
   description?: string;
   model: string;
   deviceGroup: 'ap' | 'switch' | 'olg' | string;
-  platform?: string;
   deviceType: string;
   connected: boolean;
   sanity: number;
