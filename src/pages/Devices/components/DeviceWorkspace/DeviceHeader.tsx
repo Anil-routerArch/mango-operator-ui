@@ -28,6 +28,7 @@ import {
   useDeleteDeviceFromFleet,
   useLaunchRttySession,
 } from '@/api/devices';
+import { getApiErrorMessage } from '@/api/errors';
 import { toaster } from '@/components/ui/toaster';
 import { type UnifiedFleetDevice, normalizePlatformDeviceType } from '@/types/device';
 
@@ -122,7 +123,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Delete Failed',
-        description: err instanceof Error ? err.message : 'Failed to delete device',
+        description: getApiErrorMessage(err, `Failed to delete device ${device.serialNumber}`),
         type: 'error',
       });
     }
