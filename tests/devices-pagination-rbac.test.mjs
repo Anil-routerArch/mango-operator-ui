@@ -1358,6 +1358,56 @@ test('Eliminates fabricated device telemetry, credentials, and demo blacklist fa
   );
 });
 
+test('useUpdateInventoryTag and device mutations invalidate active workspace and paginated fleet caches (Finding #9)', () => {
+  const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+  const devicesApiContent = fs.readFileSync(devicesApiPath, 'utf-8');
+
+  // Extract useUpdateInventoryTag block
+  const updateTagBlock = devicesApiContent.match(/export const useUpdateInventoryTag = [\s\S]*?^};/m)?.[0] || '';
+  assert.ok(updateTagBlock.length > 0, 'devices.ts must define useUpdateInventoryTag');
+
+  // Verify it invalidates single-device-overview
+  assert.ok(
+    updateTagBlock.includes("queryKey: ['single-device-overview'"),
+    'useUpdateInventoryTag must invalidate single-device-overview for active workspace'
+  );
+
+  // Verify it invalidates paginated-fleet-devices
+  assert.ok(
+    updateTagBlock.includes("queryKey: ['paginated-fleet-devices']"),
+    'useUpdateInventoryTag must invalidate paginated-fleet-devices for fleet table'
+  );
+
+  // Verify it invalidates device-computed-config
+  assert.ok(
+    updateTagBlock.includes("queryKey: ['device-computed-config'"),
+    'useUpdateInventoryTag must invalidate device-computed-config'
+  );
+
+  // Verify useConfigureDeviceDirect invalidates single-device-overview and paginated-fleet-devices
+  const configureBlock = devicesApiContent.match(/export const useConfigureDeviceDirect = [\s\S]*?^};/m)?.[0] || '';
+  assert.ok(
+    configureBlock.includes("queryKey: ['single-device-overview'"),
+    'useConfigureDeviceDirect must invalidate single-device-overview'
+  );
+  assert.ok(
+    configureBlock.includes("queryKey: ['paginated-fleet-devices']"),
+    'useConfigureDeviceDirect must invalidate paginated-fleet-devices'
+  );
+
+  // Verify usePushDeviceConfig invalidates single-device-overview and paginated-fleet-devices
+  const pushBlock = devicesApiContent.match(/export const usePushDeviceConfig = [\s\S]*?^};/m)?.[0] || '';
+  assert.ok(
+    pushBlock.includes("queryKey: ['single-device-overview'"),
+    'usePushDeviceConfig must invalidate single-device-overview'
+  );
+  assert.ok(
+    pushBlock.includes("queryKey: ['paginated-fleet-devices']"),
+    'usePushDeviceConfig must invalidate paginated-fleet-devices'
+  );
+});
+
+
 
 
 
