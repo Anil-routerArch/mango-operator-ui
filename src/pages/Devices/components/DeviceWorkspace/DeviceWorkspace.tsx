@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box, Flex, Spinner, Text } from '@chakra-ui/react';
+import { Box, Button, Flex, Spinner, Text, VStack } from '@chakra-ui/react';
+import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { DeviceHeader } from './DeviceHeader';
 import { DeviceOverviewTab } from './tabs/OverviewTab';
@@ -14,7 +15,7 @@ export interface DeviceWorkspaceProps {
 }
 
 export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }) => {
-  const { workspaceTab, setWorkspaceTab } = useDevicesUiStore();
+  const { workspaceTab, setWorkspaceTab, clearSelectedDevice } = useDevicesUiStore();
 
   const { data: device, isLoading, refetch, isFetching } = useDeviceOverview(serialNumber);
 
@@ -35,31 +36,33 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
     );
   }
 
-  // Construct fallback unified device if backend data hasn't arrived
-  const activeDevice: UnifiedFleetDevice = device || {
-    serialNumber,
-    name: serialNumber,
-    deviceGroup: 'ap',
-    connected: false,
-    sanity: 42,
-    deviceType: 'edgecore_eap104',
-    model: 'EAP104',
-    revision: 'R2',
-    ipAddress: '192.168.1.100',
-    firmware: 'TIP-v4.2.4',
-    associationsTotal: 0,
-    associations_2G: 0,
-    associations_5G: 0,
-    associations_6G: 0,
-    rxBytes: 0,
-    txBytes: 0,
-    blacklisted: false,
-    simulated: false,
-    restricted: false,
-    entityName: 'Sunrise Apartments',
-    venueName: 'Building B',
-    lastContact: Math.floor(Date.now() / 1000) - 480,
-  };
+  if (!device) {
+    return (
+      <Flex justify="center" align="center" minH="400px" direction="column" gap={4} p={6}>
+        <Box color="#dc2626">
+          <Icon name="alertTriangle" size={40} />
+        </Box>
+        <VStack gap={1} textAlign="center">
+          <Text fontSize="16px" fontWeight="700" color={themeColors.text.title}>
+            Device Not Found
+          </Text>
+          <Text fontSize="13px" color={themeColors.text.secondary}>
+            No inventory or gateway records were found for device{' '}
+            <Text as="span" fontFamily="monospace" fontWeight="600">
+              {serialNumber}
+            </Text>
+            .
+          </Text>
+        </VStack>
+        <Button size="sm" variant="outline" onClick={clearSelectedDevice} gap={1.5}>
+          <Icon name="chevronLeft" size={14} />
+          Back to Device Fleet
+        </Button>
+      </Flex>
+    );
+  }
+
+  const activeDevice: UnifiedFleetDevice = device;
 
   const renderActiveTab = () => {
     switch (workspaceTab) {

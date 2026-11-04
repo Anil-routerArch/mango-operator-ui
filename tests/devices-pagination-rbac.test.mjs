@@ -1279,6 +1279,86 @@ test('Device Group and platform round-trip correctly between OWPROV and UnifiedF
   assert.strictEqual(resolvedGroupFromTag, 'switch', 'Must correctly map platform "SWITCH" to group "switch"');
 });
 
+test('Eliminates fabricated device telemetry, credentials, and demo blacklist fallbacks (Finding #8)', () => {
+  const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+  const devicesApiContent = fs.readFileSync(devicesApiPath, 'utf-8');
+
+  const blacklistTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceBlacklist',
+    'DeviceBlacklistTab.tsx'
+  );
+  const blacklistTabContent = fs.readFileSync(blacklistTabPath, 'utf-8');
+
+  const workspacePath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'DeviceWorkspace.tsx'
+  );
+  const workspaceContent = fs.readFileSync(workspacePath, 'utf-8');
+
+  // 1. Blacklist tab must not contain demo fabricated fallback records
+  assert.ok(
+    !blacklistTabContent.includes("serialNumber: '00:11:22:33:44:55'"),
+    'DeviceBlacklistTab must not supply a fallback demo blocked device'
+  );
+  assert.ok(
+    !blacklistTabContent.includes("'Rogue AP spoofing SSID'"),
+    'DeviceBlacklistTab must not fabricate fake security threats'
+  );
+  assert.ok(
+    blacklistTabContent.includes('No Blacklisted Devices'),
+    'DeviceBlacklistTab must render a real empty state when no devices are blacklisted'
+  );
+
+  // 2. devices.ts must not contain fabricated fallbacks
+  assert.ok(
+    !devicesApiContent.includes('anilbeheraapril13@gmail.com'),
+    'devices.ts must not hardcode personal email addresses as fallback venue'
+  );
+  assert.ok(
+    !devicesApiContent.includes('b5930152-566c-4d16-91f9-814267088e36'),
+    'devices.ts must not hardcode fake subscriber UUIDs'
+  );
+  assert.ok(
+    !devicesApiContent.includes('Auto-provisioned.'),
+    'devices.ts must not hardcode fake auto-provisioned notes'
+  );
+  assert.ok(
+    !devicesApiContent.includes('41.66'),
+    'devices.ts must not hardcode fake memoryUsedPct'
+  );
+  assert.ok(
+    !devicesApiContent.includes('2147'),
+    'devices.ts must not hardcode fake uptimeSeconds'
+  );
+
+  // 3. useDeviceOverview must return null when device does not exist
+  assert.ok(
+    devicesApiContent.includes('if (!tag && !gw && !status)'),
+    'useDeviceOverview must verify records exist and return null for non-existent devices'
+  );
+
+  // 4. DeviceWorkspace must render Device Not Found state rather than synthesizing demo devices
+  assert.ok(
+    workspaceContent.includes('Device Not Found'),
+    'DeviceWorkspace must render Device Not Found state when device does not exist'
+  );
+  assert.ok(
+    !workspaceContent.includes('Sunrise Apartments'),
+    'DeviceWorkspace must not fabricate fake property names'
+  );
+});
+
+
 
 
 

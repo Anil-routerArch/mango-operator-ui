@@ -10,7 +10,7 @@ export interface DeviceHealthCardProps {
 
 export const DeviceHealthCard: React.FC<DeviceHealthCardProps> = ({ device }) => {
   const isConnected = !!device.connected;
-  const sanity = device.sanity ?? (isConnected ? 100 : 42);
+  const sanity = device.sanity ?? (isConnected ? 100 : 0);
 
   // Determine health level
   const isCritical = sanity < 60 || !isConnected;
@@ -23,13 +23,13 @@ export const DeviceHealthCard: React.FC<DeviceHealthCardProps> = ({ device }) =>
     ? `${Math.round(device.memoryUsedPct)}%`
     : device.memoryUsed !== undefined
     ? `${Math.round(device.memoryUsed)}%`
-    : '68%';
+    : '-';
 
   const certStatus = device.certificateExpiry
     ? device.certificateExpiry > Math.floor(Date.now() / 1000)
       ? 'Valid'
       : 'Expired'
-    : 'Valid';
+    : 'Unknown';
 
   return (
     <DeviceCard title="Device Health" minH="210px">

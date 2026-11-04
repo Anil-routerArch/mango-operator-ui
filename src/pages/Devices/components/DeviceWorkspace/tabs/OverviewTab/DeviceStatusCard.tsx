@@ -20,7 +20,7 @@ export interface DeviceStatusCardProps {
  * Format uptime seconds into "X Days, HH:MM:SS"
  */
 const formatUptime = (seconds?: number): string => {
-  if (seconds === undefined || seconds === null || isNaN(seconds)) return '0 Days, 00:35:47';
+  if (seconds === undefined || seconds === null || isNaN(seconds)) return '-';
   const days = Math.floor(seconds / 86400);
   const rem = seconds % 86400;
   const hours = Math.floor(rem / 3600);
@@ -40,14 +40,15 @@ const formatLoad = (load?: number[] | [number, number, number] | number): string
   if (typeof load === 'number') {
     return `${load.toFixed(2)} | ${(load * 0.85).toFixed(2)} | ${(load * 0.95).toFixed(2)}`;
   }
-  return '0.24 | 0.20 | 0.23';
+  return '-';
 };
 
 /**
  * Format local time
  */
 const formatLocalTime = (timestamp?: number): string => {
-  const d = timestamp ? new Date(timestamp * 1000) : new Date();
+  if (!timestamp) return '-';
+  const d = new Date(timestamp * 1000);
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
@@ -55,13 +56,14 @@ const formatLocalTime = (timestamp?: number): string => {
 export const DeviceStatusCard: React.FC<DeviceStatusCardProps> = ({ device }) => {
   const memoryTotalMB = device.unitMemoryTotal
     ? (device.unitMemoryTotal / (1024 * 1024)).toFixed(2)
-    : '244.13';
-  const memoryPct = typeof device.memoryUsedPct === 'number' ? device.memoryUsedPct : 41.66;
-  const memoryBadgeColor = memoryPct > 85 ? 'red' : memoryPct > 60 ? 'yellow' : 'green';
+    : undefined;
+  const memoryPct = typeof device.memoryUsedPct === 'number' ? device.memoryUsedPct : undefined;
+  const memoryBadgeColor = memoryPct && memoryPct > 85 ? 'red' : memoryPct && memoryPct > 60 ? 'yellow' : 'green';
 
   const formatLastContact = () => {
-    if (!device.lastContact) return '14 seconds ago';
+    if (!device.lastContact) return '-';
     const diff = Math.floor(Date.now() / 1000) - device.lastContact;
+    if (diff < 0) return 'Just now';
     if (diff < 60) return `${Math.max(1, diff)} seconds ago`;
     if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
     return `${Math.floor(diff / 3600)} hours ago`;
@@ -142,14 +144,14 @@ export const DeviceStatusCard: React.FC<DeviceStatusCardProps> = ({ device }) =>
             Model:
           </GridItem>
           <GridItem color={themeColors.text.primary} fontFamily="mono">
-            {device.model || 'asus_rt-ax53u'}
+            {device.model || '-'}
           </GridItem>
 
           <GridItem fontWeight="600" color={themeColors.text.title}>
             Revision:
           </GridItem>
           <GridItem color={themeColors.text.primary} fontFamily="mono">
-            {device.revision || device.firmware || 'TIP-v4.2.4-1a0ba9bf'}
+            {device.revision || device.firmware || '-'}
           </GridItem>
 
           <GridItem fontWeight="600" color={themeColors.text.title}>
@@ -177,10 +179,13 @@ export const DeviceStatusCard: React.FC<DeviceStatusCardProps> = ({ device }) =>
             Locale:
           </GridItem>
           <GridItem color={themeColors.text.primary}>
-            <HStack gap={1.5}>
-              <Text as="span">🇺🇸</Text>
-              <Text as="span">United States</Text>
-            </HStack>
+            {device.locale ? (
+              <HStack gap={1.5}>
+                <Text as="span">{device.locale.toUpperCase()}</Text>
+              </HStack>
+            ) : (
+              '-'
+            )}
           </GridItem>
 
           <GridItem fontWeight="600" color={themeColors.text.title}>
@@ -194,41 +199,49 @@ export const DeviceStatusCard: React.FC<DeviceStatusCardProps> = ({ device }) =>
             Memory:
           </GridItem>
           <GridItem color={themeColors.text.primary}>
-            <HStack gap={2}>
-              <Text as="span">{memoryTotalMB} MB</Text>
-              <Badge
-                colorPalette={memoryBadgeColor}
-                variant="subtle"
-                fontSize="11px"
-                fontWeight="600"
-                px={1.5}
-                py={0.5}
-                borderRadius="4px"
-              >
-                {memoryPct.toFixed(2)}% used
-              </Badge>
-            </HStack>
+            {memoryTotalMB || memoryPct !== undefined ? (
+              <HStack gap={2}>
+                {memoryTotalMB && <Text as="span">{memoryTotalMB} MB</Text>}
+                {memoryPct !== undefined && (
+                  <Badge
+                    colorPalette={memoryBadgeColor}
+                    variant="subtle"
+                    fontSize="11px"
+                    fontWeight="600"
+                    px={1.5}
+                    py={0.5}
+                    borderRadius="4px"
+                  >
+                    {memoryPct.toFixed(2)}% used
+                  </Badge>
+                )}
+              </HStack>
+            ) : (
+              '-'
+            )}
           </GridItem>
 
           <GridItem fontWeight="600" color={themeColors.text.title}>
             Certificate Expiry:
           </GridItem>
           <GridItem color={themeColors.text.primary}>
-            {device.certificateExpiry ? '2 years' : '2 years'}
+            {device.certificateExpiry
+              ? new Date(device.certificateExpiry * 1000).toLocaleDateString()
+              : '-'}
           </GridItem>
 
           <GridItem fontWeight="600" color={themeColors.text.title}>
             Certificate Issuer:
           </GridItem>
           <GridItem color={themeColors.text.primary} wordBreak="break-word" fontSize="12px">
-            {device.certificateIssuerName || 'MangoCloud Issuer,C=IN,ST=UP,O=Router Architects,OU=MangoCloud'}
+            {device.certificateIssuerName || '-'}
           </GridItem>
 
           <GridItem fontWeight="600" color={themeColors.text.title}>
             Connect Reason:
           </GridItem>
           <GridItem color={themeColors.text.primary}>
-            {device.connectReason || 'Coldboot'}
+            {device.connectReason || '-'}
           </GridItem>
         </Grid>
       </Flex>

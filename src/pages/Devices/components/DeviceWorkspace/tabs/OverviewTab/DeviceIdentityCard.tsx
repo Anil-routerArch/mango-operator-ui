@@ -15,7 +15,7 @@ export const DeviceIdentityCard: React.FC<DeviceIdentityCardProps> = ({ device }
 
   // Format MAC with colons if plain hex
   const formatMac = (mac?: string) => {
-    if (!mac) return device.macAddress || '84:16:F9:2A:B2:04';
+    if (!mac) return '-';
     if (mac.includes(':')) return mac.toUpperCase();
     return (mac.match(/.{1,2}/g)?.join(':') || mac).toUpperCase();
   };
@@ -46,25 +46,25 @@ export const DeviceIdentityCard: React.FC<DeviceIdentityCardProps> = ({ device }
     },
     {
       label: 'Model',
-      value: device.model || device.deviceType || 'EAP104',
+      value: device.model || device.deviceType || '-',
       copyable: false,
       key: 'model',
     },
     {
       label: 'Revision',
-      value: device.revision || 'R2',
+      value: device.revision || '-',
       copyable: false,
       key: 'revision',
     },
     {
       label: 'Property',
-      value: device.entityName || 'Sunrise Apartments',
+      value: device.entityName || '-',
       copyable: false,
       key: 'property',
     },
     {
       label: 'Venue',
-      value: device.venueName || 'Building B',
+      value: device.venueName || '-',
       copyable: false,
       key: 'venue',
     },
