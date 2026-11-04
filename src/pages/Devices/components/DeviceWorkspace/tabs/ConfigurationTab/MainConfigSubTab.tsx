@@ -49,6 +49,10 @@ const DEVICE_TYPES_BY_GROUP: Record<string, string[]> = {
 };
 
 export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) => {
+  const { data: fmsDeviceTypeInfo } = useGetDeviceTypeInfo();
+  const { data: entities = [] } = useGetEntities();
+  const { data: venues = [] } = useGetVenues();
+
   const resolveInitialParent = (d: UnifiedFleetDevice): string => {
     if (d.provTag?.venue) return `ven:${d.provTag.venue}`;
     if (d.provTag?.entity) return `ent:${d.provTag.entity}`;
@@ -58,9 +62,27 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
   };
 
   const resolveInitialGroup = (dev: UnifiedFleetDevice): string => {
-    if (dev.provTag?.deviceGroup) return dev.provTag.deviceGroup;
-    const rawGrp = dev.deviceGroup;
+    // 1. Direct platform or deviceGroup from provTag
+    const tagPlatform = dev.provTag?.platform?.toLowerCase() || dev.provTag?.deviceGroup?.toLowerCase();
+    if (tagPlatform === 'ap' || tagPlatform === 'switch' || tagPlatform === 'olg') return tagPlatform;
+
+    // 2. Direct deviceGroup on unified fleet device
+    const rawGrp = dev.deviceGroup?.toLowerCase();
     if (rawGrp === 'ap' || rawGrp === 'switch' || rawGrp === 'olg') return rawGrp;
+
+    // 3. Resolve from dev.deviceType using FMS deviceTypesByClass mapping or static map
+    const devType = dev.provTag?.deviceType || dev.deviceType;
+    if (devType && fmsDeviceTypeInfo?.deviceTypesByClass) {
+      for (const [grp, types] of Object.entries(fmsDeviceTypeInfo.deviceTypesByClass)) {
+        if (types.includes(devType)) return grp;
+      }
+    }
+    if (devType) {
+      for (const [grp, types] of Object.entries(DEVICE_TYPES_BY_GROUP)) {
+        if (types.includes(devType)) return grp;
+      }
+    }
+
     return 'ap';
   };
 
@@ -113,11 +135,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
         }
       }
     }
-  }, [device]);
-
-  const { data: fmsDeviceTypeInfo } = useGetDeviceTypeInfo();
-  const { data: entities = [] } = useGetEntities();
-  const { data: venues = [] } = useGetVenues();
+  }, [device, fmsDeviceTypeInfo]);
 
   const sortedEntities = useMemo(
     () => [...entities].sort((a, b) => a.name.localeCompare(b.name)),
@@ -169,6 +187,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
           notes: (device.provTag?.notes || device.notes || []).map((n) => ({ note: n.note })),
           deviceType,
           deviceGroup,
+          platform: deviceGroup.toUpperCase(),
           devClass,
           deviceConfiguration: device.provTag?.deviceConfiguration ?? (device.configId || ''),
           deviceRules: {

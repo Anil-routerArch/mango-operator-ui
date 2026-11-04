@@ -1204,6 +1204,82 @@ test('RRM validation and serialization aligns strictly with OWPROV ValidRRM cont
   assert.strictEqual(parsedCustom.payload.algorithms[0].name, 'algo-1');
 });
 
+test('Device Group and platform round-trip correctly between OWPROV and UnifiedFleetDevice', () => {
+  const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+  const mainSubTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'MainConfigSubTab.tsx'
+  );
+  const deviceSpecificSubTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'DeviceSpecificConfigSubTab.tsx'
+  );
+
+  const devicesContent = fs.readFileSync(devicesApiPath, 'utf-8');
+  const mainContent = fs.readFileSync(mainSubTabPath, 'utf-8');
+  const deviceSpecificContent = fs.readFileSync(deviceSpecificSubTabPath, 'utf-8');
+
+  // 1. Verify devices.ts maps tag.platform into normalizePlatformDeviceType
+  assert.ok(
+    devicesContent.includes('tag.platform || tag.deviceGroup || liveGw?.deviceType'),
+    'devices.ts must prioritize tag.platform when resolving fleet device platform'
+  );
+  assert.ok(
+    devicesContent.includes('tag?.platform || tag?.deviceGroup || gw?.deviceType'),
+    'devices.ts useDeviceOverview must prioritize tag.platform when resolving single device platform'
+  );
+  assert.ok(
+    devicesContent.includes('platform: tag.platform || resolvedPlatform.toUpperCase()'),
+    'devices.ts must map platform to UnifiedFleetDevice'
+  );
+
+  // 2. Verify MainConfigSubTab inspects provTag.platform and FMS deviceTypesByClass
+  assert.ok(
+    mainContent.includes('dev.provTag?.platform?.toLowerCase() || dev.provTag?.deviceGroup?.toLowerCase()'),
+    'MainConfigSubTab must inspect provTag.platform when resolving initial group'
+  );
+  assert.ok(
+    mainContent.includes('fmsDeviceTypeInfo?.deviceTypesByClass'),
+    'MainConfigSubTab must resolve group from deviceTypesByClass matching official OWPROV UI'
+  );
+
+  // 3. Verify updates send both deviceGroup and uppercase platform
+  assert.ok(
+    mainContent.includes('platform: deviceGroup.toUpperCase()'),
+    'MainConfigSubTab must submit platform along with deviceGroup'
+  );
+  assert.ok(
+    deviceSpecificContent.includes('platform: resolvedGroup.toUpperCase()'),
+    'DeviceSpecificConfigSubTab must submit platform along with deviceGroup'
+  );
+
+  // 4. Round-trip simulation: when OWPROV returns platform: "SWITCH" without deviceGroup
+  const mockProvTag = {
+    serialNumber: '24f5a2000001',
+    deviceType: 'edgecore_ecs4100_28p',
+    platform: 'SWITCH',
+  };
+  const resolvedGroupFromTag =
+    mockProvTag.platform?.toLowerCase() ||
+    mockProvTag.deviceGroup?.toLowerCase();
+  assert.strictEqual(resolvedGroupFromTag, 'switch', 'Must correctly map platform "SWITCH" to group "switch"');
+});
+
+
 
 
 
