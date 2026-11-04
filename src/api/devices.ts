@@ -509,6 +509,8 @@ export const useCreateBlacklistDevice = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices-blacklist'] });
       queryClient.invalidateQueries({ queryKey: ['fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview'] });
     },
   });
 };
@@ -523,6 +525,8 @@ export const useDeleteBlacklistDevice = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['devices-blacklist'] });
       queryClient.invalidateQueries({ queryKey: ['fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview'] });
     },
   });
 };
@@ -787,8 +791,15 @@ export const useUpdateDeviceOverrides = () => {
       return res.data;
     },
     onSuccess: (_, variables) => {
+      const clean = normalizeSerial(variables.serialNumber);
+      queryClient.invalidateQueries({ queryKey: ['device-overrides', clean] });
       queryClient.invalidateQueries({ queryKey: ['device-overrides', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', clean] });
       queryClient.invalidateQueries({ queryKey: ['device-computed-config', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', clean] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['fleet-devices'] });
     },
   });
 };
@@ -806,8 +817,15 @@ export const usePushDeviceConfig = () => {
       return res.data;
     },
     onSuccess: (_, serialNumber) => {
+      const clean = normalizeSerial(serialNumber);
+      queryClient.invalidateQueries({ queryKey: ['device-commands', clean] });
       queryClient.invalidateQueries({ queryKey: ['device-commands', serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', clean] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', clean] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', serialNumber] });
       queryClient.invalidateQueries({ queryKey: ['fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
     },
   });
 };
@@ -824,9 +842,15 @@ export const useRebootDevice = () => {
       return res.data;
     },
     onSuccess: (_, variables) => {
+      const clean = normalizeSerial(variables.serialNumber);
+      queryClient.invalidateQueries({ queryKey: ['device-commands', clean] });
       queryClient.invalidateQueries({ queryKey: ['device-commands', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['device-record', clean] });
       queryClient.invalidateQueries({ queryKey: ['device-record', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', clean] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', variables.serialNumber] });
       queryClient.invalidateQueries({ queryKey: ['fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
     },
   });
 };
@@ -902,8 +926,13 @@ export const useFactoryResetDevice = () => {
       return res.data;
     },
     onSuccess: (_, variables) => {
+      const clean = normalizeSerial(variables.serialNumber);
+      queryClient.invalidateQueries({ queryKey: ['device-commands', clean] });
       queryClient.invalidateQueries({ queryKey: ['device-commands', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', clean] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', variables.serialNumber] });
       queryClient.invalidateQueries({ queryKey: ['fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
     },
   });
 };
@@ -922,9 +951,17 @@ export const useConfigureDeviceDirect = () => {
       return res.data;
     },
     onSuccess: (_, variables) => {
+      const clean = normalizeSerial(variables.serialNumber);
+      queryClient.invalidateQueries({ queryKey: ['device-record', clean] });
       queryClient.invalidateQueries({ queryKey: ['device-record', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['device-commands', clean] });
       queryClient.invalidateQueries({ queryKey: ['device-commands', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', clean] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', clean] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', variables.serialNumber] });
       queryClient.invalidateQueries({ queryKey: ['fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
     },
   });
 };
@@ -938,8 +975,16 @@ export const useUpdateInventoryTag = () => {
       return res.data;
     },
     onSuccess: (_, variables) => {
+      const clean = normalizeSerial(variables.serialNumber);
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', clean] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-detail', clean] });
       queryClient.invalidateQueries({ queryKey: ['single-device-detail', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
       queryClient.invalidateQueries({ queryKey: ['fleet-devices'] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', clean] });
+      queryClient.invalidateQueries({ queryKey: ['device-computed-config', variables.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['devices-controller-dashboard'] });
     },
   });
 };
