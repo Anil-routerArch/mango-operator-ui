@@ -223,9 +223,9 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
 
   const createDuplicateError = useMemo(() => {
     const exists = overrides.some(
-      (o) => o.parameterName.toLowerCase() === targetCreateParamName.toLowerCase(),
+      (o) => (o.source || 'device') === 'device' && o.parameterName.toLowerCase() === targetCreateParamName.toLowerCase(),
     );
-    return exists ? `Parameter "${targetCreateParamName}" already exists` : undefined;
+    return exists ? `Device override for "${targetCreateParamName}" already exists` : undefined;
   }, [overrides, targetCreateParamName]);
 
   const createValueError = useMemo(() => {
@@ -278,9 +278,12 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
     setIsSaving(true);
 
     try {
+      // OWPROV PUT ...?source=device only accepts overrides for 'device'.
+      // Sending other sources causes OWPROV to duplicate them into device-level overrides.
+      const deviceOverrides = nextOverrides.filter((o) => (o.source || 'device') === 'device');
       await updateMutation.mutateAsync({
         serialNumber: serial,
-        overrides: nextOverrides,
+        overrides: deviceOverrides,
         source: 'device',
       });
       toaster.create({
@@ -332,14 +335,17 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
   const handleSaveEdit = async () => {
     if (!editingOverride || editValueError || editReason.length > 64) return;
 
+    const targetSource = editingOverride.source || 'device';
+    const updatedOverride: ConfigurationOverride = {
+      ...editingOverride,
+      parameterValue: String(editValue),
+      reason: editReason.trim(),
+      modified: Math.floor(Date.now() / 1000),
+    };
+
     const nextOverrides = overrides.map((curr) => {
       if (curr.parameterName === editingOverride.parameterName && curr.source === editingOverride.source) {
-        return {
-          ...curr,
-          parameterValue: String(editValue),
-          reason: editReason.trim(),
-          modified: Math.floor(Date.now() / 1000),
-        };
+        return updatedOverride;
       }
       return curr;
     });
@@ -348,10 +354,12 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
     setIsSaving(true);
 
     try {
+      // Send ONLY overrides belonging to targetSource to prevent overwriting other sources
+      const sourceOverrides = nextOverrides.filter((o) => (o.source || 'device') === targetSource);
       await updateMutation.mutateAsync({
         serialNumber: serial,
-        overrides: nextOverrides,
-        source: editingOverride.source || 'device',
+        overrides: sourceOverrides,
+        source: targetSource,
       });
       toaster.create({
         title: 'Override Updated',
@@ -377,6 +385,7 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
   const handleConfirmDelete = async () => {
     if (!deletingOverride) return;
 
+    const targetSource = deletingOverride.source || 'device';
     const nextOverrides = overrides.filter(
       (curr) => !(curr.parameterName === deletingOverride.parameterName && curr.source === deletingOverride.source),
     );
@@ -385,10 +394,13 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
     setIsSaving(true);
 
     try {
+      // Send ONLY remaining overrides for targetSource.
+      // If none remain (empty array), OWPROV clears all overrides for this source.
+      const remainingSourceOverrides = nextOverrides.filter((o) => (o.source || 'device') === targetSource);
       await updateMutation.mutateAsync({
         serialNumber: serial,
-        overrides: nextOverrides,
-        source: deletingOverride.source || 'device',
+        overrides: remainingSourceOverrides,
+        source: targetSource,
       });
       toaster.create({
         title: 'Override Removed',

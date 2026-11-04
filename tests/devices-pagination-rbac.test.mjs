@@ -1015,6 +1015,20 @@ test('Configuration Overrides tab matches OWPROV features with create, column se
   assert.ok(content.includes('Show '), 'Must provide page size dropdown');
   assert.ok(content.includes('chevronsLeft') && content.includes('chevronsRight'), 'Must provide first/last pagination buttons');
   assert.ok(content.includes('chevronLeft') && content.includes('chevronRight'), 'Must provide prev/next pagination buttons');
+
+  // 6. Source-scoped mutations to protect inherited venue/entity settings
+  assert.ok(
+    content.includes("const deviceOverrides = nextOverrides.filter((o) => (o.source || 'device') === 'device');"),
+    'Must isolate device overrides on create to avoid corrupting inherited settings'
+  );
+  assert.ok(
+    content.includes("const sourceOverrides = nextOverrides.filter((o) => (o.source || 'device') === targetSource);"),
+    'Must isolate target source overrides on edit'
+  );
+  assert.ok(
+    content.includes("const remainingSourceOverrides = nextOverrides.filter((o) => (o.source || 'device') === targetSource);"),
+    'Must isolate target source overrides on delete'
+  );
 });
 
 
