@@ -119,7 +119,7 @@ export const hydrateTagsWithGatewayStatus = async (
       : undefined;
 
     const resolvedPlatform = normalizePlatformDeviceType(
-      liveGw?.deviceType,
+      tag.platform || tag.deviceGroup || liveGw?.deviceType,
       tag.devClass,
       undefined,
       tag.deviceType || liveGw?.compatible,
@@ -131,6 +131,7 @@ export const hydrateTagsWithGatewayStatus = async (
       description: tag.description,
       model: liveGw?.compatible || tag.deviceType || 'Universal AP',
       deviceGroup: tag.deviceGroup || resolvedPlatform,
+      platform: tag.platform || resolvedPlatform.toUpperCase(),
       deviceType: tag.deviceType || liveGw?.compatible || 'asus_rt-ax53u',
       connected: isConnected,
       sanity: sanityScore,
@@ -1036,7 +1037,7 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
       const statsPayload = stats?.raw || stats?.data;
 
       const resolvedPlatform = normalizePlatformDeviceType(
-        gw?.deviceType,
+        tag?.platform || tag?.deviceGroup || gw?.deviceType,
         tag?.devClass,
         status?.deviceType,
         tag?.deviceType || gw?.compatible,
@@ -1050,6 +1051,7 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         description: tag?.description,
         model: resolvedModel,
         deviceGroup: tag?.deviceGroup || resolvedPlatform,
+        platform: tag?.platform || resolvedPlatform.toUpperCase(),
         deviceType: tag?.deviceType || resolvedModel,
         manufacturer: resolvedManufacturer,
         devicePassword: gw?.devicePassword || 'openwifi',
@@ -1105,7 +1107,12 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         rxBytes: status?.rxBytes || 0,
         txBytes: status?.txBytes || 0,
         lastStats: stats ? { raw: stats.raw || stats.data } : undefined,
-        provTag: tag,
+        provTag: tag
+          ? {
+              ...tag,
+              deviceGroup: tag.deviceGroup || tag.platform?.toLowerCase() || resolvedPlatform,
+            }
+          : undefined,
         gwDevice: gw,
         rawStatus: status,
       };
