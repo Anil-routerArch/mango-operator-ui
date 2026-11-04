@@ -15,6 +15,8 @@ import { useUpdateDeviceTag, useGetDeviceTypeInfo } from '@/api/devices';
 import { useGetEntities, useGetVenues } from '@/api/users';
 import { toaster } from '@/components/ui/toaster';
 import type { UnifiedFleetDevice } from '@/types/device';
+import { RrmEditorField } from './RrmEditorField';
+import { normalizeRrmForSubmission } from './rrmHelper';
 
 export interface MainConfigSubTabProps {
   device: UnifiedFleetDevice;
@@ -79,8 +81,8 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
   const [rcOnly, setRcOnly] = useState<'inherit' | 'yes' | 'no'>(
     (device.provTag?.deviceRules?.rcOnly as 'inherit' | 'yes' | 'no') || 'inherit'
   );
-  const [rrm, setRrm] = useState<'inherit' | 'yes' | 'no'>(
-    (device.provTag?.deviceRules?.rrm as 'inherit' | 'yes' | 'no') || 'inherit'
+  const [rrm, setRrm] = useState<string>(
+    (device.provTag?.deviceRules?.rrm as string) || 'inherit'
   );
   const [firmwareUpgrade, setFirmwareUpgrade] = useState<'inherit' | 'yes' | 'no'>(
     (device.provTag?.deviceRules?.firmwareUpgrade as 'inherit' | 'yes' | 'no') || 'inherit'
@@ -104,7 +106,9 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
         if (device.provTag.doNotAllowOverrides !== undefined) setIgnoreOverrides(device.provTag.doNotAllowOverrides);
         if (device.provTag.deviceRules) {
           if (device.provTag.deviceRules.rcOnly) setRcOnly(device.provTag.deviceRules.rcOnly as 'inherit' | 'yes' | 'no');
-          if (device.provTag.deviceRules.rrm) setRrm(device.provTag.deviceRules.rrm as 'inherit' | 'yes' | 'no');
+          if (device.provTag.deviceRules.rrm !== undefined) {
+            setRrm((device.provTag.deviceRules.rrm as string) || 'inherit');
+          }
           if (device.provTag.deviceRules.firmwareUpgrade) setFirmwareUpgrade(device.provTag.deviceRules.firmwareUpgrade as 'inherit' | 'yes' | 'no');
         }
       }
@@ -170,7 +174,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
           deviceRules: {
             firmwareUpgrade,
             rcOnly,
-            rrm,
+            rrm: normalizeRrmForSubmission(rrm),
           },
           doNotAllowOverrides: ignoreOverrides,
           entity: entityId,
@@ -366,20 +370,11 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
         {/* Row 2: Operational Rules, Classification & Overrides */}
         <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} gap={4} pt={2}>
           {/* 8. RRM */}
-          <Box>
-            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
-              RRM
-            </Text>
-            <select
-              value={rrm}
-              onChange={(e) => setRrm(e.target.value as 'inherit' | 'yes' | 'no')}
-              style={selectStyle}
-            >
-              <option value="inherit">Inherit</option>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </Box>
+          <RrmEditorField
+            value={rrm}
+            onChange={setRrm}
+            selectStyle={selectStyle}
+          />
 
           {/* 9. Firmware Upgrade */}
           <Box>

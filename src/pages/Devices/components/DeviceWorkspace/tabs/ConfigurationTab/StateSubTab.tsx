@@ -3,6 +3,7 @@ import { Box, Textarea } from '@chakra-ui/react';
 import { useUpdateDeviceTag } from '@/api/devices';
 import { toaster } from '@/components/ui/toaster';
 import type { UnifiedFleetDevice } from '@/types/device';
+import { normalizeRrmForSubmission } from './rrmHelper';
 
 export interface StateSubTabProps {
   device: UnifiedFleetDevice;
@@ -44,7 +45,7 @@ export const StateSubTab: React.FC<StateSubTabProps> = ({ device, isDisabled = f
           deviceRules: {
             firmwareUpgrade: (device.provTag?.deviceRules?.firmwareUpgrade as string) || 'inherit',
             rcOnly: (device.provTag?.deviceRules?.rcOnly as string) || 'inherit',
-            rrm: (device.provTag?.deviceRules?.rrm as string) || 'inherit',
+            rrm: normalizeRrmForSubmission(device.provTag?.deviceRules?.rrm),
           },
           doNotAllowOverrides: Boolean(device.provTag?.doNotAllowOverrides),
           entity: device.provTag?.entity || device.entityId || '',
