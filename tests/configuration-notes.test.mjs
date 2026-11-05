@@ -229,3 +229,187 @@ test('Simulation: changing device properties does not duplicate notes; adding a 
   assert.strictEqual(res.notes[2].author, 'current-user');
 });
 
+test('Field-scoped inventory updates: subtabs submit only managed fields and omit unrelated properties (Issue #4)', () => {
+  const tabsDir = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab'
+  );
+
+  const mainConfigContent = fs.readFileSync(path.join(tabsDir, 'MainConfigSubTab.tsx'), 'utf-8');
+  const stateContent = fs.readFileSync(path.join(tabsDir, 'StateSubTab.tsx'), 'utf-8');
+  const deviceSpecificContent = fs.readFileSync(path.join(tabsDir, 'DeviceSpecificConfigSubTab.tsx'), 'utf-8');
+  const notesContent = fs.readFileSync(path.join(tabsDir, 'NotesSubTab.tsx'), 'utf-8');
+
+  // 1. StateSubTab must only submit name, devClass, and state
+  assert.ok(stateContent.includes('state: stateValue'), 'StateSubTab must submit state');
+  assert.ok(stateContent.includes('devClass: authoritativeDevClass'), 'StateSubTab must submit authoritative devClass');
+  assert.strictEqual(stateContent.includes('deviceConfiguration:'), false, 'StateSubTab must omit deviceConfiguration');
+  assert.strictEqual(stateContent.includes('deviceRules:'), false, 'StateSubTab must omit deviceRules');
+  assert.strictEqual(stateContent.includes('subscriber:'), false, 'StateSubTab must omit subscriber');
+  assert.strictEqual(stateContent.includes('entity:'), false, 'StateSubTab must omit entity');
+  assert.strictEqual(stateContent.includes('venue:'), false, 'StateSubTab must omit venue');
+  assert.strictEqual(stateContent.includes('deviceType:'), false, 'StateSubTab must omit deviceType');
+  assert.strictEqual(stateContent.includes('deviceGroup:'), false, 'StateSubTab must omit deviceGroup');
+  assert.strictEqual(stateContent.includes('doNotAllowOverrides:'), false, 'StateSubTab must omit doNotAllowOverrides');
+
+  // 2. DeviceSpecificConfigSubTab inventory update payloads must only submit name, devClass, deviceConfiguration, and deviceRules
+  const mutateAsyncBlocks = deviceSpecificContent
+    .split('updateMutation.mutateAsync')
+    .slice(1)
+    .map((chunk) => chunk.slice(0, chunk.indexOf('});')));
+  assert.ok(mutateAsyncBlocks.length >= 2, 'DeviceSpecificConfigSubTab must have updateMutation calls for reset and save');
+  for (const block of mutateAsyncBlocks) {
+    assert.strictEqual(block.includes('subscriber:'), false, 'DeviceSpecificConfigSubTab payload must omit subscriber');
+    assert.strictEqual(block.includes('state:'), false, 'DeviceSpecificConfigSubTab payload must omit state');
+    assert.strictEqual(block.includes('doNotAllowOverrides:'), false, 'DeviceSpecificConfigSubTab payload must omit doNotAllowOverrides');
+    assert.strictEqual(block.includes('entity:'), false, 'DeviceSpecificConfigSubTab payload must omit entity');
+    assert.strictEqual(block.includes('venue:'), false, 'DeviceSpecificConfigSubTab payload must omit venue');
+    assert.strictEqual(block.includes('deviceType:'), false, 'DeviceSpecificConfigSubTab payload must omit deviceType');
+    assert.strictEqual(block.includes('deviceGroup:'), false, 'DeviceSpecificConfigSubTab payload must omit deviceGroup');
+    assert.strictEqual(block.includes('description:'), false, 'DeviceSpecificConfigSubTab payload must omit description');
+  }
+
+  // 3. MainConfigSubTab must omit deviceConfiguration, subscriber, state, and notes
+  assert.strictEqual(mainConfigContent.includes('deviceConfiguration:'), false, 'MainConfigSubTab must omit deviceConfiguration');
+  assert.strictEqual(mainConfigContent.includes('subscriber:'), false, 'MainConfigSubTab must omit subscriber');
+  assert.strictEqual(mainConfigContent.includes('state:'), false, 'MainConfigSubTab must omit state');
+  assert.strictEqual(mainConfigContent.includes('notes:'), false, 'MainConfigSubTab must omit notes');
+
+  // 4. NotesSubTab must only submit name, devClass, and notes
+  assert.ok(notesContent.includes('notes: [{ note: newNote.trim() }]'), 'NotesSubTab must submit notes');
+  assert.strictEqual(notesContent.includes('deviceConfiguration:'), false, 'NotesSubTab must omit deviceConfiguration');
+  assert.strictEqual(notesContent.includes('subscriber:'), false, 'NotesSubTab must omit subscriber');
+  assert.strictEqual(notesContent.includes('state:'), false, 'NotesSubTab must omit state');
+  assert.strictEqual(notesContent.includes('deviceRules:'), false, 'NotesSubTab must omit deviceRules');
+
+  // 5. Tabs must not fabricate 'venue' or hardware SKU 'asus_rt-ax53u'
+  assert.strictEqual(stateContent.includes("|| 'venue'"), false, 'StateSubTab must not fabricate venue devClass');
+  assert.strictEqual(deviceSpecificContent.includes("|| 'venue'"), false, 'DeviceSpecificConfigSubTab must not fabricate venue devClass');
+  assert.strictEqual(notesContent.includes("|| 'venue'"), false, 'NotesSubTab must not fabricate venue devClass');
+});
+
+test('Simulation: field-scoped saving prevents overwriting unrelated inventory properties in OWPROV (Issue #4)', () => {
+  // Models OWPROV inventory PUT endpoint:
+  // - Preserves omitted fields (CreateMove, AssignIfPresent, RawObject->has checks)
+  // - Only modifies fields explicitly present in payload
+  const initialDeviceRecord = {
+    serialNumber: 'sim-switch-001',
+    name: 'Aggregation Switch',
+    description: 'Floor 2 Core',
+    devClass: 'entity',
+    deviceType: 'edgecore_ecs4100_52p',
+    deviceGroup: 'switch',
+    entity: 'entity-uuid-abc',
+    venue: '',
+    subscriber: 'sub-uuid-xyz',
+    deviceConfiguration: 'shared-config-uuid-1',
+    deviceRules: {
+      firmwareUpgrade: 'yes',
+      rcOnly: 'yes',
+      rrm: 'off',
+    },
+    doNotAllowOverrides: true,
+    state: 'active',
+    notes: [{ note: 'Installed by network team', created: 1670000000, author: 'admin' }],
+  };
+
+  let dbRecord = JSON.parse(JSON.stringify(initialDeviceRecord));
+
+  const simulateOwprovPut = (payload) => {
+    // OWPROV validation: devClass is unconditionally validated
+    assert.ok(payload.devClass, 'OWPROV requires valid devClass');
+
+    // CreateMove behavior for associations:
+    // If field is in payload, it sets the value (even if empty string "")
+    // If field is NOT in payload, existing value is preserved!
+    if ('deviceConfiguration' in payload) dbRecord.deviceConfiguration = payload.deviceConfiguration;
+    if ('entity' in payload) dbRecord.entity = payload.entity;
+    if ('venue' in payload) dbRecord.venue = payload.venue;
+    if ('subscriber' in payload) dbRecord.subscriber = payload.subscriber;
+
+    // Has guards:
+    if ('state' in payload) dbRecord.state = payload.state;
+    if ('deviceRules' in payload) dbRecord.deviceRules = payload.deviceRules;
+    if ('doNotAllowOverrides' in payload) dbRecord.doNotAllowOverrides = payload.doNotAllowOverrides;
+    if ('deviceType' in payload) dbRecord.deviceType = payload.deviceType;
+    if ('deviceGroup' in payload) dbRecord.deviceGroup = payload.deviceGroup;
+    if ('description' in payload) dbRecord.description = payload.description;
+    if ('name' in payload) dbRecord.name = payload.name;
+    if ('devClass' in payload && payload.devClass !== dbRecord.devClass) dbRecord.devClass = payload.devClass;
+
+    return JSON.parse(JSON.stringify(dbRecord));
+  };
+
+  // Step 1: StateSubTab updates state only
+  simulateOwprovPut({
+    name: dbRecord.name,
+    devClass: dbRecord.devClass,
+    state: 'maintenance',
+  });
+  assert.strictEqual(dbRecord.state, 'maintenance', 'State should be updated to maintenance');
+  assert.strictEqual(dbRecord.deviceConfiguration, 'shared-config-uuid-1', 'State update must not unlink deviceConfiguration');
+  assert.strictEqual(dbRecord.entity, 'entity-uuid-abc', 'State update must not unlink parent entity');
+  assert.strictEqual(dbRecord.subscriber, 'sub-uuid-xyz', 'State update must not unlink subscriber');
+  assert.strictEqual(dbRecord.deviceType, 'edgecore_ecs4100_52p', 'State update must not overwrite deviceType with default SKU');
+  assert.strictEqual(dbRecord.devClass, 'entity', 'State update must not overwrite devClass with venue');
+  assert.strictEqual(dbRecord.deviceRules.firmwareUpgrade, 'yes', 'State update must not reset deviceRules');
+
+  // Step 2: DeviceSpecificConfigSubTab attaches new COW configuration and rules
+  simulateOwprovPut({
+    name: dbRecord.name,
+    devClass: dbRecord.devClass,
+    deviceConfiguration: 'cow-config-uuid-2',
+    deviceRules: {
+      firmwareUpgrade: 'no',
+      rcOnly: 'no',
+      rrm: 'inherit',
+    },
+  });
+  assert.strictEqual(dbRecord.deviceConfiguration, 'cow-config-uuid-2', 'Configuration should be updated to COW ID');
+  assert.strictEqual(dbRecord.entity, 'entity-uuid-abc', 'Config save must not unlink parent entity');
+  assert.strictEqual(dbRecord.subscriber, 'sub-uuid-xyz', 'Config save must not unlink subscriber');
+  assert.strictEqual(dbRecord.state, 'maintenance', 'Config save must not revert state');
+  assert.strictEqual(dbRecord.deviceType, 'edgecore_ecs4100_52p', 'Config save must not overwrite deviceType');
+
+  // Step 3: DeviceSpecificConfigSubTab resets configuration to inherited
+  simulateOwprovPut({
+    name: dbRecord.name,
+    devClass: dbRecord.devClass,
+    deviceConfiguration: '',
+    deviceRules: {
+      firmwareUpgrade: 'no',
+      rcOnly: 'no',
+      rrm: 'inherit',
+    },
+  });
+  assert.strictEqual(dbRecord.deviceConfiguration, '', 'Configuration should be detached');
+  assert.strictEqual(dbRecord.entity, 'entity-uuid-abc', 'Resetting config must not unlink entity');
+  assert.strictEqual(dbRecord.subscriber, 'sub-uuid-xyz', 'Resetting config must not unlink subscriber');
+
+  // Step 4: MainConfigSubTab updates metadata without touching config or state
+  simulateOwprovPut({
+    name: 'Updated Switch Name',
+    description: 'Updated Floor 2 Core',
+    deviceGroup: 'switch',
+    devClass: 'entity',
+    deviceRules: {
+      firmwareUpgrade: 'no',
+      rcOnly: 'no',
+      rrm: 'inherit',
+    },
+    doNotAllowOverrides: true,
+  });
+  assert.strictEqual(dbRecord.name, 'Updated Switch Name');
+  assert.strictEqual(dbRecord.description, 'Updated Floor 2 Core');
+  assert.strictEqual(dbRecord.deviceConfiguration, '', 'MainConfig save must not re-attach or clobber configuration');
+  assert.strictEqual(dbRecord.subscriber, 'sub-uuid-xyz', 'MainConfig save must not unlink subscriber');
+  assert.strictEqual(dbRecord.state, 'maintenance', 'MainConfig save must not overwrite state');
+});
+
+

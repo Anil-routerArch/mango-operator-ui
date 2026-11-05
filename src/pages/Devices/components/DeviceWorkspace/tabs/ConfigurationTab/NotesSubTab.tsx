@@ -14,7 +14,6 @@ import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
 import { useUpdateDeviceTag, formatRelativeTime } from '@/api/devices';
 import type { UnifiedFleetDevice, DeviceNote } from '@/types/device';
-import { normalizeRrmForSubmission } from './rrmHelper';
 
 export interface NotesSubTabProps {
   device: UnifiedFleetDevice;
@@ -52,34 +51,17 @@ export const NotesSubTab: React.FC<NotesSubTabProps> = ({ device }) => {
   const handleAddNote = async () => {
     if (!newNote.trim()) return;
     try {
-      const resolvedType =
-        device.provTag?.deviceType ||
-        (device.deviceType && !['ap', 'switch', 'olg'].includes(device.deviceType) ? device.deviceType : device.model) ||
-        'asus_rt-ax53u';
-      const resolvedGroup =
-        device.provTag?.deviceGroup ||
-        (['ap', 'switch', 'olg'].includes(device.deviceGroup) ? device.deviceGroup : 'ap');
+      const authoritativeDevClass = device.provTag?.devClass || 'any';
 
+      // Field-scoped update (Issue #4):
+      // Only submit the new note plus minimum required validation fields.
+      // Omit configuration IDs, device rules, parent associations, subscriber, and hardware type.
       const res = await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
         payload: {
           name: device.name || device.serialNumber,
-          description: device.description || '',
+          devClass: authoritativeDevClass,
           notes: [{ note: newNote.trim() }],
-          deviceType: resolvedType,
-          deviceGroup: resolvedGroup,
-          devClass: device.provTag?.devClass || 'venue',
-          deviceConfiguration: device.provTag?.deviceConfiguration ?? (device.configId || ''),
-          deviceRules: {
-            firmwareUpgrade: (device.provTag?.deviceRules?.firmwareUpgrade as string) || 'inherit',
-            rcOnly: (device.provTag?.deviceRules?.rcOnly as string) || 'inherit',
-            rrm: normalizeRrmForSubmission(device.provTag?.deviceRules?.rrm),
-          },
-          doNotAllowOverrides: Boolean(device.provTag?.doNotAllowOverrides),
-          entity: device.provTag?.entity || device.entityId || '',
-          venue: device.provTag?.venue || device.venueId || '',
-          subscriber: device.provTag?.subscriber ?? (device.subscriberId || ''),
-          state: device.provTag?.state ?? (device.state || ''),
         },
       });
 

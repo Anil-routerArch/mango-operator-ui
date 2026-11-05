@@ -70,7 +70,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
       return dev.deviceType;
     }
     if (dev.model && dev.model !== 'Universal AP') return dev.model;
-    return 'asus_rt-ax53u';
+    return '';
   };
 
   const [name, setName] = useState(device.name || device.serialNumber);
@@ -161,26 +161,38 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
       const entityId = parent.startsWith('ent:') ? parent.slice(4) : '';
       const venueId = parent.startsWith('ven:') ? parent.slice(4) : '';
 
+      // Field-scoped update (Issue #4):
+      // Only submit fields intentionally managed by MainConfigSubTab.
+      // Do not resend unrelated state, deviceConfiguration, subscriber, or notes.
+      const payload: Record<string, unknown> = {
+        name,
+        description,
+        deviceGroup,
+        devClass,
+        deviceRules: {
+          firmwareUpgrade,
+          rcOnly,
+          rrm: normalizeRrmForSubmission(rrm),
+        },
+        doNotAllowOverrides: ignoreOverrides,
+      };
+
+      if (deviceType) {
+        payload.deviceType = deviceType;
+      }
+
+      if (venueId) {
+        payload.venue = venueId;
+      } else if (entityId) {
+        payload.entity = entityId;
+      } else if (parent === '') {
+        payload.venue = '';
+        payload.entity = '';
+      }
+
       await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
-        payload: {
-          name,
-          description,
-          deviceType,
-          deviceGroup,
-          devClass,
-          deviceConfiguration: device.provTag?.deviceConfiguration ?? (device.configId || ''),
-          deviceRules: {
-            firmwareUpgrade,
-            rcOnly,
-            rrm: normalizeRrmForSubmission(rrm),
-          },
-          doNotAllowOverrides: ignoreOverrides,
-          entity: entityId,
-          venue: venueId,
-          subscriber: device.provTag?.subscriber ?? (device.subscriberId || ''),
-          state: device.provTag?.state ?? (device.state || ''),
-        },
+        payload,
       });
       toaster.create({
         title: 'Device Tag Updated',
