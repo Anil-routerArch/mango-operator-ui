@@ -924,7 +924,7 @@ test('DeviceConfigTab implements all 6 OWPROV provisioning subtabs and all 11 Ma
   // Verify MainConfigSubTab sends exact OWPROV payload structure (including deviceGroup and deviceType)
   assert.ok(mainTabContent.includes('deviceGroup,'), 'MainConfigSubTab payload must include deviceGroup');
   assert.ok(mainTabContent.includes('deviceType,'), 'MainConfigSubTab payload must include deviceType');
-  assert.ok(mainTabContent.includes('deviceConfiguration:'), 'MainConfigSubTab payload must include deviceConfiguration');
+  assert.ok(!mainTabContent.includes('deviceConfiguration:'), 'MainConfigSubTab payload must omit deviceConfiguration to prevent overwriting device-specific configuration (Issue #4)');
   assert.ok(!mainTabContent.includes('notes:'), 'MainConfigSubTab payload must omit notes to prevent duplicate note history (Issue #3)');
 
   // Verify StateSubTab exists and handles JSON formatting & state mutations

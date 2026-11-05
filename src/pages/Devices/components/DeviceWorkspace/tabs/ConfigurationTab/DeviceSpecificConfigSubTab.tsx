@@ -181,36 +181,25 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       setIsSaving(true);
       const configId = device.configId || device.provTag?.deviceConfiguration;
 
-      const resolvedType =
-        device.provTag?.deviceType ||
-        (device.deviceType && !['ap', 'switch', 'olg'].includes(device.deviceType) ? device.deviceType : device.model) ||
-        'asus_rt-ax53u';
-      const resolvedGroup =
-        device.provTag?.deviceGroup ||
-        (['ap', 'switch', 'olg'].includes(device.deviceGroup) ? device.deviceGroup : 'ap');
-
       // Interim Copy-On-Write requirement:
       // Reset Configuration detaches the selected device without deleting the underlying modular configuration,
       // preserving the profile for any other devices referencing it.
+      const authoritativeDevClass = device.provTag?.devClass || 'any';
+
+      // Field-scoped update (Issue #4):
+      // Reset Configuration clears deviceConfiguration and resets deviceRules without touching
+      // unrelated entity/venue, subscriber, state, hardware type, or class metadata.
       await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
         payload: {
           name: device.name || device.serialNumber,
-          description: device.description || '',
-          deviceType: resolvedType,
-          deviceGroup: resolvedGroup,
-          devClass: device.provTag?.devClass || 'venue',
+          devClass: authoritativeDevClass,
           deviceConfiguration: '',
           deviceRules: {
             rrm: 'inherit',
             firmwareUpgrade: 'no',
             rcOnly: 'no',
           },
-          doNotAllowOverrides: Boolean(device.provTag?.doNotAllowOverrides),
-          entity: device.provTag?.entity || device.entityId || '',
-          venue: device.provTag?.venue || device.venueId || '',
-          subscriber: device.provTag?.subscriber ?? (device.subscriberId || ''),
-          state: device.provTag?.state ?? (device.state || ''),
         } as any,
       });
 
@@ -250,7 +239,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       const resolvedType =
         device.provTag?.deviceType ||
         (device.deviceType && !['ap', 'switch', 'olg'].includes(device.deviceType) ? device.deviceType : device.model) ||
-        'asus_rt-ax53u';
+        '';
       const resolvedGroup =
         device.provTag?.deviceGroup ||
         (['ap', 'switch', 'olg'].includes(device.deviceGroup) ? device.deviceGroup : 'ap');
@@ -275,7 +264,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         name: `device:${device.serialNumber}`,
         description: configData?.description || 'Device-specific configuration',
         deviceGroup: resolvedGroup,
-        deviceTypes: [resolvedType],
+        deviceTypes: resolvedType ? [resolvedType] : (configData?.deviceTypes || []),
         deviceRules: {
           rrm: normalizedRrm,
           firmwareUpgrade,
@@ -297,25 +286,22 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
 
       // Associate the new configuration with the selected device only after successful creation.
       // The previously referenced configuration is left completely untouched.
+      const authoritativeDevClass = device.provTag?.devClass || 'any';
+
+      // Field-scoped update (Issue #4):
+      // Associate the new configuration with the selected device and apply intended rules.
+      // Omit unrelated entity/venue, subscriber, state, hardware type, and class metadata.
       await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
         payload: {
           name: device.name || device.serialNumber,
-          description: device.description || '',
-          deviceType: resolvedType,
-          deviceGroup: resolvedGroup,
-          devClass: device.provTag?.devClass || 'venue',
+          devClass: authoritativeDevClass,
           deviceConfiguration: newConfigId,
           deviceRules: {
             rrm: normalizedRrm,
             firmwareUpgrade,
             rcOnly: firmwareRCOnly ? 'yes' : 'no',
           },
-          doNotAllowOverrides: Boolean(device.provTag?.doNotAllowOverrides),
-          entity: device.provTag?.entity || device.entityId || '',
-          venue: device.provTag?.venue || device.venueId || '',
-          subscriber: device.provTag?.subscriber ?? (device.subscriberId || ''),
-          state: device.provTag?.state ?? (device.state || ''),
         } as any,
       });
 
