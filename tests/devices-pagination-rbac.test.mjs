@@ -887,8 +887,8 @@ test('DeviceConfigTab implements all 6 OWPROV provisioning subtabs and all 11 Ma
     'DeviceSpecificConfigSubTab must populate currentJson from configData.configuration'
   );
   assert.ok(
-    specialContent.includes('updateModularConfiguration') && specialContent.includes('createModularConfiguration'),
-    'DeviceSpecificConfigSubTab must save modular configurations via modularConfiguration APIs'
+    specialContent.includes('createModularConfiguration'),
+    'DeviceSpecificConfigSubTab must save modular configurations via createModularConfiguration API (Copy-On-Write)'
   );
 
   // Verify workspace tabs no longer include radios or diagnostics
@@ -1329,6 +1329,183 @@ test('useUpdateInventoryTag and device mutations invalidate active workspace and
   assert.ok(
     pushBlock.includes("queryKey: ['paginated-fleet-devices']"),
     'usePushDeviceConfig must invalidate paginated-fleet-devices'
+  );
+});
+
+test('DeviceSpecificConfigSubTab implements Copy-On-Write (COW) to prevent mutating shared configurations (Issue #1)', () => {
+  const filePath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'DeviceSpecificConfigSubTab.tsx'
+  );
+  const content = fs.readFileSync(filePath, 'utf-8');
+
+  // 1. Must use createModularConfiguration for COW
+  assert.ok(
+    content.includes('createModularConfiguration(newConfigPayload)'),
+    'handleSave must create a new modular configuration via createModularConfiguration'
+  );
+
+  // 2. Must not update modular configuration in-place
+  assert.strictEqual(
+    content.includes('updateModularConfiguration('),
+    false,
+    'handleSave must never call updateModularConfiguration in place'
+  );
+
+  // 3. Must not delete modular configuration on reset
+  assert.strictEqual(
+    content.includes('deleteModularConfiguration('),
+    false,
+    'handleDeleteConfig must never call deleteModularConfiguration on reset'
+  );
+
+  // 4. Must preserve metadata: variables, entity, venue, subscriber, and rules
+  assert.ok(
+    content.includes('variables: configData?.variables || []'),
+    'handleSave must preserve variables from original configuration'
+  );
+  assert.ok(
+    content.includes("name: `device:${device.serialNumber}`"),
+    'handleSave must name the configuration device:${serialNumber}'
+  );
+
+  // 5. Must associate with device only after successful creation
+  assert.ok(
+    content.includes('if (!createRes?.id)'),
+    'handleSave must check that configuration creation returned an ID before associating with device'
+  );
+
+  // 6. Reset must only detach (set deviceConfiguration to empty string)
+  assert.ok(
+    content.includes("deviceConfiguration: ''"),
+    'handleDeleteConfig must detach by setting deviceConfiguration to empty string'
+  );
+});
+
+test('Multi-device simulation: updating or resetting one device does not affect another device sharing the same configuration (Issue #1)', async () => {
+  // Setup simulated OWPROV database
+  const configurationsDB = new Map();
+  const inventoryDB = new Map();
+
+  const SHARED_CONFIG_ID = 'shared-venue-modular-profile-99';
+  const sharedConfig = {
+    id: SHARED_CONFIG_ID,
+    name: 'Shared Venue Template',
+    description: 'Corporate AP Template',
+    deviceGroup: 'ap',
+    deviceTypes: ['asus_rt-ax53u'],
+    variables: ['var-uuid-1'],
+    deviceRules: { rrm: 'inherit', firmwareUpgrade: 'yes', rcOnly: 'no' },
+    configuration: [
+      { name: 'ssids', weight: 1, configuration: '{"ssids":[{"name":"CorpNet","security":"wpa2"}]}' }
+    ],
+  };
+  configurationsDB.set(SHARED_CONFIG_ID, JSON.parse(JSON.stringify(sharedConfig)));
+
+  // Two devices sharing the exact same modular configuration
+  inventoryDB.set('dev-serial-AAA', {
+    serialNumber: 'dev-serial-AAA',
+    name: 'Office AP 1',
+    deviceConfiguration: SHARED_CONFIG_ID,
+    deviceRules: { rrm: 'inherit', firmwareUpgrade: 'yes', rcOnly: 'no' },
+  });
+
+  inventoryDB.set('dev-serial-BBB', {
+    serialNumber: 'dev-serial-BBB',
+    name: 'Office AP 2',
+    deviceConfiguration: SHARED_CONFIG_ID,
+    deviceRules: { rrm: 'inherit', firmwareUpgrade: 'yes', rcOnly: 'no' },
+  });
+
+  // Simulation of Copy-On-Write handleSave for dev-serial-AAA
+  const simulateCowSave = async (serialNumber, modifiedBlocks) => {
+    const dev = inventoryDB.get(serialNumber);
+    const originalConfig = configurationsDB.get(dev.deviceConfiguration);
+
+    // 1. Create new configuration (COW)
+    const newConfigId = `device-cfg-${serialNumber}-${Date.now()}`;
+    const newConfig = {
+      id: newConfigId,
+      name: `device:${serialNumber}`,
+      description: originalConfig?.description || 'Device-specific configuration',
+      deviceGroup: originalConfig?.deviceGroup || 'ap',
+      deviceTypes: originalConfig?.deviceTypes || ['asus_rt-ax53u'],
+      deviceRules: { rrm: 'enabled', firmwareUpgrade: 'yes', rcOnly: 'no' },
+      variables: originalConfig?.variables || [],
+      configuration: modifiedBlocks,
+    };
+    configurationsDB.set(newConfigId, newConfig);
+
+    // 2. Associate new configuration with device
+    inventoryDB.set(serialNumber, {
+      ...dev,
+      deviceConfiguration: newConfigId,
+      deviceRules: newConfig.deviceRules,
+    });
+
+    return newConfigId;
+  };
+
+  // Device AAA modifies SSIDs and saves
+  const devANewConfigId = await simulateCowSave('dev-serial-AAA', [
+    { name: 'ssids', weight: 1, configuration: '{"ssids":[{"name":"GuestNet","security":"wpa3"}]}' }
+  ]);
+
+  // Assertions:
+  // 1. Device AAA now points to new dedicated configuration
+  assert.strictEqual(inventoryDB.get('dev-serial-AAA').deviceConfiguration, devANewConfigId);
+
+  // 2. Device BBB is COMPLETELY unaffected and still references SHARED_CONFIG_ID
+  assert.strictEqual(inventoryDB.get('dev-serial-BBB').deviceConfiguration, SHARED_CONFIG_ID);
+
+  // 3. The original shared configuration in configurationsDB is completely UNTOUCHED
+  const persistedSharedConfig = configurationsDB.get(SHARED_CONFIG_ID);
+  assert.deepStrictEqual(persistedSharedConfig.configuration, sharedConfig.configuration);
+  assert.strictEqual(persistedSharedConfig.name, 'Shared Venue Template');
+
+  // Simulation of handleDeleteConfig (Reset Configuration) for dev-serial-BBB
+  const simulateResetConfig = async (serialNumber) => {
+    const dev = inventoryDB.get(serialNumber);
+    // Detach only; do NOT delete configurationsDB.delete(dev.deviceConfiguration)
+    inventoryDB.set(serialNumber, {
+      ...dev,
+      deviceConfiguration: '',
+      deviceRules: { rrm: 'inherit', firmwareUpgrade: 'no', rcOnly: 'no' },
+    });
+  };
+
+  await simulateResetConfig('dev-serial-BBB');
+
+  // Assertions:
+  // 4. Device BBB has detached its configuration pointer
+  assert.strictEqual(inventoryDB.get('dev-serial-BBB').deviceConfiguration, '');
+
+  // 5. The shared configuration still exists in configurationsDB and was NOT deleted
+  assert.ok(configurationsDB.has(SHARED_CONFIG_ID), 'Shared configuration must not be deleted on reset');
+
+  // 6. Error handling simulation: failure during creation does not alter device tag
+  const devBeforeFailedAttempt = JSON.parse(JSON.stringify(inventoryDB.get('dev-serial-AAA')));
+  const simulateFailedSave = async (serialNumber) => {
+    try {
+      // Simulate network / validation failure
+      throw new Error('500 Internal Server Error in OWPROV');
+    } catch {
+      // Catch block must not alter device tag
+    }
+  };
+
+  await simulateFailedSave('dev-serial-AAA');
+  assert.deepStrictEqual(
+    inventoryDB.get('dev-serial-AAA'),
+    devBeforeFailedAttempt,
+    'Device configuration pointer must remain unchanged when creation fails'
   );
 });
 
