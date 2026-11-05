@@ -638,7 +638,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
         onClose={() => setIsDeleteOpen(false)}
         onConfirm={handleDelete}
         title="Delete Device"
-        description={`Are you sure you want to permanently delete ${displayName} (${device.serialNumber}) from OpenWiFi Gateway?`}
+        description={`Are you sure you want to permanently delete ${displayName} (${device.serialNumber}) from the network?`}
         confirmLabel="Delete Device"
         confirmVariant="danger"
         icon="trash"
