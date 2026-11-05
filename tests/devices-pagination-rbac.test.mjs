@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 
-test('devices.ts enforces RBAC scoping by querying OWPROV inventory first and using OWGW select query', () => {
+test('devices.ts uses MDU GET /api/v1/devices as single authoritative fleet API without OWPROV fallback (Issue #2)', () => {
   const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
   const content = fs.readFileSync(devicesApiPath, 'utf-8');
 
@@ -19,29 +19,111 @@ test('devices.ts enforces RBAC scoping by querying OWPROV inventory first and us
     'devices.ts must export usePaginatedFleetDevices'
   );
 
-  // Verify OWPROV countOnly query is used for total count
+  // Verify MDU devices endpoint is used as authoritative API
   assert.ok(
-    content.includes('inventory?countOnly=true'),
-    'devices.ts must query countOnly from OWPROV inventory to determine scoped total'
+    content.includes("axiosMdu.get<PaginatedFleetResponse>('devices'"),
+    'getPaginatedFleetDevices must query axiosMdu.get("devices")'
   );
 
-  // Verify OWPROV paginated slice query is used
-  assert.ok(
-    content.includes('inventory?withExtendedInfo=true&limit='),
-    'devices.ts must query inventory slice with limit and offset'
-  );
-
-  // Verify OWGW call uses select= to restrict telemetry strictly to scoped serial numbers
-  assert.ok(
-    content.includes('devices?deviceWithStatus=true&select='),
-    'devices.ts must pass select parameter to OWGW devices endpoint to prevent multi-tenant data leaks'
-  );
-
-  // Verify unscoped devices from OWGW are never appended
+  // Verify direct OWPROV fleet fallback queries are completely removed
   assert.strictEqual(
-    content.includes('provProcessedSerials.has(normSerial)'),
+    content.includes('inventory?countOnly=true'),
     false,
-    'devices.ts must not append un-scoped gateway devices'
+    'getPaginatedFleetDevices must not query OWPROV inventory?countOnly=true fallback'
+  );
+  assert.strictEqual(
+    content.includes('inventory?withExtendedInfo=true&limit='),
+    false,
+    'getPaginatedFleetDevices must not query OWPROV inventory slice fallback'
+  );
+
+  // Verify fallback hydration function hydrateTagsWithGatewayStatus is removed
+  assert.strictEqual(
+    content.includes('export const hydrateTagsWithGatewayStatus'),
+    false,
+    'fallback-only hydrateTagsWithGatewayStatus must be removed'
+  );
+});
+
+test('MDU failures propagate errors cleanly without falling back to OWPROV or returning empty fleet (Issue #2)', async () => {
+  let mduCallCount = 0;
+  let provCallCount = 0;
+
+  // Mock axios instances to test error propagation
+  const mockAxiosMdu = {
+    get: async () => {
+      mduCallCount++;
+      const error = new Error('500 Internal Server Error in MDU Service');
+      error.response = { status: 500, data: { ErrorDescription: 'Internal Server Error' } };
+      throw error;
+    },
+  };
+
+  const mockAxiosProv = {
+    get: async () => {
+      provCallCount++;
+      return { data: { count: 10, taglist: [] } };
+    },
+  };
+
+  // Simulate getPaginatedFleetDevices calling MDU directly
+  const simulateGetPaginatedFleetDevices = async () => {
+    // Single authoritative call: errors must throw and not be caught by fallback
+    const res = await mockAxiosMdu.get();
+    return res.data;
+  };
+
+  await assert.rejects(
+    async () => {
+      await simulateGetPaginatedFleetDevices();
+    },
+    (err) => {
+      assert.strictEqual(err.message, '500 Internal Server Error in MDU Service');
+      return true;
+    },
+    'MDU error must propagate and reject without being suppressed'
+  );
+
+  assert.strictEqual(mduCallCount, 1, 'MDU GET /devices must be called once');
+  assert.strictEqual(provCallCount, 0, 'OWPROV inventory must NEVER be called when MDU fails');
+});
+
+test('DeviceFleetTable renders error and retry state on MDU failure instead of misleading empty table (Issue #2)', () => {
+  const tablePath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceFleetTable',
+    'DeviceFleetTable.tsx'
+  );
+  const content = fs.readFileSync(tablePath, 'utf-8');
+
+  // Verify isError and error are destructured from usePaginatedFleetDevices
+  assert.ok(
+    content.includes('isError') && content.includes('error'),
+    'DeviceFleetTable must destructure isError and error from usePaginatedFleetDevices'
+  );
+
+  // Verify error UI state with retry button is present
+  assert.ok(
+    content.includes('Failed to load fleet devices'),
+    'DeviceFleetTable must display error heading on failure'
+  );
+  assert.ok(
+    content.includes('getApiErrorMessage(error'),
+    'DeviceFleetTable must display formatted API error message'
+  );
+  assert.ok(
+    content.includes('Retry'),
+    'DeviceFleetTable must display Retry button on failure'
+  );
+
+  // Verify pagination is disabled during error
+  assert.ok(
+    content.includes('isDisabled={isLoading || isFetching || isError}'),
+    'DevicePaginationControls must be disabled when isError is true'
   );
 });
 

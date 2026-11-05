@@ -73,6 +73,8 @@ export const DeviceFleetTable: React.FC = () => {
     isLoading,
     refetch,
     isFetching,
+    isError,
+    error,
   } = usePaginatedFleetDevices({
     pageIndex,
     pageSize,
@@ -379,6 +381,30 @@ export const DeviceFleetTable: React.FC = () => {
             <Text fontSize="13px" color={themeColors.text.muted}>
               Synchronizing fleet devices across gateway and inventory...
             </Text>
+          </Flex>
+        ) : isError ? (
+          <Flex justify="center" align="center" minH="300px" direction="column" gap={3} p={6}>
+            <Box color="#dc2626">
+              <Icon name="alertTriangle" size={36} />
+            </Box>
+            <Text fontSize="15px" fontWeight="600" color="#dc2626">
+              Failed to load fleet devices
+            </Text>
+            <Text fontSize="13px" color={themeColors.text.secondary} textAlign="center" maxW="460px">
+              {getApiErrorMessage(error, 'An error occurred while communicating with the MDU service. Please check your connectivity and try again.')}
+            </Text>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => refetch()}
+              gap={1.5}
+              mt={2}
+              borderColor={themeColors.input.iconBtnBorder}
+              _hover={{ bg: '#f1f5f9' }}
+            >
+              <Icon name="refresh" size={14} />
+              Retry
+            </Button>
           </Flex>
         ) : filteredDevices.length === 0 ? (
           <Flex justify="center" align="center" minH="280px" color={themeColors.text.muted}>
@@ -740,7 +766,7 @@ export const DeviceFleetTable: React.FC = () => {
           totalPages={totalPages}
           onPageChange={(newIdx) => setPageIndex(newIdx)}
           onPageSizeChange={(newSize) => setPageSize(newSize)}
-          isDisabled={isLoading || isFetching}
+          isDisabled={isLoading || isFetching || isError}
         />
       </Box>
 
