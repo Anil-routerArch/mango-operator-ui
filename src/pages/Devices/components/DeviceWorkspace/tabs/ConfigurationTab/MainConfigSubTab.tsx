@@ -48,7 +48,21 @@ const DEVICE_TYPES_BY_GROUP: Record<string, string[]> = {
   ],
 };
 
+export const getDeviceGroupFromType = (
+  deviceType?: string,
+  deviceTypesByClass?: Record<string, string[]>
+): string => {
+  if (!deviceType || !deviceTypesByClass) return '';
+  const entries = Object.entries(deviceTypesByClass);
+  const match = entries.find(([, types]) => types?.includes(deviceType));
+  return match ? match[0] : '';
+};
+
 export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) => {
+  const { data: fmsDeviceTypeInfo } = useGetDeviceTypeInfo();
+  const { data: entities = [] } = useGetEntities();
+  const { data: venues = [] } = useGetVenues();
+
   const resolveInitialParent = (d: UnifiedFleetDevice): string => {
     if (d.provTag?.venue) return `ven:${d.provTag.venue}`;
     if (d.provTag?.entity) return `ent:${d.provTag.entity}`;
@@ -57,10 +71,39 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
     return '';
   };
 
-  const resolveInitialGroup = (dev: UnifiedFleetDevice): string => {
-    if (dev.provTag?.deviceGroup) return dev.provTag.deviceGroup;
-    const rawGrp = dev.deviceGroup;
+  const resolveInitialGroup = (
+    dev: UnifiedFleetDevice,
+    typesByClass?: Record<string, string[]>
+  ): string => {
+    // 1. Authoritative dynamic resolution from deviceType via FMS catalog (matching owprov-ui)
+    const rawType =
+      dev.provTag?.deviceType ||
+      (dev.deviceType && dev.deviceType !== 'ap' && dev.deviceType !== 'switch' && dev.deviceType !== 'olg'
+        ? dev.deviceType
+        : undefined) ||
+      (dev.model && dev.model !== 'Universal AP' ? dev.model : undefined);
+    const derivedFromFms = getDeviceGroupFromType(rawType, typesByClass);
+    if (derivedFromFms) return derivedFromFms;
+
+    // 2. Authoritative OWPROV database platform column
+    if (dev.provTag?.platform) {
+      const lowerPlatform = dev.provTag.platform.toLowerCase();
+      if (lowerPlatform === 'ap' || lowerPlatform === 'switch' || lowerPlatform === 'olg') {
+        return lowerPlatform;
+      }
+    }
+
+    // 3. Fallback to provTag deviceGroup or unified deviceGroup
+    if (dev.provTag?.deviceGroup) {
+      const lowerGroup = dev.provTag.deviceGroup.toLowerCase();
+      if (lowerGroup === 'ap' || lowerGroup === 'switch' || lowerGroup === 'olg') {
+        return lowerGroup;
+      }
+    }
+
+    const rawGrp = dev.deviceGroup?.toLowerCase();
     if (rawGrp === 'ap' || rawGrp === 'switch' || rawGrp === 'olg') return rawGrp;
+
     return 'ap';
   };
 
@@ -75,7 +118,9 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
 
   const [name, setName] = useState(device.name || device.serialNumber);
   const [description, setDescription] = useState(device.description || '');
-  const [deviceGroup, setDeviceGroup] = useState(resolveInitialGroup(device));
+  const [deviceGroup, setDeviceGroup] = useState(
+    resolveInitialGroup(device, fmsDeviceTypeInfo?.deviceTypesByClass)
+  );
   const [deviceType, setDeviceType] = useState(resolveInitialType(device));
   const [parent, setParent] = useState(resolveInitialParent(device));
   const [rcOnly, setRcOnly] = useState<'inherit' | 'yes' | 'no'>(
@@ -98,7 +143,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
     if (device) {
       setName(device.name || device.serialNumber);
       setDescription(device.description || '');
-      setDeviceGroup(resolveInitialGroup(device));
+      setDeviceGroup(resolveInitialGroup(device, fmsDeviceTypeInfo?.deviceTypesByClass));
       setDeviceType(resolveInitialType(device));
       setParent(resolveInitialParent(device));
       if (device.provTag) {
@@ -113,11 +158,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
         }
       }
     }
-  }, [device]);
-
-  const { data: fmsDeviceTypeInfo } = useGetDeviceTypeInfo();
-  const { data: entities = [] } = useGetEntities();
-  const { data: venues = [] } = useGetVenues();
+  }, [device, fmsDeviceTypeInfo?.deviceTypesByClass]);
 
   const sortedEntities = useMemo(
     () => [...entities].sort((a, b) => a.name.localeCompare(b.name)),
@@ -139,7 +180,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
     if (fmsDeviceTypeInfo?.deviceTypesByClass && fmsDeviceTypeInfo.deviceTypesByClass[deviceGroup]) {
       return fmsDeviceTypeInfo.deviceTypesByClass[deviceGroup];
     }
-    return DEVICE_TYPES_BY_GROUP[deviceGroup] || ['asus_rt-ax53u', 'edgecore_eap104'];
+    return DEVICE_TYPES_BY_GROUP[deviceGroup] || [];
   }, [fmsDeviceTypeInfo, deviceGroup]);
 
   // Handle group change
@@ -150,7 +191,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
       DEVICE_TYPES_BY_GROUP[newGroup] ||
       [];
     if (!validTypes.includes(deviceType)) {
-      setDeviceType(validTypes[0] || 'asus_rt-ax53u');
+      setDeviceType(validTypes[0] || '');
     }
   };
 
@@ -168,6 +209,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
         name,
         description,
         deviceGroup,
+        platform: deviceGroup.toUpperCase(),
         devClass,
         deviceRules: {
           firmwareUpgrade,

@@ -1,9 +1,11 @@
 import React from 'react';
 import {
   Box,
+  Button,
   Flex,
   HStack,
   SimpleGrid,
+  Spinner,
   Text,
   VStack,
 } from '@chakra-ui/react';
@@ -13,18 +15,19 @@ import { DeviceCard } from '../common/DeviceCard';
 import { useUnifiedFleetDevices } from '@/api/devices';
 
 export const DeviceDashboardTab: React.FC = () => {
-  const { data: devices } = useUnifiedFleetDevices();
+  const { data, isLoading, isError, error, refetch } = useUnifiedFleetDevices();
 
-  const totalCount = devices?.length ?? 4;
-  const connectedCount = devices?.filter((d) => d.connected).length ?? 1;
-  const offlineCount = totalCount - connectedCount;
-  const connectivityRate = totalCount > 0 ? Math.round((connectedCount / totalCount) * 100) : 25;
+  const devices = React.useMemo(() => data?.devices ?? [], [data?.devices]);
+  const totalCount = data?.totalCount ?? devices.length;
+  const connectedCount = React.useMemo(() => devices.filter((d) => d.connected).length, [devices]);
+  const offlineCount = Math.max(0, totalCount - connectedCount);
+  const connectivityRate = totalCount > 0 ? Math.round((connectedCount / totalCount) * 100) : 0;
 
-  // Calculate average sanity
+  // Calculate average sanity strictly from scored devices (no fabricated fallbacks)
   const averageSanity = React.useMemo(() => {
-    if (!devices || devices.length === 0) return 85;
-    const scored = devices.filter((d) => d.sanity !== undefined);
-    if (scored.length === 0) return 85;
+    if (!devices || devices.length === 0) return null;
+    const scored = devices.filter((d) => typeof d.sanity === 'number' && !Number.isNaN(d.sanity));
+    if (scored.length === 0) return null;
     const sum = scored.reduce((acc, curr) => acc + (curr.sanity || 0), 0);
     return Math.round(sum / scored.length);
   }, [devices]);
@@ -38,6 +41,53 @@ export const DeviceDashboardTab: React.FC = () => {
     });
     return Object.entries(map).map(([model, count]) => ({ model, count }));
   }, [devices]);
+
+  // Health triage breakdown
+  const healthyCount = React.useMemo(() => {
+    return devices.filter((d) => d.connected && (d.sanity ?? 0) >= 90).length;
+  }, [devices]);
+
+  const criticalCount = offlineCount;
+
+  if (isLoading) {
+    return (
+      <Flex justify="center" align="center" minH="300px" direction="column" gap={3}>
+        <Spinner size="xl" color={themeColors.brand.accent} />
+        <Text fontSize="14px" color={themeColors.text.muted}>
+          Loading authoritative fleet metrics...
+        </Text>
+      </Flex>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Box
+        p={6}
+        bg="#fef2f2"
+        border="1px solid #fecaca"
+        borderRadius="10px"
+        textAlign="center"
+      >
+        <VStack gap={3}>
+          <Text fontSize="16px" fontWeight="700" color="#991b1b">
+            Failed to Load Fleet Metrics
+          </Text>
+          <Text fontSize="13px" color="#b91c1c">
+            {error instanceof Error ? error.message : 'Unable to fetch authoritative fleet data from inventory service.'}
+          </Text>
+          <Button
+            size="sm"
+            colorScheme="red"
+            variant="outline"
+            onClick={() => refetch()}
+          >
+            Retry
+          </Button>
+        </VStack>
+      </Box>
+    );
+  }
 
   const kpis = [
     {
@@ -59,18 +109,18 @@ export const DeviceDashboardTab: React.FC = () => {
     {
       title: 'Offline / Critical',
       value: offlineCount,
-      subtitle: `${100 - connectivityRate}% offline or stale`,
+      subtitle: `${totalCount > 0 ? 100 - connectivityRate : 0}% offline or stale`,
       icon: 'alertTriangle' as const,
       color: '#dc2626',
       bg: '#fef2f2',
     },
     {
       title: 'Average Fleet Sanity',
-      value: `${averageSanity}%`,
-      subtitle: 'Health & connectivity composite',
+      value: averageSanity !== null ? `${averageSanity}%` : '—',
+      subtitle: averageSanity !== null ? 'Health & connectivity composite' : 'No sanity scores reported',
       icon: 'shield' as const,
-      color: averageSanity >= 80 ? '#16a34a' : '#d97706',
-      bg: averageSanity >= 80 ? '#f0fdf4' : '#fef3c7',
+      color: averageSanity !== null ? (averageSanity >= 80 ? '#16a34a' : '#d97706') : '#64748b',
+      bg: averageSanity !== null ? (averageSanity >= 80 ? '#f0fdf4' : '#fef3c7') : '#f8fafc',
     },
   ];
 
@@ -130,7 +180,7 @@ export const DeviceDashboardTab: React.FC = () => {
               </Text>
             ) : (
               modelBreakdown.map((item, idx) => {
-                const percent = Math.round((item.count / totalCount) * 100);
+                const percent = totalCount > 0 ? Math.round((item.count / totalCount) * 100) : 0;
                 return (
                   <Box key={idx}>
                     <Flex justify="space-between" align="center" fontSize="13px" mb={1}>
@@ -170,7 +220,7 @@ export const DeviceDashboardTab: React.FC = () => {
                 </Box>
               </HStack>
               <Text fontSize="16px" fontWeight="800" color="#166534">
-                {connectedCount}
+                {healthyCount}
               </Text>
             </Flex>
 
@@ -187,7 +237,7 @@ export const DeviceDashboardTab: React.FC = () => {
                 </Box>
               </HStack>
               <Text fontSize="16px" fontWeight="800" color="#991b1b">
-                {offlineCount}
+                {criticalCount}
               </Text>
             </Flex>
           </VStack>
@@ -198,4 +248,3 @@ export const DeviceDashboardTab: React.FC = () => {
 };
 
 export default DeviceDashboardTab;
-

@@ -34,11 +34,11 @@ export const DeviceNotesCard: React.FC<DeviceNotesCardProps> = ({ device, onRefr
   // Fetch device record (including live notes) from MDU backend with RBAC enforcement
   const { data: recordData, isLoading, isFetching, refetch } = useDeviceRecord(device.serialNumber);
 
-  // Extract notes from MDU response or fallback to device properties
+  // Extract notes from MDU/OWGW response or fallback to gateway device properties
   const notes = useMemo<DeviceNote[]>(() => {
-    const rawList = recordData?.notes || device.notes || [];
+    const rawList = recordData?.notes || device.gwDevice?.notes || device.notes || [];
     return [...rawList].sort((a, b) => (b.created || 0) - (a.created || 0));
-  }, [recordData?.notes, device.notes]);
+  }, [recordData?.notes, device.gwDevice?.notes, device.notes]);
 
   const totalPages = Math.max(1, Math.ceil(notes.length / pageSize));
   const currentPage = Math.min(pageIndex, totalPages - 1);
@@ -51,19 +51,20 @@ export const DeviceNotesCard: React.FC<DeviceNotesCardProps> = ({ device, onRefr
     if (!newNoteText.trim()) return;
     setIsSubmitting(true);
     try {
-      // Route note addition through MDU backend with RBAC pre-flight validation
+      // Route note addition to OWGW via MDU backend with RBAC pre-flight validation
       await addDeviceNote(device.serialNumber, newNoteText.trim());
 
       setNewNoteText('');
       setIsAdding(false);
 
-      // Invalidate cache to pull fresh device record
+      // Invalidate cache to pull fresh device record & overview
       queryClient.invalidateQueries({ queryKey: ['device-record', device.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', device.serialNumber] });
       queryClient.invalidateQueries({ queryKey: ['unified-fleet-device', device.serialNumber] });
 
       toaster.create({
         title: 'Note Added',
-        description: 'Successfully appended note to device history via MDU',
+        description: 'Successfully added note to device history',
         type: 'success',
       });
       if (onRefresh) onRefresh();
@@ -102,9 +103,14 @@ export const DeviceNotesCard: React.FC<DeviceNotesCardProps> = ({ device, onRefr
           <Box color="#2563eb">
             <Icon name="file" size={18} />
           </Box>
-          <Text fontSize="15px" fontWeight="700" color={themeColors.text.title}>
-            Notes
-          </Text>
+          <Box>
+            <Text fontSize="15px" fontWeight="700" color={themeColors.text.title}>
+              Operational Notes
+            </Text>
+            <Text fontSize="11px" color={themeColors.text.muted}>
+              Operational records and runtime memos
+            </Text>
+          </Box>
         </HStack>
 
         <HStack gap={2}>
@@ -139,7 +145,7 @@ export const DeviceNotesCard: React.FC<DeviceNotesCardProps> = ({ device, onRefr
           <Textarea
             value={newNoteText}
             onChange={(e) => setNewNoteText(e.target.value)}
-            placeholder="Type device note or maintenance record..."
+            placeholder="Type an operational note or maintenance memo..."
             size="sm"
             bg="#ffffff"
             rows={2}
@@ -200,7 +206,7 @@ export const DeviceNotesCard: React.FC<DeviceNotesCardProps> = ({ device, onRefr
             ) : displayedNotes.length === 0 ? (
               <Table.Row>
                 <Table.Cell colSpan={3} textAlign="center" py={4} color={themeColors.text.muted} fontSize="12px">
-                  No notes recorded for this device yet.
+                  No operational notes recorded for this device yet.
                 </Table.Cell>
               </Table.Row>
             ) : (

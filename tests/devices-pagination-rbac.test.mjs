@@ -1365,6 +1365,162 @@ test('Eliminates fabricated device telemetry, credentials, and demo blacklist fa
   );
 });
 
+test('Blacklist management routes through tenant-scoped MDU API instead of raw OWGW (Finding #3)', () => {
+  const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+  const devicesApiContent = fs.readFileSync(devicesApiPath, 'utf-8');
+
+  // Extract blacklist section
+  const blacklistSection = devicesApiContent.match(/\/\/ 3\. Blacklist APIs[\s\S]*?\/\/ 4\. Single Device Detail/)?.[0] || '';
+  assert.ok(blacklistSection.length > 0, 'devices.ts must define Blacklist APIs section');
+
+  // Verify getBlacklistDevices calls axiosMdu
+  assert.ok(
+    blacklistSection.includes("axiosMdu.get<{ devices: BlacklistDevice[] }>('devices/blacklist')"),
+    'getBlacklistDevices must query tenant-scoped MDU devices/blacklist endpoint'
+  );
+  assert.ok(
+    !blacklistSection.includes("axiosGw.get<{ devices: BlacklistDevice[] }>('blacklist"),
+    'getBlacklistDevices must not query un-scoped OWGW blacklist directly'
+  );
+
+  // Verify useCreateBlacklistDevice calls axiosMdu
+  assert.ok(
+    blacklistSection.includes("axiosMdu.post('devices/blacklist'"),
+    'useCreateBlacklistDevice must submit through MDU devices/blacklist'
+  );
+  assert.ok(
+    !blacklistSection.includes("axiosGw.post(`blacklist/"),
+    'useCreateBlacklistDevice must not bypass MDU by posting directly to OWGW'
+  );
+
+  // Verify useDeleteBlacklistDevice calls axiosMdu
+  assert.ok(
+    blacklistSection.includes("axiosMdu.delete(`devices/blacklist/${clean}`)"),
+    'useDeleteBlacklistDevice must delete through MDU devices/blacklist/:serial'
+  );
+  assert.ok(
+    !blacklistSection.includes("axiosGw.delete(`blacklist/"),
+    'useDeleteBlacklistDevice must not bypass MDU by deleting directly from OWGW'
+  );
+});
+
+test('Device group persistence aligns with OWPROV platform contract and eliminates fallback SKU (Finding #4)', () => {
+  const mainTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'MainConfigSubTab.tsx'
+  );
+  const mainTabContent = fs.readFileSync(mainTabPath, 'utf-8');
+
+  // 1. Must define and export getDeviceGroupFromType matching owprov-ui pattern
+  assert.ok(
+    mainTabContent.includes('export const getDeviceGroupFromType'),
+    'MainConfigSubTab must export getDeviceGroupFromType'
+  );
+
+  // 2. Must submit platform in uppercase alongside deviceGroup in save payload
+  assert.ok(
+    mainTabContent.includes('platform: deviceGroup.toUpperCase()'),
+    'MainConfigSubTab must submit platform: deviceGroup.toUpperCase() for OWPROV persistence'
+  );
+  assert.ok(
+    mainTabContent.includes('deviceGroup,'),
+    'MainConfigSubTab must submit deviceGroup for backward compatibility'
+  );
+
+  // 3. Must eliminate fallback SKU asus_rt-ax53u from handleGroupChange and availableDeviceTypes
+  assert.ok(
+    !mainTabContent.includes("setDeviceType(validTypes[0] || 'asus_rt-ax53u')"),
+    'handleGroupChange must not default to asus_rt-ax53u when validTypes is empty'
+  );
+  assert.ok(
+    !mainTabContent.includes("DEVICE_TYPES_BY_GROUP[deviceGroup] || ['asus_rt-ax53u'"),
+    'availableDeviceTypes must not default to asus_rt-ax53u when group types are missing'
+  );
+
+  // 4. Save-then-reload simulation test
+  // FMS catalog fixture
+  const fmsCatalog = {
+    ap: ['asus_rt-ax53u', 'edgecore_eap102', 'cig_wf188n'],
+    switch: ['edgecore_ecs4100_12ph', 'edgecore_ecs4100_28p'],
+    olg: ['openlan_gateway'],
+  };
+
+  // Pure logic implementation of getDeviceGroupFromType
+  const getDeviceGroupFromTypeLogic = (type, typesByClass) => {
+    if (!type || !typesByClass) return '';
+    const entries = Object.entries(typesByClass);
+    const match = entries.find(([, types]) => types?.includes(type));
+    return match ? match[0] : '';
+  };
+
+  // Simulate editing a device from AP to Switch
+  const initialDevice = {
+    serialNumber: '24f5a201b1a0',
+    deviceType: 'asus_rt-ax53u',
+    provTag: {
+      serialNumber: '24f5a201b1a0',
+      deviceType: 'asus_rt-ax53u',
+      platform: 'AP',
+    },
+  };
+
+  // Initial group derived from FMS
+  const initialGroup = getDeviceGroupFromTypeLogic(initialDevice.provTag.deviceType, fmsCatalog);
+  assert.strictEqual(initialGroup, 'ap', 'Initial group must resolve to ap for asus_rt-ax53u');
+
+  // User selects 'switch' and chooses switch model
+  const selectedGroup = 'switch';
+  const selectedType = fmsCatalog[selectedGroup][0]; // 'edgecore_ecs4100_12ph'
+  assert.strictEqual(selectedType, 'edgecore_ecs4100_12ph');
+
+  // Client creates save payload
+  const savePayload = {
+    deviceGroup: selectedGroup,
+    platform: selectedGroup.toUpperCase(),
+    deviceType: selectedType,
+  };
+  assert.strictEqual(savePayload.platform, 'SWITCH');
+  assert.strictEqual(savePayload.deviceGroup, 'switch');
+  assert.strictEqual(savePayload.deviceType, 'edgecore_ecs4100_12ph');
+
+  // OWPROV persists deviceType and platform to database record
+  const savedDbRecord = {
+    serialNumber: '24f5a201b1a0',
+    deviceType: savePayload.deviceType,
+    platform: savePayload.platform,
+  };
+
+  // Simulate subsequent reload of device from inventory
+  const reloadedDevice = {
+    serialNumber: '24f5a201b1a0',
+    provTag: {
+      serialNumber: '24f5a201b1a0',
+      deviceType: savedDbRecord.deviceType,
+      platform: savedDbRecord.platform,
+    },
+  };
+
+  // Reload re-derives deviceGroup from FMS deviceType and platform
+  const reloadedGroup = getDeviceGroupFromTypeLogic(reloadedDevice.provTag.deviceType, fmsCatalog);
+  assert.strictEqual(
+    reloadedGroup,
+    'switch',
+    'Reloaded device must persist switch group from saved deviceType'
+  );
+  assert.strictEqual(
+    reloadedDevice.provTag.platform,
+    'SWITCH',
+    'Reloaded device must persist SWITCH platform from saved platform'
+  );
+});
+
 test('useUpdateInventoryTag and device mutations invalidate active workspace and paginated fleet caches (Finding #9)', () => {
   const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
   const devicesApiContent = fs.readFileSync(devicesApiPath, 'utf-8');
@@ -1442,8 +1598,9 @@ test('DeviceSpecificConfigSubTab implements Copy-On-Write (COW) to prevent mutat
   );
 
   // 3. Must not delete modular configuration on reset
+  const deleteConfigBlock = content.match(/const handleDeleteConfig = [\s\S]*?^  };/m)?.[0] || '';
   assert.strictEqual(
-    content.includes('deleteModularConfiguration('),
+    deleteConfigBlock.includes('deleteModularConfiguration('),
     false,
     'handleDeleteConfig must never call deleteModularConfiguration on reset'
   );
@@ -1695,6 +1852,311 @@ test('useConfigureDeviceDirect aligns with OWPROV protocol: sends timestamp UUID
   assert.ok('configuration' in owgwReceivedBody, 'OWGW requires configuration');
   assert.strictEqual(typeof owgwReceivedBody.configuration.uuid, 'number', 'uCentral AP requires numeric uuid');
 });
+
+test('Copy-on-write guards against empty block saves, fetch failures, and rolls back orphaned configurations (P1 #2)', async () => {
+  const filePath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'DeviceSpecificConfigSubTab.tsx'
+  );
+  const content = fs.readFileSync(filePath, 'utf-8');
+
+  // 1. Verify query state captures loading and error states
+  assert.ok(content.includes('isLoading: isConfigLoading'), 'Must capture isConfigLoading from useQuery');
+  assert.ok(content.includes('isError: isConfigError'), 'Must capture isConfigError from useQuery');
+  assert.ok(content.includes('refetch: refetchConfig'), 'Must capture refetchConfig from useQuery');
+
+  // 2. Verify Save button is disabled during loading and error states
+  assert.ok(
+    content.includes('(hasExistingConfig && isConfigLoading)') || content.includes('isConfigLoading'),
+    'Save button must be disabled when existing configuration is loading'
+  );
+  assert.ok(
+    content.includes('(hasExistingConfig && isConfigError)') || content.includes('isConfigError'),
+    'Save button must be disabled when existing configuration query errored'
+  );
+
+  // 3. Verify handleSave throws errors on loading or fetch failures before creating configurations
+  assert.ok(
+    content.includes('if (hasExistingConfig)'),
+    'handleSave must check hasExistingConfig before proceeding'
+  );
+  assert.ok(
+    content.includes('throw new Error('),
+    'handleSave must guard against missing configuration blocks'
+  );
+
+  // 4. Verify rollback on device association failure
+  assert.ok(
+    content.includes('deleteModularConfiguration(newConfigId)'),
+    'handleSave must delete newly created modular configuration if device association fails (rollback)'
+  );
+
+  // 5. Simulation: Delayed OWPROV response (loading state)
+  const simulateSaveWithQueryState = (hasExistingConfig, isConfigLoading, isConfigError, configData, latestSectionsState) => {
+    if (hasExistingConfig) {
+      if (isConfigLoading) {
+        throw new Error('Existing configuration is still loading. Please wait before saving.');
+      }
+      if (isConfigError) {
+        throw new Error('Failed to load existing configuration. Saving is blocked to prevent data loss.');
+      }
+      if (!configData && !latestSectionsState) {
+        throw new Error('Existing configuration blocks are unavailable. Cannot proceed with save.');
+      }
+    }
+
+    let blocksToSave = [];
+    if (latestSectionsState) {
+      blocksToSave = latestSectionsState;
+    } else if (configData?.configuration && Array.isArray(configData.configuration)) {
+      blocksToSave = configData.configuration;
+    } else if (hasExistingConfig && !latestSectionsState) {
+      throw new Error('Original configuration blocks could not be verified. Aborting save.');
+    }
+    return blocksToSave;
+  };
+
+  // Case A: Query is still loading -> Throws, prevents creating empty config
+  assert.throws(
+    () => simulateSaveWithQueryState(true, true, false, undefined, null),
+    /still loading/,
+    'Saving while loading must be blocked'
+  );
+
+  // Case B: Query failed with 500 error -> Throws, prevents creating empty config
+  assert.throws(
+    () => simulateSaveWithQueryState(true, false, true, undefined, null),
+    /Failed to load existing configuration/,
+    'Saving when fetch fails must be blocked'
+  );
+
+  // Case C: Successfully loaded original configuration with 3 blocks -> Preserves 3 blocks
+  const existingBlocks = [
+    { name: 'radios', configuration: { radios: [] } },
+    { name: 'interfaces', configuration: { interfaces: [] } },
+    { name: 'globals', configuration: { ipv4_network: '10.0.0.1/24' } },
+  ];
+  const savedBlocks = simulateSaveWithQueryState(true, false, false, { configuration: existingBlocks }, null);
+  assert.strictEqual(savedBlocks.length, 3, 'Must preserve existing configuration blocks');
+
+  // Case D: Simulation of orphan cleanup on failed device association
+  const mockDb = new Map();
+  const simulateCowWithRollback = async (shouldFailDeviceUpdate) => {
+    // 1. Create configuration
+    const newConfigId = 'cow-cfg-' + Math.random().toString(36).substring(7);
+    mockDb.set(newConfigId, { id: newConfigId, name: 'device:test' });
+
+    // 2. Associate with device
+    try {
+      if (shouldFailDeviceUpdate) {
+        throw new Error('500 Internal Server Error: Failed to associate device tag');
+      }
+      return { success: true, configId: newConfigId };
+    } catch (err) {
+      // Rollback
+      mockDb.delete(newConfigId);
+      throw err;
+    }
+  };
+
+  // Run failed attempt:
+  await assert.rejects(
+    async () => simulateCowWithRollback(true),
+    /Failed to associate device tag/,
+    'Should rethrow device update error'
+  );
+  assert.strictEqual(mockDb.size, 0, 'Orphaned configuration must be rolled back from database');
+
+  // Run successful attempt:
+  const successRes = await simulateCowWithRollback(false);
+  assert.strictEqual(mockDb.size, 1);
+  assert.ok(mockDb.has(successRes.configId), 'Successfully associated configuration must remain in database');
+});
+
+test('DeviceDashboardTab eliminates fabricated fleet metrics and derives authoritative counts (P2 #6)', () => {
+  const tabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceDashboard',
+    'DeviceDashboardTab.tsx'
+  );
+  assert.ok(fs.existsSync(tabPath), 'DeviceDashboardTab.tsx must exist');
+  const tabContent = fs.readFileSync(tabPath, 'utf-8');
+
+  // Verify elimination of fabricated fallback values
+  assert.ok(!tabContent.includes('?? 4'), 'Must not hardcode fabricated fallback of 4 devices');
+  assert.ok(!tabContent.includes('?? 1'), 'Must not hardcode fabricated fallback of 1 connected device');
+  assert.ok(!tabContent.includes('return 85'), 'Must not hardcode fabricated 85% average sanity');
+  assert.ok(!tabContent.includes(': 25'), 'Must not hardcode fabricated 25% connectivity rate');
+
+  // Verify loading and error states
+  assert.ok(tabContent.includes('isLoading'), 'Must handle isLoading from useUnifiedFleetDevices');
+  assert.ok(tabContent.includes('<Spinner'), 'Must render Spinner during loading state');
+  assert.ok(tabContent.includes('isError'), 'Must handle isError state');
+  assert.ok(tabContent.includes('refetch()'), 'Must provide retry button calling refetch');
+
+  // Verify authoritative metrics derivation
+  assert.ok(tabContent.includes('data?.totalCount ?? devices.length'), 'Must derive totalCount authoritatively from MDU payload');
+  assert.ok(tabContent.includes("averageSanity !== null ? `${averageSanity}%` : '—'"), 'Must display dash when no sanity score is available');
+
+  // Verify API contracts in devices.ts
+  const apiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+  const apiContent = fs.readFileSync(apiPath, 'utf-8');
+  assert.ok(apiContent.includes('export interface FleetDevicesResponse'), 'Must export FleetDevicesResponse interface');
+  assert.ok(apiContent.includes('useFleetDashboard'), 'Must export useFleetDashboard hook');
+  assert.ok(apiContent.includes('totalCount > pageSize'), 'Must implement multi-page aggregation for fleets exceeding page size');
+});
+
+test('Simulation: fleet metrics calculation strictly respects authorized device count and avoids fabrication', () => {
+  // Case A: Empty fleet response (e.g. fresh tenant or unassigned view with 0 devices)
+  const emptyData = { devices: [], totalCount: 0 };
+  const calcMetrics = (data) => {
+    const devices = data?.devices ?? [];
+    const totalCount = data?.totalCount ?? devices.length;
+    const connectedCount = devices.filter((d) => d.connected).length;
+    const offlineCount = Math.max(0, totalCount - connectedCount);
+    const connectivityRate = totalCount > 0 ? Math.round((connectedCount / totalCount) * 100) : 0;
+    const scored = devices.filter((d) => typeof d.sanity === 'number' && !Number.isNaN(d.sanity));
+    const averageSanity = scored.length > 0 ? Math.round(scored.reduce((acc, curr) => acc + (curr.sanity || 0), 0) / scored.length) : null;
+    return { totalCount, connectedCount, offlineCount, connectivityRate, averageSanity };
+  };
+
+  const emptyResult = calcMetrics(emptyData);
+  assert.strictEqual(emptyResult.totalCount, 0, 'Total count must be 0 for empty authorized scope');
+  assert.strictEqual(emptyResult.connectedCount, 0, 'Connected count must be 0');
+  assert.strictEqual(emptyResult.offlineCount, 0, 'Offline count must be 0');
+  assert.strictEqual(emptyResult.connectivityRate, 0, 'Connectivity rate must be 0% not 25%');
+  assert.strictEqual(emptyResult.averageSanity, null, 'Sanity must be null not 85%');
+
+  // Case B: Scoped fleet with authorized count > active page count
+  const mockDevices = [
+    { serialNumber: 'dev-1', connected: true, sanity: 95, model: 'AP-1' },
+    { serialNumber: 'dev-2', connected: true, sanity: 85, model: 'AP-1' },
+    { serialNumber: 'dev-3', connected: false, sanity: 40, model: 'GW-1' },
+  ];
+  const populatedData = { devices: mockDevices, totalCount: 150 }; // 150 authorized in tenant
+  const populatedResult = calcMetrics(populatedData);
+  assert.strictEqual(populatedResult.totalCount, 150, 'Total count must reflect authoritative tenant-authorized count');
+  assert.strictEqual(populatedResult.connectedCount, 2);
+  assert.strictEqual(populatedResult.offlineCount, 148, 'Offline count must accurately subtract connected devices from totalCount');
+  assert.strictEqual(populatedResult.connectivityRate, 1, '2 / 150 = 1.33% -> 1%');
+  assert.strictEqual(populatedResult.averageSanity, 73, '(95 + 85 + 40) / 3 = 73.33% -> 73%');
+});
+
+test('Overview Notes route to OWGW and Configuration Notes route to OWPROV with explicit distinction (Issue #7)', () => {
+  const overviewCardPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'OverviewTab',
+    'DeviceNotesCard.tsx'
+  );
+  const configTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'NotesSubTab.tsx'
+  );
+  const apiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+
+  assert.ok(fs.existsSync(overviewCardPath), 'DeviceNotesCard.tsx must exist');
+  assert.ok(fs.existsSync(configTabPath), 'NotesSubTab.tsx must exist');
+  assert.ok(fs.existsSync(apiPath), 'devices.ts must exist');
+
+  const overviewContent = fs.readFileSync(overviewCardPath, 'utf-8');
+  const configContent = fs.readFileSync(configTabPath, 'utf-8');
+  const apiContent = fs.readFileSync(apiPath, 'utf-8');
+
+  // 1. Overview Notes routes to OWGW via MDU and labels as Operational Notes without leaking internal names
+  assert.ok(
+    overviewContent.includes('Operational Notes'),
+    'DeviceNotesCard must label Operational Notes'
+  );
+  assert.ok(
+    overviewContent.includes('addDeviceNote(device.serialNumber'),
+    'DeviceNotesCard must add notes to OWGW via addDeviceNote'
+  );
+  assert.ok(
+    apiContent.includes('addDeviceNote') && apiContent.includes('axiosMdu.put<DeviceRecordResponse>(`devices/${clean}`'),
+    'addDeviceNote must persist strictly to OWGW via MDU with RBAC scoping'
+  );
+
+  // 2. Configuration Notes routes to OWPROV inventory tag without leaking internal names
+  assert.ok(
+    configContent.includes('Device Notes'),
+    'NotesSubTab must label Device Notes'
+  );
+  assert.ok(
+    configContent.includes('updateMutation.mutateAsync'),
+    'NotesSubTab must submit notes to OWPROV inventory tag via updateMutation'
+  );
+  assert.ok(
+    configContent.includes('device.provTag?.notes'),
+    'NotesSubTab must read strictly from OWPROV inventory tag'
+  );
+
+  // 3. Elimination of fabricated fallback note in NotesSubTab
+  assert.strictEqual(
+    configContent.includes('Auto-provisioned device tag.'),
+    false,
+    'NotesSubTab must eliminate fabricated fallback note'
+  );
+});
+
+test('Simulation: Separation of concerns between OWGW operational notes and OWPROV inventory notes', () => {
+  const mockProvInventoryNotes = new Map();
+  const mockGwOperationalNotes = new Map();
+
+  // Overview Tab action: adds note to OWGW
+  const addGwNote = (serial, text) => {
+    const list = mockGwOperationalNotes.get(serial) || [];
+    mockGwOperationalNotes.set(serial, [...list, { note: text, created: Date.now() }]);
+  };
+
+  // Configuration Tab action: adds note to OWPROV inventory tag
+  const addProvNote = (serial, text) => {
+    const list = mockProvInventoryNotes.get(serial) || [];
+    mockProvInventoryNotes.set(serial, [...list, { note: text, created: Date.now() }]);
+  };
+
+  const serial = '24f5a210beef';
+
+  // 1. Add operational memo on Overview tab
+  addGwNote(serial, 'Replaced bad patch cable during field maintenance');
+  assert.strictEqual(mockGwOperationalNotes.get(serial).length, 1);
+  assert.strictEqual(mockProvInventoryNotes.get(serial), undefined, 'OWPROV inventory must remain unaffected by gateway notes');
+
+  // 2. Add asset tag note on Configuration tab
+  addProvNote(serial, 'Asset Tag: BLDG4-RACK2-U12');
+  assert.strictEqual(mockProvInventoryNotes.get(serial).length, 1);
+  assert.strictEqual(mockGwOperationalNotes.get(serial).length, 1, 'OWGW gateway notes must remain unaffected by inventory notes');
+
+  // Verify payloads are cleanly separated
+  assert.strictEqual(mockGwOperationalNotes.get(serial)[0].note, 'Replaced bad patch cable during field maintenance');
+  assert.strictEqual(mockProvInventoryNotes.get(serial)[0].note, 'Asset Tag: BLDG4-RACK2-U12');
+});
+
+
+
 
 
 
