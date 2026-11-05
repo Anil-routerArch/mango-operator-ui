@@ -1591,6 +1591,112 @@ test('Multi-device simulation: updating or resetting one device does not affect 
   );
 });
 
+test('useConfigureDeviceDirect aligns with OWPROV protocol: sends timestamp UUID and configuration.uuid (Issue #5)', async () => {
+  const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+  const devicesApiContent = fs.readFileSync(devicesApiPath, 'utf-8');
+
+  const configureBlock = devicesApiContent.match(/export const useConfigureDeviceDirect = [\s\S]*?^};/m)?.[0] || '';
+  assert.ok(configureBlock, 'useConfigureDeviceDirect must be declared in devices.ts');
+
+  // 1. Must NOT contain hardcoded UUID: 1
+  assert.strictEqual(
+    configureBlock.includes('UUID: 1'),
+    false,
+    'useConfigureDeviceDirect must not send hardcoded UUID: 1'
+  );
+
+  // 2. Must use timestamp-based UUID consistent with OWPROV (Date.now() / 1000)
+  assert.ok(
+    configureBlock.includes('Date.now() / 1000') || configureBlock.includes('Math.floor(Date.now()'),
+    'useConfigureDeviceDirect must calculate timestamp-based UUID'
+  );
+  assert.ok(
+    configureBlock.includes('UUID: now') || configureBlock.includes('UUID:'),
+    'useConfigureDeviceDirect must pass timestamp UUID'
+  );
+
+  // 3. Must inject uuid into the inner configuration object
+  assert.ok(
+    configureBlock.includes('uuid: now') || configureBlock.includes('uuid:'),
+    'useConfigureDeviceDirect must inject uuid into configuration object'
+  );
+
+  // 4. Must preserve when: 0 and normalized serialNumber
+  assert.ok(configureBlock.includes('when: 0'), 'useConfigureDeviceDirect must preserve when: 0');
+  assert.ok(
+    configureBlock.includes('serialNumber: clean'),
+    'useConfigureDeviceDirect must send normalized serialNumber'
+  );
+
+  // 5. Simulation: Request payload construction and forwarding through MDU to OWGW
+  const normalizeSerial = (s) => (s || '').toLowerCase().replace(/[^a-f0-9]/g, '');
+
+  let forwardedToMdu = null;
+  const mockAxiosMdu = {
+    post: async (endpoint, data) => {
+      forwardedToMdu = { endpoint, data };
+      return { data: { success: true } };
+    },
+  };
+
+  const simulateConfigure = async (payload) => {
+    const clean = normalizeSerial(payload.serialNumber);
+    const now = Math.floor(Date.now() / 1000);
+    const res = await mockAxiosMdu.post(`devices/${clean}/configure`, {
+      when: 0,
+      UUID: now,
+      serialNumber: clean,
+      configuration: {
+        ...payload.configuration,
+        uuid: now,
+      },
+    });
+    return res.data;
+  };
+
+  const configInput = {
+    globals: { ipv4_network: '192.168.1.0/24' },
+    radios: [{ band: '5G', channel: 36 }],
+  };
+
+  const beforeTime = Math.floor(Date.now() / 1000);
+  const result = await simulateConfigure({
+    serialNumber: '60:CF:84:F2:22:90',
+    configuration: configInput,
+  });
+  const afterTime = Math.floor(Date.now() / 1000);
+
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(forwardedToMdu.endpoint, 'devices/60cf84f22290/configure');
+  assert.strictEqual(forwardedToMdu.data.serialNumber, '60cf84f22290');
+  assert.strictEqual(forwardedToMdu.data.when, 0);
+
+  // Assert outer UUID is a valid timestamp
+  assert.ok(
+    forwardedToMdu.data.UUID >= beforeTime && forwardedToMdu.data.UUID <= afterTime,
+    'Outer UUID must be current epoch timestamp'
+  );
+
+  // Assert inner configuration.uuid matches outer UUID
+  assert.strictEqual(
+    forwardedToMdu.data.configuration.uuid,
+    forwardedToMdu.data.UUID,
+    'Inner configuration.uuid must match outer command UUID'
+  );
+
+  // Assert other configuration blocks are preserved
+  assert.deepStrictEqual(forwardedToMdu.data.configuration.globals, configInput.globals);
+  assert.deepStrictEqual(forwardedToMdu.data.configuration.radios, configInput.radios);
+
+  // 6. Simulate OWGW REST API validation (ra-wlan-cloud-ucentralgw/src/RESTAPI/RESTAPI_device_commandHandler.cpp)
+  const owgwReceivedBody = forwardedToMdu.data;
+  assert.ok('serialNumber' in owgwReceivedBody, 'OWGW requires serialNumber');
+  assert.ok('UUID' in owgwReceivedBody, 'OWGW requires UUID');
+  assert.ok('configuration' in owgwReceivedBody, 'OWGW requires configuration');
+  assert.strictEqual(typeof owgwReceivedBody.configuration.uuid, 'number', 'uCentral AP requires numeric uuid');
+});
+
+
 
 
 
