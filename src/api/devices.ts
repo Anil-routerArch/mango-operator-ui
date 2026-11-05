@@ -67,120 +67,14 @@ export const formatUptime = (seconds?: number): string => {
 };
 
 // ----------------------------------------------------------------------
-// 1. Fleet Ingestion & Data Merging Engine (RBAC-Safe & Paginated)
+// 1. Fleet Ingestion & Data Merging Engine (RBAC-Safe & Paginated via MDU)
 // ----------------------------------------------------------------------
 
 /**
- * Hydrates a list of scoped inventory tags with real-time telemetry from OWGW
- * strictly using the `select=s1,s2,...` query to prevent multi-tenant data leaks.
- */
-export const hydrateTagsWithGatewayStatus = async (
-  tags: InventoryTagApiResponse[]
-): Promise<UnifiedFleetDevice[]> => {
-  if (tags.length === 0) return [];
-
-  const serials = tags
-    .map((tag) => normalizeSerial(tag.serialNumber))
-    .filter(Boolean);
-
-  let gwStatusList: DeviceWithStatusApiResponse[] = [];
-  if (serials.length > 0) {
-    try {
-      const gwRes = await axiosGw.get<{ devicesWithStatus?: DeviceWithStatusApiResponse[] }>(
-        `devices?deviceWithStatus=true&select=${serials.join(',')}`
-      );
-      if (Array.isArray(gwRes.data?.devicesWithStatus)) {
-        gwStatusList = gwRes.data.devicesWithStatus;
-      }
-    } catch (err) {
-      console.warn('Failed to fetch gateway status for scoped devices:', err);
-    }
-  }
-
-  // Index GW devices by normalized serial
-  const gwMap = new Map<string, DeviceWithStatusApiResponse>();
-  for (const gwDev of gwStatusList) {
-    if (gwDev.serialNumber) {
-      gwMap.set(normalizeSerial(gwDev.serialNumber), gwDev);
-    }
-  }
-
-  // Strictly merge based on scoped tags - never include un-scoped devices
-  return tags.map((tag) => {
-    const normSerial = normalizeSerial(tag.serialNumber);
-    const liveGw = gwMap.get(normSerial);
-
-    const isConnected = Boolean(liveGw?.connected);
-    const sanityScore = liveGw?.sanity ?? (isConnected ? 100 : 0);
-    const lastContactNum = liveGw?.lastContact
-      ? typeof liveGw.lastContact === 'string'
-        ? parseInt(liveGw.lastContact, 10)
-        : liveGw.lastContact
-      : undefined;
-
-    const resolvedPlatform = normalizePlatformDeviceType(
-      liveGw?.deviceType,
-      tag.devClass,
-      undefined,
-      tag.deviceType || liveGw?.compatible,
-    );
-
-    return {
-      serialNumber: tag.serialNumber,
-      name: tag.name || liveGw?.compatible || tag.serialNumber,
-      description: tag.description,
-      model: liveGw?.compatible || tag.deviceType || '-',
-      deviceGroup: tag.deviceGroup || resolvedPlatform,
-      deviceType: tag.deviceType || liveGw?.compatible || resolvedPlatform,
-      connected: isConnected,
-      sanity: sanityScore,
-      ipAddress: liveGw?.ipAddress || '-',
-      macAddress: liveGw?.macAddress || tag.realMacAddress,
-      memoryUsedPct: liveGw?.memoryUsed,
-      load: liveGw?.load,
-      temperature: liveGw?.temperature,
-      firmware: liveGw?.firmware || '-',
-      uptimeSeconds: liveGw?.started ? Math.floor(Date.now() / 1000) - liveGw.started : undefined,
-      started: liveGw?.started,
-      locale: liveGw?.locale,
-      lastRecordedContact: liveGw?.lastRecordedContact,
-      lastFWUpdate: liveGw?.lastFWUpdate,
-      connectReason: liveGw?.connectReason,
-      certificateExpiryDate: liveGw?.certificateExpiryDate,
-      hasRADIUSSessions: liveGw?.hasRADIUSSessions,
-      hasGPS: liveGw?.hasGPS,
-      lastContactTimestamp: lastContactNum,
-      lastContactText: formatRelativeTime(lastContactNum),
-      entityId: tag.entity,
-      entityName: tag.extendedInfo?.entity?.name,
-      venueId: tag.venue,
-      venueName: tag.extendedInfo?.venue?.name,
-      subscriberId: tag.subscriber,
-      subscriberEmail: tag.extendedInfo?.subscriber?.email,
-      configId: tag.deviceConfiguration,
-      configName: tag.extendedInfo?.deviceConfiguration?.name,
-      blacklisted: Boolean(liveGw?.blackListed),
-      simulated: Boolean(liveGw?.simulated),
-      restricted: Boolean(liveGw?.restrictedDevice),
-      associationsTotal:
-        (liveGw?.associations_2G || 0) + (liveGw?.associations_5G || 0) + (liveGw?.associations_6G || 0),
-      associations_2G: liveGw?.associations_2G || 0,
-      associations_5G: liveGw?.associations_5G || 0,
-      associations_6G: liveGw?.associations_6G || 0,
-      rxBytes: liveGw?.rxBytes || 0,
-      txBytes: liveGw?.txBytes || 0,
-      provTag: tag,
-      rawStatus: liveGw,
-    };
-  });
-};
-
-/**
- * Robust paginated fleet device fetcher.
- * 1. Primary path: Calls the secure MDU Backend (`GET /api/v1/devices`) which enforces
- *    operator JWT RBAC scoping via internal OWPROV inventory and hydrates live OWGW telemetry.
- * 2. Fallback path: If MDU backend is unreachable, gracefully falls back to direct
- *    OWPROV inventory + selective OWGW status hydration.
+ * Paginated fleet device fetcher.
+ * Uses MDU Service (`GET /api/v1/devices`) as the single authoritative fleet API,
+ * which enforces RBAC scoping on inventory and aggregates real-time gateway status.
+ * Any errors (e.g. 401, 403, 500) propagate cleanly to React Query.
  */
 export const getPaginatedFleetDevices = async (
   options?: FleetFetchOptions
@@ -189,53 +83,15 @@ export const getPaginatedFleetDevices = async (
   const pageSize = Math.max(1, options?.pageSize ?? 10);
   const unassignedOnly = Boolean(options?.unassignedOnly);
 
-  // 1. Attempt to fetch via MDU Backend
-  try {
-    const res = await axiosMdu.get<PaginatedFleetResponse>('devices', {
-      params: {
-        pageIndex,
-        pageSize,
-        unassignedOnly,
-      },
-    });
-    if (res.data && Array.isArray(res.data.devices)) {
-      return res.data;
-    }
-  } catch (mduErr) {
-    console.warn('MDU backend devices endpoint unavailable, utilizing fallback:', mduErr);
-  }
+  const res = await axiosMdu.get<PaginatedFleetResponse>('devices', {
+    params: {
+      pageIndex,
+      pageSize,
+      unassignedOnly,
+    },
+  });
 
-  // 2. Direct Fallback
-  const unassignedParam = unassignedOnly ? '&unassigned=true' : '';
-  const countQuery = `inventory?countOnly=true${unassignedParam}`;
-  const tagsQuery = `inventory?withExtendedInfo=true&limit=${pageSize}&offset=${pageIndex * pageSize}${unassignedParam}`;
-
-  const [countRes, tagsRes] = await Promise.allSettled([
-    axiosProv.get<{ count: number }>(countQuery),
-    axiosProv.get<{ taglist?: InventoryTagApiResponse[]; tagList?: InventoryTagApiResponse[] }>(tagsQuery),
-  ]);
-
-  const totalCount =
-    countRes.status === 'fulfilled' && typeof countRes.value.data?.count === 'number'
-      ? countRes.value.data.count
-      : 0;
-
-  const rawTags: InventoryTagApiResponse[] =
-    tagsRes.status === 'fulfilled'
-      ? tagsRes.value.data?.taglist || tagsRes.value.data?.tagList || []
-      : [];
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-
-  const devices = await hydrateTagsWithGatewayStatus(rawTags);
-
-  return {
-    devices,
-    totalCount,
-    pageIndex,
-    pageSize,
-    totalPages,
-  };
+  return res.data;
 };
 
 /**
@@ -433,25 +289,17 @@ export const useDeviceEventsStream = (serials: string[]) => {
 };
 
 /**
- * Fetches inventory tags from OWPROV and real-time device telemetry from OWGW,
- * strictly scoped to authorized tags.
+ * Fetches fleet devices from the authoritative MDU service.
  */
 export const getFleetDevices = async (options?: FleetFetchOptions): Promise<UnifiedFleetDevice[]> => {
-  const provQuery = options?.unassignedOnly
-    ? 'inventory?withExtendedInfo=true&unassigned=true&limit=1000'
-    : 'inventory?withExtendedInfo=true&limit=1000';
-
-  try {
-    const provRes = await axiosProv.get<{
-      taglist?: InventoryTagApiResponse[];
-      tagList?: InventoryTagApiResponse[];
-    }>(provQuery);
-    const tags = provRes.data?.taglist || provRes.data?.tagList || [];
-    return await hydrateTagsWithGatewayStatus(tags);
-  } catch (err) {
-    console.warn('Failed to fetch fleet inventory from owprov:', err);
-    return [];
-  }
+  const res = await axiosMdu.get<PaginatedFleetResponse>('devices', {
+    params: {
+      pageIndex: 0,
+      pageSize: 500,
+      unassignedOnly: Boolean(options?.unassignedOnly),
+    },
+  });
+  return res.data?.devices || [];
 };
 
 export const useFleetDevices = (options?: FleetFetchOptions) => {
