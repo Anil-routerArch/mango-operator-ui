@@ -14,6 +14,7 @@ import { useUpdateDeviceTag } from '@/api/devices';
 import {
   getModularConfigurationById,
   createModularConfiguration,
+  deleteModularConfiguration,
   type ModularConfigElementPayload,
   type ModularConfigurationPayload,
 } from '@/api/modularConfigurations';
@@ -83,11 +84,20 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
     setFirmwareRCOnly(initialFirmwareRCOnly);
   }, [initialRrm, initialFirmwareUpgrade, initialFirmwareRCOnly]);
 
-  // Query modular configuration if device.configId is present
-  const { data: configData } = useQuery({
-    queryKey: ['modular-configuration-device', device.configId],
-    queryFn: () => getModularConfigurationById(device.configId!),
-    enabled: Boolean(device.configId),
+  const hasExistingConfig = Boolean(device.configId || device.provTag?.deviceConfiguration);
+  const activeConfigId = device.configId || device.provTag?.deviceConfiguration || '';
+
+  // Query modular configuration if device has an existing configuration ID
+  const {
+    data: configData,
+    isLoading: isConfigLoading,
+    isError: isConfigError,
+    error: configError,
+    refetch: refetchConfig,
+  } = useQuery({
+    queryKey: ['modular-configuration-device', activeConfigId],
+    queryFn: () => getModularConfigurationById(activeConfigId),
+    enabled: Boolean(activeConfigId),
   });
 
   useEffect(() => {
@@ -236,6 +246,19 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       setIsSaving(true);
       const originalConfigId = device.configId || device.provTag?.deviceConfiguration;
 
+      // Guard against saving when existing configuration is loading, failed, or missing (P1 #2)
+      if (hasExistingConfig) {
+        if (isConfigLoading) {
+          throw new Error('Existing configuration is still loading. Please wait before saving.');
+        }
+        if (isConfigError) {
+          throw new Error('Failed to load existing configuration. Saving is blocked to prevent data loss.');
+        }
+        if (!configData && !latestSectionsState) {
+          throw new Error('Existing configuration blocks are unavailable. Cannot proceed with save.');
+        }
+      }
+
       const resolvedType =
         device.provTag?.deviceType ||
         (device.deviceType && !['ap', 'switch', 'olg'].includes(device.deviceType) ? device.deviceType : device.model) ||
@@ -253,6 +276,8 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         blocksToSave = compileStateToModularConfigurationElements(latestSectionsState);
       } else if (configData?.configuration && Array.isArray(configData.configuration)) {
         blocksToSave = configData.configuration;
+      } else if (hasExistingConfig && !latestSectionsState) {
+        throw new Error('Original configuration blocks could not be verified. Aborting save to prevent overwriting with empty configuration.');
       }
 
       // Interim Copy-On-Write (COW) approach (Issue #1):
@@ -291,19 +316,29 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       // Field-scoped update (Issue #4):
       // Associate the new configuration with the selected device and apply intended rules.
       // Omit unrelated entity/venue, subscriber, state, hardware type, and class metadata.
-      await updateMutation.mutateAsync({
-        serialNumber: device.serialNumber,
-        payload: {
-          name: device.name || device.serialNumber,
-          devClass: authoritativeDevClass,
-          deviceConfiguration: newConfigId,
-          deviceRules: {
-            rrm: normalizedRrm,
-            firmwareUpgrade,
-            rcOnly: firmwareRCOnly ? 'yes' : 'no',
-          },
-        } as any,
-      });
+      try {
+        await updateMutation.mutateAsync({
+          serialNumber: device.serialNumber,
+          payload: {
+            name: device.name || device.serialNumber,
+            devClass: authoritativeDevClass,
+            deviceConfiguration: newConfigId,
+            deviceRules: {
+              rrm: normalizedRrm,
+              firmwareUpgrade,
+              rcOnly: firmwareRCOnly ? 'yes' : 'no',
+            },
+          } as any,
+        });
+      } catch (assignError) {
+        // Rollback: delete the newly created modular configuration to prevent database orphans
+        try {
+          await deleteModularConfiguration(newConfigId);
+        } catch {
+          // ignore cleanup error
+        }
+        throw assignError;
+      }
 
       if (originalConfigId) {
         queryClient.invalidateQueries({ queryKey: ['modular-configuration-device', originalConfigId] });
@@ -445,11 +480,64 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         </Box>
 
         {/* Modular Sections Card matching OWPROV */}
-        <ConfigurationSectionsCard
-          initialJson={currentJson}
-          onStateChange={handleStateChange}
-          platform={platform}
-        />
+        {hasExistingConfig && isConfigLoading ? (
+          <Flex
+            p={8}
+            borderRadius="8px"
+            bg="#f8fafc"
+            border="1px solid #e2e8f0"
+            align="center"
+            justify="center"
+            direction="column"
+            gap={3}
+            minH="200px"
+          >
+            <Spinner size="md" color={themeColors.brand.primary} />
+            <Text fontSize="13px" color="#64748b" fontWeight="500">
+              Loading configuration template...
+            </Text>
+          </Flex>
+        ) : hasExistingConfig && isConfigError ? (
+          <Flex
+            p={4}
+            borderRadius="8px"
+            bg="#fef2f2"
+            border="1px solid #fecaca"
+            align="center"
+            justify="space-between"
+            gap={3}
+          >
+            <Flex align="center" gap={2}>
+              <Icon name="alertTriangle" size={18} color="#ef4444" />
+              <Box>
+                <Text fontSize="13px" color="#991b1b" fontWeight="600">
+                  Failed to load configuration template
+                </Text>
+                <Text fontSize="12px" color="#b91c1c">
+                  {configError instanceof Error
+                    ? configError.message
+                    : 'Network error fetching configuration. Saving is disabled to prevent data loss.'}
+                </Text>
+              </Box>
+            </Flex>
+            <Button
+              size="xs"
+              variant="outline"
+              borderColor="#f87171"
+              color="#b91c1c"
+              _hover={{ bg: '#fee2e2' }}
+              onClick={() => refetchConfig()}
+            >
+              Retry
+            </Button>
+          </Flex>
+        ) : (
+          <ConfigurationSectionsCard
+            initialJson={currentJson}
+            onStateChange={handleStateChange}
+            platform={platform}
+          />
+        )}
 
         {/* Save Bar */}
         <Flex justify="flex-end" pt={3} borderTop="1px solid" borderColor={themeColors.panel.divider}>
@@ -459,12 +547,21 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
             color="#ffffff"
             _hover={{ bg: themeColors.brand.primaryHover }}
             onClick={handleSave}
-            disabled={isSaving || updateMutation.isPending}
+            disabled={
+              isSaving ||
+              updateMutation.isPending ||
+              (hasExistingConfig && isConfigLoading) ||
+              (hasExistingConfig && isConfigError)
+            }
             gap={1.5}
             px={5}
           >
-            {isSaving || updateMutation.isPending ? <Spinner size="xs" /> : <Icon name="check" size={14} />}
-            Save Configuration
+            {isSaving || updateMutation.isPending || (hasExistingConfig && isConfigLoading) ? (
+              <Spinner size="xs" />
+            ) : (
+              <Icon name="check" size={14} />
+            )}
+            {hasExistingConfig && isConfigLoading ? 'Loading Configuration...' : 'Save Configuration'}
           </Button>
         </Flex>
       </VStack>

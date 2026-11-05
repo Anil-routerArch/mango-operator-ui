@@ -288,24 +288,70 @@ export const useDeviceEventsStream = (serials: string[]) => {
   }, [mduBaseUrl, token]);
 };
 
+export interface FleetDevicesResponse {
+  devices: UnifiedFleetDevice[];
+  totalCount: number;
+}
+
 /**
- * Fetches fleet devices from the authoritative MDU service.
+ * Fetches fleet devices from the authoritative MDU service with full pagination aggregation.
  */
-export const getFleetDevices = async (options?: FleetFetchOptions): Promise<UnifiedFleetDevice[]> => {
+export const getFleetDevices = async (
+  options?: FleetFetchOptions
+): Promise<FleetDevicesResponse> => {
+  const pageSize = 500;
   const res = await axiosMdu.get<PaginatedFleetResponse>('devices', {
     params: {
       pageIndex: 0,
-      pageSize: 500,
+      pageSize,
       unassignedOnly: Boolean(options?.unassignedOnly),
     },
   });
-  return res.data?.devices || [];
+
+  const firstPage = res.data?.devices || [];
+  const totalCount = res.data?.totalCount ?? firstPage.length;
+
+  if (totalCount > pageSize && res.data?.totalPages > 1) {
+    const totalPages = Math.min(res.data.totalPages, 10);
+    const pagePromises = [];
+    for (let p = 1; p < totalPages; p++) {
+      pagePromises.push(
+        axiosMdu
+          .get<PaginatedFleetResponse>('devices', {
+            params: {
+              pageIndex: p,
+              pageSize,
+              unassignedOnly: Boolean(options?.unassignedOnly),
+            },
+          })
+          .then((r) => r.data?.devices || [])
+          .catch(() => [])
+      );
+    }
+    const otherPages = await Promise.all(pagePromises);
+    const allDevices = firstPage.concat(...otherPages);
+    return { devices: allDevices, totalCount };
+  }
+
+  return { devices: firstPage, totalCount };
+};
+
+export const useFleetDashboard = (options?: FleetFetchOptions) => {
+  return useQuery({
+    queryKey: ['fleet-dashboard-devices', options],
+    queryFn: () => getFleetDevices(options),
+    refetchInterval: 15000,
+    staleTime: 10000,
+  });
 };
 
 export const useFleetDevices = (options?: FleetFetchOptions) => {
   return useQuery({
     queryKey: ['fleet-devices', options],
-    queryFn: () => getFleetDevices(options),
+    queryFn: async () => {
+      const res = await getFleetDevices(options);
+      return res.devices;
+    },
     refetchInterval: 15000,
     staleTime: 10000,
   });
@@ -334,7 +380,7 @@ export const useDeviceDashboard = () => {
 // ----------------------------------------------------------------------
 
 export const getBlacklistDevices = async (): Promise<BlacklistDevice[]> => {
-  const res = await axiosGw.get<{ devices: BlacklistDevice[] }>('blacklist?limit=500');
+  const res = await axiosMdu.get<{ devices: BlacklistDevice[] }>('devices/blacklist');
   return res.data?.devices || [];
 };
 
@@ -350,7 +396,11 @@ export const useCreateBlacklistDevice = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { serialNumber: string; reason: string }) => {
-      const res = await axiosGw.post(`blacklist/${payload.serialNumber}`, payload);
+      const clean = payload.serialNumber.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+      const res = await axiosMdu.post('devices/blacklist', {
+        serialNumber: clean,
+        reason: payload.reason,
+      });
       return res.data;
     },
     onSuccess: () => {
@@ -366,7 +416,8 @@ export const useDeleteBlacklistDevice = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (serialNumber: string) => {
-      const res = await axiosGw.delete(`blacklist/${serialNumber}`);
+      const clean = serialNumber.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+      const res = await axiosMdu.delete(`devices/blacklist/${clean}`);
       return res.data;
     },
     onSuccess: () => {
@@ -899,7 +950,7 @@ export const useLaunchRttySession = () => {
 };
 
 // Re-usable Hook Aliases
-export const useUnifiedFleetDevices = useFleetDevices;
+export const useUnifiedFleetDevices = useFleetDashboard;
 export const useDeviceOverview = (serialNumber?: string | null) => {
   return useQuery<UnifiedFleetDevice | null>({
     queryKey: ['single-device-overview', serialNumber],
@@ -967,7 +1018,7 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         certificateIssuerName: status?.certificateIssuerName || undefined,
         createdTimestamp: gw?.createdTimestamp || tag?.created,
         modified: gw?.modified || tag?.modified,
-        notes: gw?.notes || tag?.notes || [],
+        notes: gw?.notes || [],
         unitLoad: statsPayload?.unit?.load,
         unitUptime: statsPayload?.unit?.uptime || (status?.started ? Math.floor(Date.now() / 1000) - status.started : undefined),
         unitLocaltime: statsPayload?.unit?.localtime,
@@ -1078,9 +1129,10 @@ export const addDeviceNote = async (
   noteText: string,
 ): Promise<DeviceRecordResponse> => {
   const clean = normalizeSerial(serialNumber);
+  const trimmed = noteText.trim();
   const res = await axiosMdu.put<DeviceRecordResponse>(`devices/${clean}`, {
     serialNumber: clean,
-    notes: [{ note: noteText, created: 0 }],
+    notes: [{ note: trimmed, created: 0 }],
   });
   return res.data;
 };

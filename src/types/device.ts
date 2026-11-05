@@ -7,6 +7,7 @@ export interface DeviceNote {
   note: string;
   createdBy?: string;
   author?: string;
+  source?: 'inventory' | 'gateway' | 'system' | string;
 }
 
 export interface DeviceRules {
@@ -44,6 +45,7 @@ export interface InventoryTagApiResponse {
   description?: string;
   deviceType?: string;
   deviceGroup?: string;
+  platform?: string;
   devClass?: string;
   entity?: string;
   venue?: string;
