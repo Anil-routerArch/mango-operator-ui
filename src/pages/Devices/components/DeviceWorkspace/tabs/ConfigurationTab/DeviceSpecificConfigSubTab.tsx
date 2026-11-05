@@ -197,7 +197,6 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         payload: {
           name: device.name || device.serialNumber,
           description: device.description || '',
-          notes: (device.provTag?.notes || device.notes || []).map((n) => ({ note: n.note })),
           deviceType: resolvedType,
           deviceGroup: resolvedGroup,
           devClass: device.provTag?.devClass || 'venue',
@@ -303,7 +302,6 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         payload: {
           name: device.name || device.serialNumber,
           description: device.description || '',
-          notes: (device.provTag?.notes || device.notes || []).map((n) => ({ note: n.note })),
           deviceType: resolvedType,
           deviceGroup: resolvedGroup,
           devClass: device.provTag?.devClass || 'venue',

@@ -166,7 +166,6 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
         payload: {
           name,
           description,
-          notes: (device.provTag?.notes || device.notes || []).map((n) => ({ note: n.note })),
           deviceType,
           deviceGroup,
           devClass,
