@@ -14,9 +14,8 @@ import { useUpdateDeviceTag } from '@/api/devices';
 import {
   getModularConfigurationById,
   createModularConfiguration,
-  updateModularConfiguration,
-  deleteModularConfiguration,
   type ModularConfigElementPayload,
+  type ModularConfigurationPayload,
 } from '@/api/modularConfigurations';
 import { toaster } from '@/components/ui/toaster';
 import { ConfigurationSectionsCard } from '@/pages/Configuration/components/ConfigurationSectionsCard';
@@ -175,7 +174,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
   };
 
   const handleDeleteConfig = async () => {
-    if (!window.confirm('Are you sure you want to delete this device-specific configuration?')) {
+    if (!window.confirm('Are you sure you want to reset this device-specific configuration? This will detach the configuration without deleting the shared template.')) {
       return;
     }
     try {
@@ -190,6 +189,9 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         device.provTag?.deviceGroup ||
         (['ap', 'switch', 'olg'].includes(device.deviceGroup) ? device.deviceGroup : 'ap');
 
+      // Interim Copy-On-Write requirement:
+      // Reset Configuration detaches the selected device without deleting the underlying modular configuration,
+      // preserving the profile for any other devices referencing it.
       await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
         payload: {
@@ -213,14 +215,6 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         } as any,
       });
 
-      if (configId) {
-        try {
-          await deleteModularConfiguration(configId);
-        } catch {
-          // ignore if already deleted or in-use
-        }
-      }
-
       setRrm('inherit');
       setFirmwareUpgrade('no');
       setFirmwareRCOnly(false);
@@ -231,16 +225,17 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       }
       queryClient.invalidateQueries({ queryKey: ['single-device-overview', device.serialNumber] });
       queryClient.invalidateQueries({ queryKey: ['device-computed-config', device.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
 
       toaster.create({
         title: 'Configuration Reset',
-        description: 'Device-specific configuration and base rules have been reset.',
+        description: 'Device-specific configuration detached successfully.',
         type: 'success',
       });
     } catch (err: unknown) {
       toaster.create({
-        title: 'Delete Failed',
-        description: err instanceof Error ? err.message : 'Could not delete device configuration',
+        title: 'Reset Failed',
+        description: err instanceof Error ? err.message : 'Could not reset device configuration',
         type: 'error',
       });
     } finally {
@@ -251,7 +246,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      const configId = device.configId || device.provTag?.deviceConfiguration;
+      const originalConfigId = device.configId || device.provTag?.deviceConfiguration;
 
       const resolvedType =
         device.provTag?.deviceType ||
@@ -272,40 +267,37 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         blocksToSave = configData.configuration;
       }
 
-      let activeConfigId = configId;
+      // Interim Copy-On-Write (COW) approach (Issue #1):
+      // Do not update an existing modular configuration in place, which could unintentionally
+      // modify shared configurations referenced by other devices.
+      // Instead, create a new device-specific configuration preserving metadata, variables, and rules,
+      // and associate it with the selected device only after successful creation.
+      const newConfigPayload: ModularConfigurationPayload = {
+        name: `device:${device.serialNumber}`,
+        description: configData?.description || 'Device-specific configuration',
+        deviceGroup: resolvedGroup,
+        deviceTypes: [resolvedType],
+        deviceRules: {
+          rrm: normalizedRrm,
+          firmwareUpgrade,
+          rcOnly: firmwareRCOnly ? 'yes' : 'no',
+        },
+        variables: configData?.variables || [],
+        entity: configData?.entity || (device.provTag?.entity || device.entityId || ''),
+        venue: configData?.venue || (device.provTag?.venue || device.venueId || ''),
+        subscriber: configData?.subscriber || (device.provTag?.subscriber || device.subscriberId || ''),
+        subscriberOnly: configData?.subscriberOnly ?? false,
+        configuration: blocksToSave,
+      };
 
-      // 2. If configuration exists, update via PUT /api/v1/configuration/{id}
-      if (activeConfigId) {
-        await updateModularConfiguration(activeConfigId, {
-          deviceGroup: resolvedGroup,
-          deviceTypes: [resolvedType],
-          deviceRules: {
-            rrm: normalizedRrm,
-            firmwareUpgrade,
-            rcOnly: firmwareRCOnly ? 'yes' : 'no',
-          },
-          configuration: blocksToSave,
-        });
-      } else if (blocksToSave.length > 0) {
-        // Create new device-specific modular configuration in OWPROV
-        const res = await createModularConfiguration({
-          name: `device:${device.serialNumber}`,
-          description: 'Device-specific configuration',
-          deviceGroup: resolvedGroup,
-          deviceTypes: [resolvedType],
-          deviceRules: {
-            rrm: normalizedRrm,
-            firmwareUpgrade,
-            rcOnly: firmwareRCOnly ? 'yes' : 'no',
-          },
-          configuration: blocksToSave,
-        });
-        if (res?.id) {
-          activeConfigId = res.id;
-        }
+      const createRes = await createModularConfiguration(newConfigPayload);
+      if (!createRes?.id) {
+        throw new Error('Failed to create device-specific configuration: No ID returned');
       }
+      const newConfigId = createRes.id;
 
-      // 3. Update inventory tag with deviceRules and deviceConfiguration ID
+      // Associate the new configuration with the selected device only after successful creation.
+      // The previously referenced configuration is left completely untouched.
       await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
         payload: {
@@ -315,7 +307,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           deviceType: resolvedType,
           deviceGroup: resolvedGroup,
           devClass: device.provTag?.devClass || 'venue',
-          deviceConfiguration: activeConfigId || '',
+          deviceConfiguration: newConfigId,
           deviceRules: {
             rrm: normalizedRrm,
             firmwareUpgrade,
@@ -329,11 +321,13 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         } as any,
       });
 
-      if (activeConfigId) {
-        queryClient.invalidateQueries({ queryKey: ['modular-configuration-device', activeConfigId] });
+      if (originalConfigId) {
+        queryClient.invalidateQueries({ queryKey: ['modular-configuration-device', originalConfigId] });
       }
+      queryClient.invalidateQueries({ queryKey: ['modular-configuration-device', newConfigId] });
       queryClient.invalidateQueries({ queryKey: ['single-device-overview', device.serialNumber] });
       queryClient.invalidateQueries({ queryKey: ['device-computed-config', device.serialNumber] });
+      queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
 
       toaster.create({
         title: 'Device Configuration Saved',
@@ -376,8 +370,8 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
               _hover={{ bg: '#b91c1c' }}
               _active={{ bg: '#991b1b' }}
               onClick={handleDeleteConfig}
-              title="Delete Configuration"
-              aria-label="Delete Configuration"
+              title="Reset Configuration"
+              aria-label="Reset Configuration"
             >
               <Icon name="trash" size={16} />
             </Button>
