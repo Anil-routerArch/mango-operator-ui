@@ -789,11 +789,15 @@ export const useConfigureDeviceDirect = () => {
   return useMutation({
     mutationFn: async (payload: { serialNumber: string; configuration: Record<string, unknown> }) => {
       const clean = normalizeSerial(payload.serialNumber);
+      const now = Math.floor(Date.now() / 1000);
       const res = await axiosMdu.post(`devices/${clean}/configure`, {
         when: 0,
-        UUID: 1,
+        UUID: now,
         serialNumber: clean,
-        configuration: payload.configuration,
+        configuration: {
+          ...payload.configuration,
+          uuid: now,
+        },
       });
       return res.data;
     },
