@@ -8,6 +8,7 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
@@ -22,6 +23,7 @@ export interface NotesSubTabProps {
 export const NotesSubTab: React.FC<NotesSubTabProps> = ({ device }) => {
   const [notes, setNotes] = useState<Array<{ date: string; author: string; text: string }>>([]);
   const [newNote, setNewNote] = useState('');
+  const queryClient = useQueryClient();
   const updateMutation = useUpdateDeviceTag();
 
   useEffect(() => {
@@ -58,7 +60,7 @@ export const NotesSubTab: React.FC<NotesSubTabProps> = ({ device }) => {
         device.provTag?.deviceGroup ||
         (['ap', 'switch', 'olg'].includes(device.deviceGroup) ? device.deviceGroup : 'ap');
 
-      await updateMutation.mutateAsync({
+      const res = await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
         payload: {
           name: device.name || device.serialNumber,
@@ -81,15 +83,31 @@ export const NotesSubTab: React.FC<NotesSubTabProps> = ({ device }) => {
         },
       });
 
-      setNotes([
-        {
-          date: 'Just now',
-          author: 'Current User',
-          text: newNote.trim(),
-        },
-        ...notes,
-      ]);
+      // Authoritative refresh from OWPROV response:
+      // res.notes contains the persisted note list with server-generated timestamps and author
+      const authoritativeNotes: DeviceNote[] = res?.notes || [];
+      if (authoritativeNotes.length > 0) {
+        setNotes(
+          [...authoritativeNotes]
+            .sort((a, b) => (b.created || 0) - (a.created || 0))
+            .map((n) => ({
+              date: n.created ? formatRelativeTime(n.created) : 'Just now',
+              author: n.author || n.createdBy || 'system',
+              text: n.note,
+            }))
+        );
+      } else {
+        setNotes([
+          {
+            date: 'Just now',
+            author: 'Current User',
+            text: newNote.trim(),
+          },
+          ...notes,
+        ]);
+      }
       setNewNote('');
+      queryClient.invalidateQueries({ queryKey: ['single-device-overview', device.serialNumber] });
       toaster.create({
         title: 'Note Added',
         description: 'Device operational note saved.',

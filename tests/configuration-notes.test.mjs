@@ -116,3 +116,116 @@ test('NoteItem interface supports createdBy and author', () => {
   );
 });
 
+test('Device inventory property tabs do not resubmit existing notes to prevent duplicate note history (Issue #3)', () => {
+  const tabsDir = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab'
+  );
+
+  const mainConfigContent = fs.readFileSync(path.join(tabsDir, 'MainConfigSubTab.tsx'), 'utf-8');
+  const stateContent = fs.readFileSync(path.join(tabsDir, 'StateSubTab.tsx'), 'utf-8');
+  const deviceSpecificContent = fs.readFileSync(path.join(tabsDir, 'DeviceSpecificConfigSubTab.tsx'), 'utf-8');
+  const notesContent = fs.readFileSync(path.join(tabsDir, 'NotesSubTab.tsx'), 'utf-8');
+
+  // 1. MainConfigSubTab must not resubmit notes in its update payload
+  assert.strictEqual(
+    mainConfigContent.includes('notes:'),
+    false,
+    'MainConfigSubTab must omit notes field from inventory-update payload'
+  );
+
+  // 2. StateSubTab must not resubmit notes in its update payload
+  assert.strictEqual(
+    stateContent.includes('notes:'),
+    false,
+    'StateSubTab must omit notes field from inventory-update payload'
+  );
+
+  // 3. DeviceSpecificConfigSubTab must not resubmit notes in its update payload
+  assert.strictEqual(
+    deviceSpecificContent.includes('notes:'),
+    false,
+    'DeviceSpecificConfigSubTab must omit notes field from inventory-update payload'
+  );
+
+  // 4. NotesSubTab must submit only the new note
+  assert.ok(
+    notesContent.includes('notes: [{ note: newNote.trim() }]'),
+    'NotesSubTab must submit only the new note'
+  );
+
+  // 5. NotesSubTab must refresh authoritative notes from OWPROV response
+  assert.ok(
+    notesContent.includes('res?.notes') || notesContent.includes('authoritativeNotes'),
+    'NotesSubTab must refresh notes using authoritative OWPROV response'
+  );
+});
+
+test('Simulation: changing device properties does not duplicate notes; adding a note appends without duplicates (Issue #3)', () => {
+  // Simulates OWPROV MergeNotes behavior:
+  // void MergeNotes(const Types::NoteInfoVec &From, Types::NoteInfoVec &To) {
+  //   for (const auto &note : From) To.push_back(note);
+  // }
+  const owprovInventoryRecord = {
+    serialNumber: 'sim-device-001',
+    name: 'Main Router',
+    description: 'Core gateway',
+    state: 'active',
+    notes: [
+      { note: 'Deployed to rack 4', created: 1670000000, author: 'installer' },
+      { note: 'Firmware upgraded to v2.1', created: 1680000000, author: 'admin' },
+    ],
+  };
+
+  const simulateOwprovUpdate = (payload) => {
+    // OWPROV UpdateObjectInfo: only calls MergeNotes if payload contains notes
+    if (Array.isArray(payload.notes)) {
+      for (const incomingNote of payload.notes) {
+        owprovInventoryRecord.notes.push({
+          note: incomingNote.note,
+          created: Date.now(),
+          author: 'current-user',
+        });
+      }
+    }
+    if (payload.name !== undefined) owprovInventoryRecord.name = payload.name;
+    if (payload.state !== undefined) owprovInventoryRecord.state = payload.state;
+    return JSON.parse(JSON.stringify(owprovInventoryRecord));
+  };
+
+  // 1. Updating device properties from MainConfig (name change) must not alter notes
+  simulateOwprovUpdate({ name: 'Renamed Router' });
+  assert.strictEqual(
+    owprovInventoryRecord.notes.length,
+    2,
+    'Updating device name without notes field must not duplicate existing notes'
+  );
+  assert.strictEqual(owprovInventoryRecord.notes[0].note, 'Deployed to rack 4');
+  assert.strictEqual(owprovInventoryRecord.notes[1].note, 'Firmware upgraded to v2.1');
+
+  // 2. Updating state from StateSubTab must not alter notes
+  simulateOwprovUpdate({ state: 'maintenance' });
+  assert.strictEqual(
+    owprovInventoryRecord.notes.length,
+    2,
+    'Updating device state without notes field must not duplicate existing notes'
+  );
+
+  // 3. Adding a new note sends only [{ note: "..." }]
+  const res = simulateOwprovUpdate({ notes: [{ note: 'Replaced power supply unit' }] });
+  assert.strictEqual(
+    owprovInventoryRecord.notes.length,
+    3,
+    'Adding note must append exactly one new note to existing history'
+  );
+  assert.strictEqual(res.notes.length, 3);
+  assert.strictEqual(res.notes[2].note, 'Replaced power supply unit');
+  assert.strictEqual(res.notes[2].author, 'current-user');
+});
+

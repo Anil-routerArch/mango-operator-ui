@@ -37,7 +37,6 @@ export const StateSubTab: React.FC<StateSubTabProps> = ({ device, isDisabled = f
         payload: {
           name: device.name || device.serialNumber,
           description: device.description || '',
-          notes: (device.provTag?.notes || device.notes || []).map((n) => ({ note: n.note })),
           deviceType: resolvedType,
           deviceGroup: resolvedGroup,
           devClass: device.provTag?.devClass || 'venue',
