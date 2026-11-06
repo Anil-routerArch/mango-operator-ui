@@ -5,14 +5,37 @@ import { themeColors } from '@/theme';
 interface DeviceStatusBadgeProps {
   connected: boolean;
   blacklisted?: boolean;
+  statusUnavailable?: boolean;
   size?: 'sm' | 'md';
 }
 
 export const DeviceStatusBadge: React.FC<DeviceStatusBadgeProps> = ({
   connected,
   blacklisted,
+  statusUnavailable = false,
   size = 'md',
 }) => {
+  if (statusUnavailable) {
+    return (
+      <Flex
+        align="center"
+        gap={1.5}
+        px={2.5}
+        py={size === 'sm' ? 0.5 : 1}
+        borderRadius="full"
+        bg="#f1f5f9"
+        border="1px solid #cbd5e1"
+        color="#475569"
+        fontSize={size === 'sm' ? '11px' : '12px'}
+        fontWeight="600"
+        title="Status Unavailable / Gateway Telemetry Outage"
+      >
+        <Box w="6px" h="6px" borderRadius="full" bg="#94a3b8" />
+        <Text>Unknown</Text>
+      </Flex>
+    );
+  }
+
   if (blacklisted) {
     return (
       <Flex

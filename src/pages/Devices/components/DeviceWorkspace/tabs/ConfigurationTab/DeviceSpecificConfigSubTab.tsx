@@ -244,6 +244,9 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
   const handleSave = async () => {
     try {
       setIsSaving(true);
+      if (!device.provTag) {
+        throw new Error('Device inventory metadata is unavailable from OWPROV. Saving is blocked to prevent data loss.');
+      }
       const originalConfigId = device.configId || device.provTag?.deviceConfiguration;
 
       // Guard against saving when existing configuration is loading, failed, or missing (P1 #2)
@@ -548,6 +551,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
             _hover={{ bg: themeColors.brand.primaryHover }}
             onClick={handleSave}
             disabled={
+              !device.provTag ||
               isSaving ||
               updateMutation.isPending ||
               (hasExistingConfig && isConfigLoading) ||

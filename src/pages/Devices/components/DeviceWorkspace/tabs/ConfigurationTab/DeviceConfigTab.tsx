@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box, Flex } from '@chakra-ui/react';
+import { Box, Flex, Text } from '@chakra-ui/react';
+import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { DeviceCard } from '@/pages/Devices/components/common';
 import { useDevicesUiStore } from '@/stores/devicesUiStore';
@@ -79,6 +80,33 @@ export const DeviceConfigTab: React.FC<DeviceConfigTabProps> = ({ device }) => {
           );
         })}
       </Flex>
+
+      {/* Authoritative Inventory Failure Warning Banner */}
+      {!device.provTag && (
+        <Flex
+          m={6}
+          p={4}
+          bg="#fef2f2"
+          border="1px solid #fecaca"
+          borderRadius="8px"
+          align="flex-start"
+          gap={3}
+        >
+          <Box color="#dc2626" mt={0.5}>
+            <Icon name="alertTriangle" size={20} />
+          </Box>
+          <Box>
+            <Text fontSize="14px" fontWeight="700" color="#991b1b">
+              Authoritative Inventory Unavailable
+            </Text>
+            <Text fontSize="13px" color="#b91c1c" mt={0.5}>
+              Device inventory records could not be loaded from OWPROV (
+              {device.provError || 'Service Error'}). Configuration editing is disabled to protect
+              authoritative inventory metadata from accidental corruption.
+            </Text>
+          </Box>
+        </Flex>
+      )}
 
       {/* Render Selected SubTab */}
       {renderActiveSubTab()}

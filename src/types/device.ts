@@ -348,6 +348,9 @@ export interface UnifiedFleetDevice {
   gwDevice?: GatewayDeviceApiResponse;
   rawStatus?: DeviceWithStatusApiResponse;
   telemetryError?: string;
+  provError?: string;
+  statusError?: string;
+  statusUnavailable?: boolean;
 }
 
 export interface PaginatedFleetResponse {

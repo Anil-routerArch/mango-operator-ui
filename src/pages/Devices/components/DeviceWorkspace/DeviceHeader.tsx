@@ -186,8 +186,11 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
             <Text fontSize="24px" fontWeight="700" color={themeColors.text.title} lineHeight="1.2">
               {displayName}
             </Text>
-            <DeviceStatusBadge connected={isConnected} />
-            {device.sanity !== undefined && (
+            <DeviceStatusBadge
+              connected={isConnected}
+              statusUnavailable={device.statusUnavailable}
+            />
+            {device.sanity !== undefined && !device.statusUnavailable && (
               <DeviceHealthBadge sanity={device.sanity} connected={isConnected} />
             )}
           </HStack>
