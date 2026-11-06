@@ -198,6 +198,14 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
   const updateMutation = useUpdateDeviceTag();
 
   const handleSave = async () => {
+    if (!device.provTag) {
+      toaster.create({
+        title: 'Action Blocked',
+        description: 'Cannot update configuration while authoritative inventory is unavailable from OWPROV',
+        type: 'error',
+      });
+      return;
+    }
     try {
       const entityId = parent.startsWith('ent:') ? parent.slice(4) : '';
       const venueId = parent.startsWith('ven:') ? parent.slice(4) : '';
@@ -505,16 +513,18 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
         <Flex justify="flex-end" pt={4} borderTop="1px solid" borderColor={themeColors.panel.divider}>
           <Button
             size="sm"
-            bg={themeColors.brand.primary}
+            bg={device.provTag ? themeColors.brand.primary : '#94a3b8'}
             color="#ffffff"
-            _hover={{ bg: themeColors.brand.primaryHover }}
-            onClick={handleSave}
-            disabled={updateMutation.isPending}
+            _hover={device.provTag ? { bg: themeColors.brand.primaryHover } : undefined}
+            onClick={device.provTag ? handleSave : undefined}
+            disabled={!device.provTag || updateMutation.isPending}
+            cursor={device.provTag ? 'pointer' : 'not-allowed'}
+            title={!device.provTag ? 'Configuration editing is disabled because inventory records failed to load' : 'Save Changes'}
             gap={1.5}
             px={5}
           >
             {updateMutation.isPending ? <Spinner size="xs" /> : <Icon name="check" size={14} />}
-            Save Changes
+            {device.provTag ? 'Save Changes' : 'Editing Disabled (No Inventory)'}
           </Button>
         </Flex>
       </VStack>

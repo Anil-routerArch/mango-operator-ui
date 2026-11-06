@@ -260,6 +260,14 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
   };
 
   const handleSaveCreate = async () => {
+    if (!device.provTag) {
+      toaster.create({
+        title: 'Action Blocked',
+        description: 'Cannot modify overrides while authoritative inventory is unavailable from OWPROV',
+        type: 'error',
+      });
+      return;
+    }
     if (createDuplicateError || createValueError || createReason.length > 64) {
       return;
     }
@@ -333,6 +341,14 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
   }, [isEditTxPower, editValue]);
 
   const handleSaveEdit = async () => {
+    if (!device.provTag) {
+      toaster.create({
+        title: 'Action Blocked',
+        description: 'Cannot modify overrides while authoritative inventory is unavailable from OWPROV',
+        type: 'error',
+      });
+      return;
+    }
     if (!editingOverride || editValueError || editReason.length > 64) return;
 
     const targetSource = editingOverride.source || 'device';
@@ -384,6 +400,14 @@ export const OverridesSubTab: React.FC<OverridesSubTabProps> = ({ device, isDisa
   // -------------------------------------------------------------------------
   const handleConfirmDelete = async () => {
     if (!deletingOverride) return;
+    if (!device.provTag) {
+      toaster.create({
+        title: 'Action Blocked',
+        description: 'Cannot delete overrides while authoritative inventory is unavailable from OWPROV',
+        type: 'error',
+      });
+      return;
+    }
 
     const targetSource = deletingOverride.source || 'device';
     const nextOverrides = overrides.filter(

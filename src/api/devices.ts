@@ -436,6 +436,8 @@ export interface SingleDeviceDetailAggregate {
   gwDevice?: GatewayDeviceApiResponse;
   status?: Record<string, unknown>;
   telemetryError?: string;
+  provError?: string;
+  statusUnavailable?: boolean;
 }
 
 export const getSingleDeviceDetail = async (serialNumber: string): Promise<SingleDeviceDetailAggregate> => {
@@ -470,7 +472,18 @@ export const getSingleDeviceDetail = async (serialNumber: string): Promise<Singl
     }
   }
 
+  let provError: string | undefined;
+  if (tagRes.status === 'rejected') {
+    const err = tagRes.reason as any;
+    provError =
+      err?.response?.data?.message ||
+      err?.response?.data?.error ||
+      err?.response?.data?.ErrorDescription ||
+      (err?.response?.status ? `HTTP ${err.response.status}: ${err.response.statusText || 'Inventory error'}` : err?.message);
+  }
+
   let telemetryError: string | undefined;
+  let statusUnavailable = false;
   if (statusRes.status === 'rejected') {
     const err = statusRes.reason as any;
     telemetryError =
@@ -478,6 +491,9 @@ export const getSingleDeviceDetail = async (serialNumber: string): Promise<Singl
       err?.response?.data?.error ||
       err?.response?.data?.ErrorDescription ||
       (err?.response?.status ? `HTTP ${err.response.status}: ${err.response.statusText || 'Error fetching status'}` : err?.message);
+    statusUnavailable = true;
+  } else if (!status) {
+    statusUnavailable = true;
   }
 
   return {
@@ -486,6 +502,8 @@ export const getSingleDeviceDetail = async (serialNumber: string): Promise<Singl
     gwDevice,
     status,
     telemetryError,
+    provError,
+    statusUnavailable,
   };
 };
 
@@ -1024,18 +1042,35 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         return null;
       }
 
+      let provError: string | undefined;
+      if (tagRes.status === 'rejected') {
+        const err = tagRes.reason as any;
+        provError =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.response?.data?.ErrorDescription ||
+          (err?.response?.status ? `HTTP ${err.response.status}: ${err.response.statusText || 'Inventory error'}` : err?.message);
+      }
+
       let telemetryError: string | undefined;
+      let statusError: string | undefined;
+      let statusUnavailable = false;
       if (statusRes.status === 'rejected') {
         const err = statusRes.reason as any;
-        telemetryError =
+        statusError =
           err?.response?.data?.message ||
           err?.response?.data?.error ||
           err?.response?.data?.ErrorDescription ||
           (err?.response?.status ? `HTTP ${err.response.status}: ${err.response.statusText || 'Error fetching status'}` : err?.message);
+        telemetryError = statusError;
+        statusUnavailable = true;
+      } else if (!status) {
+        statusUnavailable = true;
       }
 
-      const isConnected = Boolean(status?.connected);
-      const sanityScore = status?.sanity ?? (isConnected ? 100 : 0);
+      // If status is unavailable due to an error/outage, represent telemetry as unknown rather than offline
+      const isConnected = statusUnavailable ? false : Boolean(status?.connected);
+      const sanityScore = statusUnavailable ? 0 : (status?.sanity ?? (isConnected ? 100 : 0));
 
       const lastContactNum = status?.lastContact
         ? typeof status.lastContact === 'string'
@@ -1113,6 +1148,9 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         gwDevice: gw,
         rawStatus: status,
         telemetryError,
+        provError,
+        statusError,
+        statusUnavailable,
       };
 
       return unified;

@@ -45,6 +45,14 @@ export const NotesSubTab: React.FC<NotesSubTabProps> = ({ device }) => {
 
   const handleAddNote = async () => {
     if (!newNote.trim()) return;
+    if (!device.provTag) {
+      toaster.create({
+        title: 'Action Blocked',
+        description: 'Cannot add configuration notes while authoritative inventory is unavailable from OWPROV',
+        type: 'error',
+      });
+      return;
+    }
     try {
       const authoritativeDevClass = device.provTag?.devClass || 'any';
 

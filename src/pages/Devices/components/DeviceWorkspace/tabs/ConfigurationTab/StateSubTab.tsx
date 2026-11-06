@@ -22,6 +22,14 @@ export const StateSubTab: React.FC<StateSubTabProps> = ({ device, isDisabled = f
 
   const handleBlur = async () => {
     if (stateValue === (device.state || '')) return;
+    if (!device.provTag) {
+      toaster.create({
+        title: 'Action Blocked',
+        description: 'Cannot update state while authoritative inventory is unavailable from OWPROV',
+        type: 'error',
+      });
+      return;
+    }
     try {
       const authoritativeDevClass = device.provTag?.devClass || 'any';
 
