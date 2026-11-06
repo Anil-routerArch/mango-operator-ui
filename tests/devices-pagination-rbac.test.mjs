@@ -316,10 +316,15 @@ test('useDeviceEventsStream implements OpenWiFi production WebSocket protocol wi
     'useDeviceEventsStream must authenticate using in-band token frame (token:<token>)'
   );
 
-  // Verify dynamic viewport subscription
+  // Verify dynamic viewport subscription (including empty list to unsubscribe all)
   assert.ok(
     content.includes('JSON.stringify({ serials })') || content.includes('JSON.stringify({ serials: serialsRef.current })'),
     'useDeviceEventsStream must send active viewport serials over the WebSocket'
+  );
+  assert.strictEqual(
+    content.includes('if (serials.length > 0)'),
+    false,
+    'useDeviceEventsStream must not guard subscription updates with serials.length > 0 so empty lists unsubscribe all devices (Issue #9)'
   );
 
   // Verify real-time cache patching for paginated-fleet-devices

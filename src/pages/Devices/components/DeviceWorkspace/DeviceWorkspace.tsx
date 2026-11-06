@@ -17,7 +17,7 @@ export interface DeviceWorkspaceProps {
 export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }) => {
   const { workspaceTab, setWorkspaceTab, clearSelectedDevice } = useDevicesUiStore();
 
-  const { data: device, isLoading, refetch, isFetching } = useDeviceOverview(serialNumber);
+  const { data: device, isLoading, error, refetch, isFetching } = useDeviceOverview(serialNumber);
 
   const tabs: Array<{ id: DeviceWorkspaceTab; label: string }> = [
     { id: 'overview', label: 'Overview' },
@@ -32,6 +32,50 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
         <Text fontSize="14px" color={themeColors.text.muted}>
           Loading device {serialNumber} telemetry...
         </Text>
+      </Flex>
+    );
+  }
+
+  if (error) {
+    const err = error as any;
+    const statusCode = err?.response?.status;
+    const statusText = err?.response?.statusText;
+    const backendMessage =
+      err?.response?.data?.ErrorDescription ||
+      err?.response?.data?.message ||
+      err?.response?.data?.error ||
+      err?.message ||
+      'Failed to load device details from backend';
+
+    return (
+      <Flex justify="center" align="center" minH="400px" direction="column" gap={4} p={6}>
+        <Box color="#dc2626">
+          <Icon name="alertTriangle" size={40} />
+        </Box>
+        <VStack gap={1} textAlign="center" maxW="550px">
+          <Text fontSize="16px" fontWeight="700" color={themeColors.text.title}>
+            {statusCode ? `Error ${statusCode}${statusText ? `: ${statusText}` : ''}` : 'Request Failed'}
+          </Text>
+          <Text fontSize="13px" color={themeColors.text.secondary} wordBreak="break-word">
+            {backendMessage}
+          </Text>
+          <Text fontSize="12px" color={themeColors.text.muted}>
+            Device:{' '}
+            <Text as="span" fontFamily="monospace" fontWeight="600">
+              {serialNumber}
+            </Text>
+          </Text>
+        </VStack>
+        <Flex gap={2}>
+          <Button size="sm" variant="outline" onClick={clearSelectedDevice} gap={1.5}>
+            <Icon name="chevronLeft" size={14} />
+            Back to Device Fleet
+          </Button>
+          <Button size="sm" colorScheme="blue" onClick={() => refetch()} gap={1.5}>
+            <Icon name="refresh" size={14} />
+            Retry
+          </Button>
+        </Flex>
       </Flex>
     );
   }
@@ -85,6 +129,26 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
         onRefresh={() => refetch()}
         isLoading={isFetching}
       />
+
+      {/* Partial Telemetry Failure Notice */}
+      {activeDevice.telemetryError && (
+        <Flex
+          mb={4}
+          p={3}
+          bg="#fffbeb"
+          border="1px solid #fde68a"
+          borderRadius="8px"
+          align="center"
+          gap={2.5}
+        >
+          <Box color="#d97706">
+            <Icon name="alertTriangle" size={16} />
+          </Box>
+          <Text fontSize="13px" color="#92400e" fontWeight="500">
+            Live telemetry error: {activeDevice.telemetryError}
+          </Text>
+        </Flex>
+      )}
 
       {/* Master Tabs Navigation Bar matching Figma visual mockup */}
       <Box mb={6} borderBottom="1px solid" borderColor={themeColors.panel.divider}>
