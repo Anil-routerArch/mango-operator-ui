@@ -347,6 +347,7 @@ export interface UnifiedFleetDevice {
   provTag?: InventoryTagApiResponse;
   gwDevice?: GatewayDeviceApiResponse;
   rawStatus?: DeviceWithStatusApiResponse;
+  telemetryError?: string;
 }
 
 export interface PaginatedFleetResponse {

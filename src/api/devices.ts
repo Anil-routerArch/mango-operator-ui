@@ -147,13 +147,12 @@ export const useDeviceEventsStream = (serials: string[]) => {
   const token =
     sessionStorage.getItem('access_token') || localStorage.getItem('access_token');
 
-  // Update active viewport serials over the open WebSocket when serials change
+  // Update active viewport serials over the open WebSocket when serials change.
+  // Sends empty array [] when viewport is empty to unsubscribe all devices.
   useEffect(() => {
     const ws = socketRef.current;
     if (ws && ws.readyState === WebSocket.OPEN && isAuthenticatedRef.current) {
-      if (serials.length > 0) {
-        ws.send(JSON.stringify({ serials }));
-      }
+      ws.send(JSON.stringify({ serials }));
     }
   }, [serialsKey]);
 
@@ -188,10 +187,8 @@ export const useDeviceEventsStream = (serials: string[]) => {
           // Handle welcome handshake
           if (data.success) {
             isAuthenticatedRef.current = true;
-            // Send current viewport serials if present
-            if (serialsRef.current.length > 0) {
-              ws.send(JSON.stringify({ serials: serialsRef.current }));
-            }
+            // Send current viewport serials (sends [] if viewport has no devices)
+            ws.send(JSON.stringify({ serials: serialsRef.current }));
             return;
           }
 
@@ -438,6 +435,7 @@ export interface SingleDeviceDetailAggregate {
   tag?: InventoryTagApiResponse;
   gwDevice?: GatewayDeviceApiResponse;
   status?: Record<string, unknown>;
+  telemetryError?: string;
 }
 
 export const getSingleDeviceDetail = async (serialNumber: string): Promise<SingleDeviceDetailAggregate> => {
@@ -449,11 +447,45 @@ export const getSingleDeviceDetail = async (serialNumber: string): Promise<Singl
     axiosMdu.get<Record<string, unknown>>(`devices/${clean}/status`),
   ]);
 
+  const rejections = [tagRes, gwRes, statusRes]
+    .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    .map((r) => r.reason);
+
+  // If any core call returned 401 or 403 authorization error, throw immediately
+  const authError = rejections.find(
+    (err: any) => err?.response?.status === 401 || err?.response?.status === 403
+  );
+  if (authError) {
+    throw authError;
+  }
+
+  const tag = tagRes.status === 'fulfilled' ? tagRes.value.data : undefined;
+  const gwDevice = gwRes.status === 'fulfilled' ? gwRes.value.data : undefined;
+  const status = statusRes.status === 'fulfilled' ? statusRes.value.data : undefined;
+
+  // If all calls failed, throw the underlying error to expose the real backend code and message
+  if (!tag && !gwDevice && !status) {
+    if (rejections.length > 0) {
+      throw rejections[0];
+    }
+  }
+
+  let telemetryError: string | undefined;
+  if (statusRes.status === 'rejected') {
+    const err = statusRes.reason as any;
+    telemetryError =
+      err?.response?.data?.message ||
+      err?.response?.data?.error ||
+      err?.response?.data?.ErrorDescription ||
+      (err?.response?.status ? `HTTP ${err.response.status}: ${err.response.statusText || 'Error fetching status'}` : err?.message);
+  }
+
   return {
     serialNumber,
-    tag: tagRes.status === 'fulfilled' ? tagRes.value.data : undefined,
-    gwDevice: gwRes.status === 'fulfilled' ? gwRes.value.data : undefined,
-    status: statusRes.status === 'fulfilled' ? statusRes.value.data : undefined,
+    tag,
+    gwDevice,
+    status,
+    telemetryError,
   };
 };
 
@@ -972,9 +1004,34 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
       const status = statusRes.status === 'fulfilled' ? statusRes.value.data : undefined;
       const stats = statsRes.status === 'fulfilled' ? statsRes.value.data : undefined;
 
-      // If neither inventory tag nor gateway device nor status record was found, the device does not exist
+      const rejections = [tagRes, gwRes, statusRes, statsRes]
+        .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+        .map((r) => r.reason);
+
+      // If any core call returned 401 or 403 authorization error, throw immediately
+      const authError = rejections.find(
+        (err: any) => err?.response?.status === 401 || err?.response?.status === 403
+      );
+      if (authError) {
+        throw authError;
+      }
+
+      // If neither inventory tag nor gateway device nor status record was found, throw the backend error
       if (!tag && !gw && !status) {
+        if (rejections.length > 0) {
+          throw rejections[0];
+        }
         return null;
+      }
+
+      let telemetryError: string | undefined;
+      if (statusRes.status === 'rejected') {
+        const err = statusRes.reason as any;
+        telemetryError =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          err?.response?.data?.ErrorDescription ||
+          (err?.response?.status ? `HTTP ${err.response.status}: ${err.response.statusText || 'Error fetching status'}` : err?.message);
       }
 
       const isConnected = Boolean(status?.connected);
@@ -1055,6 +1112,7 @@ export const useDeviceOverview = (serialNumber?: string | null) => {
         provTag: tag,
         gwDevice: gw,
         rawStatus: status,
+        telemetryError,
       };
 
       return unified;
