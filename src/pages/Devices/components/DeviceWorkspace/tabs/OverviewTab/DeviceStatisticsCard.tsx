@@ -13,7 +13,7 @@ import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { useDeviceStatisticsFrames, useDeviceLastStats } from '@/api/devices';
 import { DeviceJsonViewerModal } from '../../../common/DeviceJsonViewerModal';
-import type { UnifiedFleetDevice, DeviceStatisticsFrame } from '@/types/device';
+import type { UnifiedFleetDevice } from '@/types/device';
 
 export interface DeviceStatisticsCardProps {
   device: UnifiedFleetDevice;
@@ -78,71 +78,6 @@ const getDivisionFactorPackets = (maxPackets: number) => {
   return { factor: 1000 * 1000 * 1000, unit: 'G' };
 };
 
-// Generate high-fidelity baseline fallback frames when AP was just provisioned
-const generateBaselineFrames = (): DeviceStatisticsFrame[] => {
-  const now = Math.floor(Date.now() / 1000);
-  const frames: DeviceStatisticsFrame[] = [];
-  const baseTxRates = [
-    1800, 2450, 2100, 2520, 2480, 2150, 2490, 1920, 2350, 2180, 1850, 2320, 1980, 2200, 2150
-  ];
-  const baseRxRates = [
-    110, 125, 115, 130, 120, 115, 125, 110, 120, 135, 115, 120, 110, 125, 120
-  ];
-
-  let cumulativeTx = 50000000;
-  let cumulativeRx = 12000000;
-  let cumulativePacketsTx = 400000;
-  let cumulativePacketsRx = 180000;
-
-  for (let i = 0; i < baseTxRates.length; i++) {
-    const time = now - (baseTxRates.length - 1 - i) * 120;
-    const txRate = baseTxRates[i] * 1024;
-    const rxRate = baseRxRates[i] * 1024;
-    cumulativeTx += txRate;
-    cumulativeRx += rxRate;
-    cumulativePacketsTx += Math.round(txRate / 1200);
-    cumulativePacketsRx += Math.round(rxRate / 800);
-
-    frames.push({
-      recorded: time,
-      UUID: `sim-${i}`,
-      data: {
-        unit: {
-          memory: {
-            total: 256000000,
-            free: 140000000 + Math.round((Math.sin(i) * 15000000)),
-            cached: 45000000,
-            buffered: 20000000,
-            used: 51000000,
-          },
-        },
-        interfaces: [
-          {
-            name: 'up0v0',
-            counters: {
-              tx_bytes: cumulativeTx,
-              rx_bytes: cumulativeRx,
-              tx_packets: cumulativePacketsTx,
-              rx_packets: cumulativePacketsRx,
-            },
-          },
-          {
-            name: 'down0v0',
-            counters: {
-              tx_bytes: Math.round(cumulativeRx * 0.9),
-              rx_bytes: Math.round(cumulativeTx * 0.9),
-              tx_packets: Math.round(cumulativePacketsRx * 0.9),
-              rx_packets: Math.round(cumulativePacketsTx * 0.9),
-            },
-          },
-        ],
-      },
-    });
-  }
-
-  return frames;
-};
-
 export const DeviceStatisticsCard: React.FC<DeviceStatisticsCardProps> = ({ device }) => {
   const [formatChosen, setFormatChosen] = useState<'bytes' | 'packets'>('bytes');
   const [selected, setSelected] = useState<string>('up0v0');
@@ -189,16 +124,28 @@ export const DeviceStatisticsCard: React.FC<DeviceStatisticsCardProps> = ({ devi
     };
   }, [isTimePickerOpen]);
 
+  // Only display rates when at least 2 consecutive telemetry reports exist
+  const hasSufficientData = Boolean(rawFrames && rawFrames.length >= 2);
+
   // Real OpenWiFi statistics calculation engine
   const parsedData = useMemo<ParsedStatistics>(() => {
-    let framesToLoop: DeviceStatisticsFrame[] = [];
-
-    if (rawFrames && rawFrames.length >= 2) {
-      // Sort chronologically (oldest to newest)
-      framesToLoop = [...rawFrames].sort((a, b) => a.recorded - b.recorded);
-    } else {
-      framesToLoop = generateBaselineFrames();
+    if (!rawFrames || rawFrames.length < 2) {
+      return {
+        interfaces: {},
+        vlans: {},
+        memory: {
+          used: [],
+          buffered: [],
+          cached: [],
+          free: [],
+          total: [],
+          recorded: [],
+        },
+      };
     }
+
+    // Sort chronologically (oldest to newest)
+    const framesToLoop = [...rawFrames].sort((a, b) => a.recorded - b.recorded);
 
     const interfacesData: Record<string, InterfaceSeriesData> = {};
     const vlanData: Record<string, InterfaceSeriesData> = {};
@@ -644,8 +591,8 @@ export const DeviceStatisticsCard: React.FC<DeviceStatisticsCardProps> = ({ devi
         </HStack>
 
         <HStack gap={2} wrap="wrap">
-          {/* Data / Packets Select (hidden when Memory is selected) */}
-          {!isMemory && (
+          {/* Data / Packets Select (hidden when Memory is selected or insufficient data) */}
+          {!isMemory && hasSufficientData && (
             <NativeSelect.Root size="sm" width="95px">
               <NativeSelect.Field
                 value={formatChosen}
@@ -660,9 +607,9 @@ export const DeviceStatisticsCard: React.FC<DeviceStatisticsCardProps> = ({ devi
           )}
 
           {/* Interface / VLAN / Memory Target Select */}
-          <NativeSelect.Root size="sm" width="135px">
+          <NativeSelect.Root size="sm" width="135px" disabled={!hasSufficientData}>
             <NativeSelect.Field
-              value={selected}
+              value={hasSufficientData ? selected : 'none'}
               onChange={(e) => {
                 setHasManuallySelected(true);
                 setSelected(e.target.value);
@@ -670,22 +617,28 @@ export const DeviceStatisticsCard: React.FC<DeviceStatisticsCardProps> = ({ devi
               fontSize="12px"
               fontWeight="500"
             >
-              {/* Interfaces */}
-              {Object.keys(parsedData.interfaces).map((ifName) => (
-                <option key={ifName} value={ifName}>
-                  {interfaceNameLabel(ifName)}
-                </option>
-              ))}
+              {!hasSufficientData ? (
+                <option value="none">No Telemetry</option>
+              ) : (
+                <>
+                  {/* Interfaces */}
+                  {Object.keys(parsedData.interfaces).map((ifName) => (
+                    <option key={ifName} value={ifName}>
+                      {interfaceNameLabel(ifName)}
+                    </option>
+                  ))}
 
-              {/* Dynamic VLANs */}
-              {Object.keys(parsedData.vlans).map((vid) => (
-                <option key={`VLAN-${vid}`} value={`VLAN-${vid}`}>
-                  VLAN - {vid}
-                </option>
-              ))}
+                  {/* Dynamic VLANs */}
+                  {Object.keys(parsedData.vlans).map((vid) => (
+                    <option key={`VLAN-${vid}`} value={`VLAN-${vid}`}>
+                      VLAN - {vid}
+                    </option>
+                  ))}
 
-              {/* Memory */}
-              <option value="memory">Memory</option>
+                  {/* Memory */}
+                  <option value="memory">Memory</option>
+                </>
+              )}
             </NativeSelect.Field>
           </NativeSelect.Root>
 
@@ -842,8 +795,36 @@ export const DeviceStatisticsCard: React.FC<DeviceStatisticsCardProps> = ({ devi
         </Flex>
       )}
 
-      {/* Legend */}
-      <Flex justify="center" gap={6} mb={2}>
+      {!hasSufficientData ? (
+        <Flex
+          direction="column"
+          align="center"
+          justify="center"
+          py={12}
+          px={4}
+          bg="#f8fafc"
+          border="1px dashed #cbd5e1"
+          borderRadius="8px"
+          textAlign="center"
+          my={2}
+        >
+          <Icon name="activity" size={32} color="#94a3b8" />
+          <Text fontSize="14px" fontWeight="600" color="#334155" mt={2}>
+            Insufficient telemetry history
+          </Text>
+          <Text fontSize="12px" color="#64748b" maxW="440px" mt={1}>
+            At least 2 consecutive telemetry reports are required to calculate throughput and resource utilization rates.
+          </Text>
+          {rawFrames && rawFrames.length === 1 && (
+            <Text fontSize="11px" color="#7c3aed" mt={2} fontWeight="500">
+              1 sample recorded. Click &quot;View Last Stats&quot; above to inspect raw counters.
+            </Text>
+          )}
+        </Flex>
+      ) : (
+        <>
+          {/* Legend */}
+          <Flex justify="center" gap={6} mb={2}>
         {!isMemory ? (
           <>
             <HStack gap={1.5} fontSize="12px" color={themeColors.text.primary} fontWeight="500">
@@ -1151,6 +1132,8 @@ export const DeviceStatisticsCard: React.FC<DeviceStatisticsCardProps> = ({ devi
           </Box>
         )}
       </Box>
+    </>
+  )}
 
       {/* Raw JSON View Last Stats Modal (Purple Button target) */}
       <DeviceJsonViewerModal

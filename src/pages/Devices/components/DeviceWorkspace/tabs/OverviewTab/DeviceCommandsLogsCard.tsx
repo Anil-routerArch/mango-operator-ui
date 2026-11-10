@@ -7,12 +7,14 @@ import {
   Flex,
   HStack,
   IconButton,
+  Spinner,
   Table,
   Text,
 } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
+import { getApiErrorMessage } from '@/api/errors';
 import {
   useDeviceCommands,
   useDeviceHealthChecks,
@@ -124,6 +126,9 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
     data: commands,
     refetch: refetchCommands,
     isFetching: isFetchingCommands,
+    isLoading: isLoadingCommands,
+    isError: isErrorCommands,
+    error: errorCommands,
   } = useDeviceCommands(
     device.serialNumber,
     commandsLimit,
@@ -136,6 +141,9 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
     data: healthChecks,
     refetch: refetchHealth,
     isFetching: isFetchingHealth,
+    isLoading: isLoadingHealth,
+    isError: isErrorHealth,
+    error: errorHealth,
   } = useDeviceHealthChecks(
     device.serialNumber,
     healthLimit,
@@ -148,6 +156,9 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
     data: standardLogs,
     refetch: refetchLogs,
     isFetching: isFetchingLogs,
+    isLoading: isLoadingLogs,
+    isError: isErrorLogs,
+    error: errorLogs,
   } = useDeviceLogs(
     device.serialNumber,
     0,
@@ -161,6 +172,9 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
     data: crashLogs,
     refetch: refetchCrashes,
     isFetching: isFetchingCrashes,
+    isLoading: isLoadingCrashes,
+    isError: isErrorCrashes,
+    error: errorCrashes,
   } = useDeviceLogs(
     device.serialNumber,
     1,
@@ -174,6 +188,9 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
     data: rebootLogs,
     refetch: refetchReboots,
     isFetching: isFetchingReboots,
+    isLoading: isLoadingReboots,
+    isError: isErrorReboots,
+    error: errorReboots,
   } = useDeviceLogs(
     device.serialNumber,
     2,
@@ -200,84 +217,33 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
     (activeTab === 'crashes' && isFetchingCrashes) ||
     (activeTab === 'reboots' && isFetchingReboots);
 
-  // Fallback sample commands matching screenshot if OWGW hasn't populated historical records yet
-  const defaultFallbackCommands: DeviceCommandHistory[] = [
-    {
-      UUID: 'cmd-1',
-      command: 'Configure',
-      status: 'completed',
-      submitted: Math.floor(Date.now() / 1000) - 57,
-      executionTime: Math.floor(Date.now() / 1000) - 57,
-      completed: Math.floor(Date.now() / 1000) - 56,
-      errorCode: 2,
-    },
-    {
-      UUID: 'cmd-2',
-      command: 'Configure',
-      status: 'completed',
-      submitted: Math.floor(Date.now() / 1000) - 180,
-      executionTime: Math.floor(Date.now() / 1000) - 180,
-      completed: Math.floor(Date.now() / 1000) - 179,
-      errorCode: 2,
-    },
-    {
-      UUID: 'cmd-3',
-      command: 'Configure',
-      status: 'completed',
-      submitted: Math.floor(Date.now() / 1000) - 300,
-      executionTime: Math.floor(Date.now() / 1000) - 300,
-      completed: Math.floor(Date.now() / 1000) - 299,
-      errorCode: 2,
-    },
-    {
-      UUID: 'cmd-4',
-      command: 'Configure',
-      status: 'completed',
-      submitted: Math.floor(Date.now() / 1000) - 420,
-      executionTime: Math.floor(Date.now() / 1000) - 420,
-      completed: Math.floor(Date.now() / 1000) - 419,
-      errorCode: 2,
-    },
-    {
-      UUID: 'cmd-5',
-      command: 'Configure',
-      status: 'completed',
-      submitted: Math.floor(Date.now() / 1000) - 540,
-      executionTime: Math.floor(Date.now() / 1000) - 540,
-      completed: Math.floor(Date.now() / 1000) - 539,
-      errorCode: 2,
-    },
-    {
-      UUID: 'cmd-6',
-      command: 'Configure',
-      status: 'completed',
-      submitted: Math.floor(Date.now() / 1000) - 660,
-      executionTime: Math.floor(Date.now() / 1000) - 660,
-      completed: Math.floor(Date.now() / 1000) - 659,
-      errorCode: 2,
-    },
-    {
-      UUID: 'cmd-7',
-      command: 'Configure',
-      status: 'completed',
-      submitted: Math.floor(Date.now() / 1000) - 780,
-      executionTime: Math.floor(Date.now() / 1000) - 780,
-      completed: Math.floor(Date.now() / 1000) - 779,
-      errorCode: 2,
-    },
-    {
-      UUID: 'cmd-8',
-      command: 'Configure',
-      status: 'completed',
-      submitted: Math.floor(Date.now() / 1000) - 900,
-      executionTime: Math.floor(Date.now() / 1000) - 900,
-      completed: Math.floor(Date.now() / 1000) - 899,
-      errorCode: 2,
-    },
-  ];
+  const isCurrentTabLoading =
+    (activeTab === 'commands' && isLoadingCommands) ||
+    (activeTab === 'health' && isLoadingHealth) ||
+    (activeTab === 'logs' && isLoadingLogs) ||
+    (activeTab === 'crashes' && isLoadingCrashes) ||
+    (activeTab === 'reboots' && isLoadingReboots);
+
+  const isCurrentTabError =
+    (activeTab === 'commands' && isErrorCommands) ||
+    (activeTab === 'health' && isErrorHealth) ||
+    (activeTab === 'logs' && isErrorLogs) ||
+    (activeTab === 'crashes' && isErrorCrashes) ||
+    (activeTab === 'reboots' && isErrorReboots);
+
+  const currentTabError =
+    activeTab === 'commands'
+      ? errorCommands
+      : activeTab === 'health'
+      ? errorHealth
+      : activeTab === 'logs'
+      ? errorLogs
+      : activeTab === 'crashes'
+      ? errorCrashes
+      : errorReboots;
 
   // Client-side time range filtering ensuring immediate UI responsiveness
-  const rawCommands = commands && commands.length > 0 ? commands : defaultFallbackCommands;
+  const rawCommands = commands || [];
 
   const displayCommands = rawCommands.filter((cmd) => {
     if (!timeFilter?.start) return true;
@@ -755,7 +721,40 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
           borderColor={themeColors.panel.divider}
           borderRadius="8px"
         >
-          {/* 1. Commands Table */}
+          {isCurrentTabLoading ? (
+            <Flex justify="center" align="center" minH="200px" direction="column" gap={3}>
+              <Spinner size="md" color={themeColors.brand.accent} />
+              <Text fontSize="12px" color={themeColors.text.muted}>
+                Loading {activeTab} history...
+              </Text>
+            </Flex>
+          ) : isCurrentTabError ? (
+            <Flex justify="center" align="center" minH="200px" direction="column" gap={3} p={6}>
+              <Box color="#dc2626">
+                <Icon name="alertTriangle" size={28} />
+              </Box>
+              <Text fontSize="14px" fontWeight="600" color="#dc2626">
+                Failed to load {activeTab}
+              </Text>
+              <Text fontSize="12px" color={themeColors.text.secondary} textAlign="center" maxW="420px">
+                {getApiErrorMessage(currentTabError, `Failed to fetch device ${activeTab}.`)}
+              </Text>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={handleRefresh}
+                gap={1}
+                mt={1}
+                borderColor={themeColors.input.iconBtnBorder}
+                _hover={{ bg: '#f1f5f9' }}
+              >
+                <Icon name="refresh" size={13} />
+                Retry
+              </Button>
+            </Flex>
+          ) : (
+            <>
+              {/* 1. Commands Table */}
           {activeTab === 'commands' && (
             <Table.Root size="sm" variant="outline">
               <Table.Header position="sticky" top={0} zIndex={2} bg="#f8fafc">
@@ -811,12 +810,18 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
                         <Table.Cell color={themeColors.text.muted}>{formatRelative(cmd.submitted)}</Table.Cell>
                       )}
                       {isColVisible('command') && (
-                        <Table.Cell fontWeight="600">{cmd.command || 'Configure'}</Table.Cell>
+                        <Table.Cell fontWeight="600">{cmd.command || '-'}</Table.Cell>
                       )}
                       {isColVisible('status') && (
                         <Table.Cell>
                           <Badge
-                            bg="#16a34a"
+                            bg={
+                              cmd.status?.toLowerCase() === 'completed'
+                                ? '#16a34a'
+                                : cmd.status?.toLowerCase() === 'failed' || cmd.status?.toLowerCase() === 'error'
+                                ? '#dc2626'
+                                : '#d97706'
+                            }
                             color="#ffffff"
                             fontSize="10px"
                             fontWeight="700"
@@ -824,7 +829,7 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
                             py={0.5}
                             borderRadius="full"
                           >
-                            {cmd.status === 'completed' ? 'Completed' : cmd.status || 'Completed'}
+                            {cmd.status || '-'}
                           </Badge>
                         </Table.Cell>
                       )}
@@ -1118,30 +1123,34 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
               </Table.Body>
             </Table.Root>
           )}
+        </>
+      )}
 
           {/* Dynamic 'Show More' Pagination Button inside scrollable container at bottom of list */}
-          <Center my={4} pb={2}>
-            {pagination.canShowMore || isCurrentTabFetching ? (
-              <Button
-                bg="#2563eb"
-                color="#ffffff"
-                _hover={{ bg: '#1d4ed8' }}
-                size="sm"
-                fontWeight="600"
-                px={5}
-                py={2}
-                borderRadius="6px"
-                onClick={pagination.onShowMore}
-                loading={isCurrentTabFetching}
-              >
-                Show More
-              </Button>
-            ) : (
-              <Text fontSize="13px" fontWeight="600" color={themeColors.text.muted}>
-                No more available!
-              </Text>
-            )}
-          </Center>
+          {!isCurrentTabLoading && !isCurrentTabError && pagination.currentCount > 0 && (
+            <Center my={4} pb={2}>
+              {pagination.canShowMore || isCurrentTabFetching ? (
+                <Button
+                  bg="#2563eb"
+                  color="#ffffff"
+                  _hover={{ bg: '#1d4ed8' }}
+                  size="sm"
+                  fontWeight="600"
+                  px={5}
+                  py={2}
+                  borderRadius="6px"
+                  onClick={pagination.onShowMore}
+                  loading={isCurrentTabFetching}
+                >
+                  Show More
+                </Button>
+              ) : (
+                <Text fontSize="13px" fontWeight="600" color={themeColors.text.muted}>
+                  No more available!
+                </Text>
+              )}
+            </Center>
+          )}
         </Box>
       </Box>
 

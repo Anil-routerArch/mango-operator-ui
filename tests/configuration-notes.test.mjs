@@ -412,4 +412,128 @@ test('Simulation: field-scoped saving prevents overwriting unrelated inventory p
   assert.strictEqual(dbRecord.state, 'maintenance', 'MainConfig save must not overwrite state');
 });
 
+test('Concurrency protection for deviceRules across configuration subtabs (Issue F3)', () => {
+  const tabsDir = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab'
+  );
+
+  const mainConfigContent = fs.readFileSync(path.join(tabsDir, 'MainConfigSubTab.tsx'), 'utf-8');
+  const deviceSpecificContent = fs.readFileSync(path.join(tabsDir, 'DeviceSpecificConfigSubTab.tsx'), 'utf-8');
+
+  // 1. MainConfigSubTab dirty-checks rules and only attaches deviceRules when modified
+  assert.ok(
+    mainConfigContent.includes('const isRulesDirty ='),
+    'MainConfigSubTab must check if rules are dirty'
+  );
+  assert.ok(
+    mainConfigContent.includes('if (isRulesDirty) {'),
+    'MainConfigSubTab must only attach deviceRules when dirty'
+  );
+  assert.ok(
+    mainConfigContent.includes('...(authoritativeRules || {})'),
+    'MainConfigSubTab must merge over authoritative rules to preserve unknown properties'
+  );
+
+  // 2. DeviceSpecificConfigSubTab dirty-checks rules on save and only attaches deviceRules when modified
+  assert.ok(
+    deviceSpecificContent.includes('const isRulesDirty ='),
+    'DeviceSpecificConfigSubTab must check if rules are dirty'
+  );
+  assert.ok(
+    deviceSpecificContent.includes('if (isRulesDirty) {'),
+    'DeviceSpecificConfigSubTab must conditionally attach deviceRules'
+  );
+  assert.ok(
+    deviceSpecificContent.includes('...(authoritativeRules || {})'),
+    'DeviceSpecificConfigSubTab must merge over authoritative rules to preserve unknown properties'
+  );
+});
+
+test('Simulation: concurrent editing preserves deviceRules when untouched by other subtab (Issue F3)', () => {
+  // Authoritative OWPROV database record
+  let dbRecord = {
+    serialNumber: 'sim-ap-001',
+    name: 'Boardroom AP',
+    devClass: 'entity',
+    deviceConfiguration: 'shared-config-1',
+    deviceRules: {
+      firmwareUpgrade: 'no',
+      rcOnly: 'no',
+      rrm: 'inherit',
+      customVendorRule: 'preserve-me', // Unmanaged rule property
+    },
+  };
+
+  const simulateOwprovPut = (payload) => {
+    if ('deviceConfiguration' in payload) dbRecord.deviceConfiguration = payload.deviceConfiguration;
+    if ('deviceRules' in payload) dbRecord.deviceRules = payload.deviceRules;
+    if ('name' in payload) dbRecord.name = payload.name;
+    return JSON.parse(JSON.stringify(dbRecord));
+  };
+
+  // User A (MainConfigSubTab) and User B (DeviceSpecificConfigSubTab) load device state at the same time
+  const snapshotForUserA = JSON.parse(JSON.stringify(dbRecord));
+  const snapshotForUserB = JSON.parse(JSON.stringify(dbRecord));
+
+  // User A in MainConfigSubTab modifies firmwareUpgrade: 'yes'
+  const userARulesModified = true;
+  const userAPayload = {
+    name: snapshotForUserA.name,
+    devClass: snapshotForUserA.devClass,
+  };
+  if (userARulesModified) {
+    userAPayload.deviceRules = {
+      ...(snapshotForUserA.deviceRules || {}),
+      firmwareUpgrade: 'yes',
+      rcOnly: 'no',
+      rrm: 'inherit',
+    };
+  }
+  simulateOwprovPut(userAPayload);
+
+  assert.strictEqual(dbRecord.deviceRules.firmwareUpgrade, 'yes', 'User A change should be applied in DB');
+  assert.strictEqual(dbRecord.deviceRules.customVendorRule, 'preserve-me', 'Custom rule should be preserved');
+
+  // User B in DeviceSpecificConfigSubTab only edits a device-specific configuration (e.g. WiFi channel)
+  // and does NOT touch deviceRules.
+  const userBRulesModified = false; // untouched
+  const userBPayload = {
+    name: snapshotForUserB.name,
+    devClass: snapshotForUserB.devClass,
+    deviceConfiguration: 'cow-config-2',
+  };
+  if (userBRulesModified) {
+    userBPayload.deviceRules = {
+      ...(snapshotForUserB.deviceRules || {}),
+      firmwareUpgrade: 'no',
+      rcOnly: 'no',
+      rrm: 'inherit',
+    };
+  }
+  simulateOwprovPut(userBPayload);
+
+  // Verification:
+  // User B's save attached the new config, but because deviceRules was omitted,
+  // User A's firmwareUpgrade: 'yes' was NOT clobbered!
+  assert.strictEqual(dbRecord.deviceConfiguration, 'cow-config-2', 'User B config should be saved');
+  assert.strictEqual(
+    dbRecord.deviceRules.firmwareUpgrade,
+    'yes',
+    'User A deviceRules change must NOT be overwritten by User B save'
+  );
+  assert.strictEqual(
+    dbRecord.deviceRules.customVendorRule,
+    'preserve-me',
+    'Custom rule must remain intact'
+  );
+});
+
+
 

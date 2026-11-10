@@ -1368,6 +1368,75 @@ test('Eliminates fabricated device telemetry, credentials, and demo blacklist fa
     !workspaceContent.includes('Sunrise Apartments'),
     'DeviceWorkspace must not fabricate fake property names'
   );
+
+  // 5. DeviceStatisticsCard must not fabricate telemetry (Issue F1)
+  const statisticsPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'OverviewTab',
+    'DeviceStatisticsCard.tsx'
+  );
+  const statisticsContent = fs.readFileSync(statisticsPath, 'utf-8');
+  assert.ok(
+    !statisticsContent.includes('generateBaselineFrames'),
+    'DeviceStatisticsCard must not generate synthetic baseline frames'
+  );
+  assert.ok(
+    statisticsContent.includes('Insufficient telemetry history'),
+    'DeviceStatisticsCard must explicitly display Insufficient telemetry history when fewer than two samples exist'
+  );
+
+  // 6. DeviceCommandsLogsCard & DeviceActivityTab must not manufacture commands/reboots (Issue F2)
+  const commandsLogsPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'OverviewTab',
+    'DeviceCommandsLogsCard.tsx'
+  );
+  const commandsLogsContent = fs.readFileSync(commandsLogsPath, 'utf-8');
+  assert.ok(
+    !commandsLogsContent.includes('defaultFallbackCommands'),
+    'DeviceCommandsLogsCard must not construct defaultFallbackCommands'
+  );
+
+  const activityTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ActivityTab',
+    'DeviceActivityTab.tsx'
+  );
+  const activityTabContent = fs.readFileSync(activityTabPath, 'utf-8');
+  assert.ok(
+    !activityTabContent.includes("UUID: 'cmd-1'"),
+    'DeviceActivityTab must not manufacture synthetic commands'
+  );
+  assert.ok(
+    !activityTabContent.includes("reason: 'coldboot'"),
+    'DeviceActivityTab must not manufacture synthetic reboots'
+  );
+  assert.ok(
+    activityTabContent.includes('No commands recorded for this device'),
+    'DeviceActivityTab must render explicit empty state for commands'
+  );
+  assert.ok(
+    activityTabContent.includes('No reboot events recorded for this device'),
+    'DeviceActivityTab must render explicit empty state for reboots'
+  );
 });
 
 test('Blacklist management routes through tenant-scoped MDU API instead of raw OWGW (Finding #3)', () => {

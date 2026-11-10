@@ -206,6 +206,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
           devClass: authoritativeDevClass,
           deviceConfiguration: '',
           deviceRules: {
+            ...(device.provTag?.deviceRules || {}),
             rrm: 'inherit',
             firmwareUpgrade: 'no',
             rcOnly: 'no',
@@ -316,22 +317,36 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       // The previously referenced configuration is left completely untouched.
       const authoritativeDevClass = device.provTag?.devClass || 'any';
 
-      // Field-scoped update (Issue #4):
-      // Associate the new configuration with the selected device and apply intended rules.
-      // Omit unrelated entity/venue, subscriber, state, hardware type, and class metadata.
+      // Field-scoped update (Issue #4) & Concurrency protection for deviceRules (Issue F3):
+      // Associate the new configuration with the selected device.
+      // Only attach deviceRules if the operator explicitly modified rrm, rcOnly, or firmwareUpgrade in this subtab.
+      // If untouched, omit deviceRules so changes made in MainConfigSubTab are not clobbered.
+      // When modified, merge against authoritative rules to preserve any unmanaged/unknown properties.
+      const authoritativeRules = device.provTag?.deviceRules;
+      const isRulesDirty =
+        rrm !== initialRrm ||
+        firmwareUpgrade !== initialFirmwareUpgrade ||
+        firmwareRCOnly !== initialFirmwareRCOnly;
+
+      const devicePayload: Record<string, unknown> = {
+        name: device.name || device.serialNumber,
+        devClass: authoritativeDevClass,
+        deviceConfiguration: newConfigId,
+      };
+
+      if (isRulesDirty) {
+        devicePayload.deviceRules = {
+          ...(authoritativeRules || {}),
+          rrm: normalizedRrm,
+          firmwareUpgrade,
+          rcOnly: firmwareRCOnly ? 'yes' : 'no',
+        };
+      }
+
       try {
         await updateMutation.mutateAsync({
           serialNumber: device.serialNumber,
-          payload: {
-            name: device.name || device.serialNumber,
-            devClass: authoritativeDevClass,
-            deviceConfiguration: newConfigId,
-            deviceRules: {
-              rrm: normalizedRrm,
-              firmwareUpgrade,
-              rcOnly: firmwareRCOnly ? 'yes' : 'no',
-            },
-          } as any,
+          payload: devicePayload as any,
         });
       } catch (assignError) {
         // Rollback: delete the newly created modular configuration to prevent database orphans

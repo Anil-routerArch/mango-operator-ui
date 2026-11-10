@@ -219,13 +219,33 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
         deviceGroup,
         platform: deviceGroup.toUpperCase(),
         devClass,
-        deviceRules: {
+        doNotAllowOverrides: ignoreOverrides,
+      };
+
+      // Concurrency protection for deviceRules (Issue F3):
+      // Only attach deviceRules if the operator explicitly modified rrm, rcOnly, or firmwareUpgrade.
+      // If untouched, omit deviceRules to avoid overwriting recent changes from another subtab/operator.
+      // When modified, merge against authoritative rules to preserve any unmanaged/unknown properties.
+      const authoritativeRules = device.provTag?.deviceRules;
+      const initialRcOnly = (authoritativeRules?.rcOnly as 'inherit' | 'yes' | 'no') || 'inherit';
+      const initialRrm = (typeof authoritativeRules?.rrm === 'object' && authoritativeRules?.rrm !== null)
+        ? JSON.stringify(authoritativeRules.rrm)
+        : (authoritativeRules?.rrm as string) || 'inherit';
+      const initialFirmwareUpgrade = (authoritativeRules?.firmwareUpgrade as 'inherit' | 'yes' | 'no') || 'inherit';
+
+      const isRulesDirty =
+        rcOnly !== initialRcOnly ||
+        rrm !== initialRrm ||
+        firmwareUpgrade !== initialFirmwareUpgrade;
+
+      if (isRulesDirty) {
+        payload.deviceRules = {
+          ...(authoritativeRules || {}),
           firmwareUpgrade,
           rcOnly,
           rrm: normalizeRrmForSubmission(rrm),
-        },
-        doNotAllowOverrides: ignoreOverrides,
-      };
+        };
+      }
 
       if (deviceType) {
         payload.deviceType = deviceType;
