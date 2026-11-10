@@ -1927,7 +1927,7 @@ test('useConfigureDeviceDirect aligns with OWPROV protocol: sends timestamp UUID
   assert.strictEqual(typeof owgwReceivedBody.configuration.uuid, 'number', 'uCentral AP requires numeric uuid');
 });
 
-test('Copy-on-write guards against empty block saves, fetch failures, and rolls back orphaned configurations (P1 #2)', async () => {
+test('Copy-on-write guards against empty block saves and fetch failures without premature deletion (P1 #2 & F1)', async () => {
   const filePath = path.join(
     ROOT_DIR,
     'src',
@@ -1966,10 +1966,11 @@ test('Copy-on-write guards against empty block saves, fetch failures, and rolls 
     'handleSave must guard against missing configuration blocks'
   );
 
-  // 4. Verify rollback on device association failure
-  assert.ok(
+  // 4. Verify no premature compensation/rollback deletion that could delete an assigned configuration (Issue F1)
+  assert.strictEqual(
     content.includes('deleteModularConfiguration(newConfigId)'),
-    'handleSave must delete newly created modular configuration if device association fails (rollback)'
+    false,
+    'handleSave must not call deleteModularConfiguration on assignment failure to avoid deleting assigned configuration'
   );
 
   // 5. Simulation: Delayed OWPROV response (loading state)

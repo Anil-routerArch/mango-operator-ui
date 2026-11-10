@@ -14,7 +14,6 @@ import { useUpdateDeviceTag } from '@/api/devices';
 import {
   getModularConfigurationById,
   createModularConfiguration,
-  deleteModularConfiguration,
   type ModularConfigElementPayload,
   type ModularConfigurationPayload,
 } from '@/api/modularConfigurations';
@@ -343,20 +342,14 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         };
       }
 
-      try {
-        await updateMutation.mutateAsync({
-          serialNumber: device.serialNumber,
-          payload: devicePayload as any,
-        });
-      } catch (assignError) {
-        // Rollback: delete the newly created modular configuration to prevent database orphans
-        try {
-          await deleteModularConfiguration(newConfigId);
-        } catch {
-          // ignore cleanup error
-        }
-        throw assignError;
-      }
+      // Update device inventory with the new configuration ID.
+      // Do not attempt compensation rollback (deleting newConfigId) if the update throws:
+      // if the backend already committed the inventory tag before a network/timeout failure,
+      // deleting the configuration would leave a dangling pointer in OWPROV.
+      await updateMutation.mutateAsync({
+        serialNumber: device.serialNumber,
+        payload: devicePayload as any,
+      });
 
       if (originalConfigId) {
         queryClient.invalidateQueries({ queryKey: ['modular-configuration-device', originalConfigId] });
