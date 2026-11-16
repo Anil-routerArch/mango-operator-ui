@@ -12,6 +12,7 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
+import { getApiErrorMessage } from '@/api/errors';
 import { useExecuteScript } from '@/api/devices';
 import type { UnifiedFleetDevice } from '@/types/device';
 
@@ -60,7 +61,7 @@ export const DeviceScriptModal: React.FC<DeviceScriptModalProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Script Execution Failed',
-        description: err instanceof Error ? err.message : 'Could not run script on device',
+        description: getApiErrorMessage(err, 'Could not run script on device'),
         type: 'error',
       });
     }

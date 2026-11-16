@@ -291,12 +291,15 @@ export interface FleetDevicesResponse {
 }
 
 /**
- * Fetches fleet devices from the authoritative MDU service with full pagination aggregation.
+ * Fetches up to 50,000 fleet devices, in batches of at most 10 page requests.
+ * Page failures propagate to the caller instead of producing incomplete success data.
  */
 export const getFleetDevices = async (
   options?: FleetFetchOptions
 ): Promise<FleetDevicesResponse> => {
   const pageSize = 500;
+  const maxPages = 100;
+  const batchSize = 10;
   const res = await axiosMdu.get<PaginatedFleetResponse>('devices', {
     params: {
       pageIndex: 0,
@@ -308,10 +311,11 @@ export const getFleetDevices = async (
   const firstPage = res.data?.devices || [];
   const totalCount = res.data?.totalCount ?? firstPage.length;
 
-  if (totalCount > pageSize && res.data?.totalPages > 1) {
-    const totalPages = Math.min(res.data.totalPages, 10);
+  const totalPages = Math.min(Math.ceil(totalCount / pageSize), maxPages);
+  const allDevices = [...firstPage];
+  for (let start = 1; start < totalPages; start += batchSize) {
     const pagePromises = [];
-    for (let p = 1; p < totalPages; p++) {
+    for (let p = start; p < Math.min(start + batchSize, totalPages); p++) {
       pagePromises.push(
         axiosMdu
           .get<PaginatedFleetResponse>('devices', {
@@ -322,15 +326,12 @@ export const getFleetDevices = async (
             },
           })
           .then((r) => r.data?.devices || [])
-          .catch(() => [])
       );
     }
-    const otherPages = await Promise.all(pagePromises);
-    const allDevices = firstPage.concat(...otherPages);
-    return { devices: allDevices, totalCount };
+    allDevices.push(...(await Promise.all(pagePromises)).flat());
   }
 
-  return { devices: firstPage, totalCount };
+  return { devices: allDevices, totalCount };
 };
 
 export const useFleetDashboard = (options?: FleetFetchOptions) => {
@@ -1417,5 +1418,49 @@ export const useGetDeviceTypeInfo = () => {
   });
 };
 
+export interface DeviceCommandAuthRequest {
+  serialNumber: string;
+  action: string;
+}
 
+export interface DeviceCommandAuthResponse {
+  allowed: boolean;
+  resource: string;
+  action: string;
+  serialNumber: string;
+  userId: string;
+  policyId?: string;
+  policyName?: string;
+  reason: string;
+  details: string;
+}
 
+/**
+ * Checks device command authorization against OWPROV via MDU internal authorization API.
+ */
+export const checkDeviceCommandAuthorization = async (
+  payload: DeviceCommandAuthRequest
+): Promise<DeviceCommandAuthResponse> => {
+  const clean = normalizeSerial(payload.serialNumber);
+  const res = await axiosMdu.post<DeviceCommandAuthResponse>('authorization/deviceCommand', {
+    serialNumber: clean,
+    action: payload.action,
+  });
+  return res.data;
+};
+
+export const useCheckDeviceCommandAuthorization = () => {
+  return useMutation({
+    mutationFn: checkDeviceCommandAuthorization,
+  });
+};
+
+export const useAuthorizeDeviceCommand = (serialNumber?: string, action?: string) => {
+  const clean = serialNumber ? normalizeSerial(serialNumber) : '';
+  return useQuery({
+    queryKey: ['device-command-auth', clean, action?.toUpperCase()],
+    queryFn: () => checkDeviceCommandAuthorization({ serialNumber: clean, action: action! }),
+    enabled: Boolean(clean && action),
+    staleTime: 60 * 1000,
+  });
+};

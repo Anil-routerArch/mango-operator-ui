@@ -2089,7 +2089,7 @@ test('DeviceDashboardTab eliminates fabricated fleet metrics and derives authori
   const apiContent = fs.readFileSync(apiPath, 'utf-8');
   assert.ok(apiContent.includes('export interface FleetDevicesResponse'), 'Must export FleetDevicesResponse interface');
   assert.ok(apiContent.includes('useFleetDashboard'), 'Must export useFleetDashboard hook');
-  assert.ok(apiContent.includes('totalCount > pageSize'), 'Must implement multi-page aggregation for fleets exceeding page size');
+  assert.ok(apiContent.includes('Math.ceil(totalCount / pageSize)'), 'Must implement multi-page aggregation for fleets exceeding page size');
 });
 
 test('Simulation: fleet metrics calculation strictly respects authorized device count and avoids fabrication', () => {
@@ -2099,8 +2099,8 @@ test('Simulation: fleet metrics calculation strictly respects authorized device 
     const devices = data?.devices ?? [];
     const totalCount = data?.totalCount ?? devices.length;
     const connectedCount = devices.filter((d) => d.connected).length;
-    const offlineCount = Math.max(0, totalCount - connectedCount);
-    const connectivityRate = totalCount > 0 ? Math.round((connectedCount / totalCount) * 100) : 0;
+    const offlineCount = Math.max(0, devices.length - connectedCount);
+    const connectivityRate = devices.length > 0 ? Math.round((connectedCount / devices.length) * 100) : 0;
     const scored = devices.filter((d) => typeof d.sanity === 'number' && !Number.isNaN(d.sanity));
     const averageSanity = scored.length > 0 ? Math.round(scored.reduce((acc, curr) => acc + (curr.sanity || 0), 0) / scored.length) : null;
     return { totalCount, connectedCount, offlineCount, connectivityRate, averageSanity };
@@ -2123,8 +2123,8 @@ test('Simulation: fleet metrics calculation strictly respects authorized device 
   const populatedResult = calcMetrics(populatedData);
   assert.strictEqual(populatedResult.totalCount, 150, 'Total count must reflect authoritative tenant-authorized count');
   assert.strictEqual(populatedResult.connectedCount, 2);
-  assert.strictEqual(populatedResult.offlineCount, 148, 'Offline count must accurately subtract connected devices from totalCount');
-  assert.strictEqual(populatedResult.connectivityRate, 1, '2 / 150 = 1.33% -> 1%');
+  assert.strictEqual(populatedResult.offlineCount, 1, 'Offline count must only include loaded devices');
+  assert.strictEqual(populatedResult.connectivityRate, 67, '2 / 3 loaded devices = 66.67% -> 67%');
   assert.strictEqual(populatedResult.averageSanity, 73, '(95 + 85 + 40) / 3 = 73.33% -> 73%');
 });
 

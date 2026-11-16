@@ -13,6 +13,7 @@ import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { useFactoryResetDevice } from '@/api/devices';
 import { toaster } from '@/components/ui/toaster';
+import { getApiErrorMessage } from '@/api/errors';
 
 export interface DeviceFactoryResetModalProps {
   isOpen: boolean;
@@ -46,7 +47,7 @@ export const DeviceFactoryResetModal: React.FC<DeviceFactoryResetModalProps> = (
     } catch (err: unknown) {
       toaster.create({
         title: 'Factory Reset Failed',
-        description: err instanceof Error ? err.message : 'Failed to issue factory reset',
+        description: getApiErrorMessage(err, 'Failed to issue factory reset'),
         type: 'error',
       });
     }

@@ -16,6 +16,7 @@ import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { useWifiScanDevice, type WifiScanResult } from '@/api/devices';
 import { toaster } from '@/components/ui/toaster';
+import { getApiErrorMessage } from '@/api/errors';
 
 export interface DeviceWifiScanModalProps {
   isOpen: boolean;
@@ -54,7 +55,7 @@ export const DeviceWifiScanModal: React.FC<DeviceWifiScanModalProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Scan Failed',
-        description: err instanceof Error ? err.message : 'Failed to execute Wi-Fi scan',
+        description: getApiErrorMessage(err, 'Failed to execute Wi-Fi scan'),
         type: 'error',
       });
     }

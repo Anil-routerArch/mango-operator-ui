@@ -1,5 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+
+const policySource = fs.readFileSync(new URL('../src/pages/Users/PoliciesTab.tsx', import.meta.url), 'utf8');
+const production = {};
+const compiled = ts.transpileModule(policySource.slice(policySource.indexOf('export const RESOURCES ='), policySource.indexOf('const mapApiPolicyToItem =')), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2023 },
+}).outputText;
+new Function('exports', compiled)(production);
+const { DEVICE_COMMAND_ACTIONS, toggleDeviceCommandAction, parseDeviceCommandActions } = production;
 
 // MANAGED_RESOURCE_KEYS mirrors PoliciesTab.tsx
 const MANAGED_RESOURCE_KEYS = new Set([
@@ -13,6 +23,7 @@ const MANAGED_RESOURCE_KEYS = new Set([
   'subscriber',
   'contact',
   'location',
+  'devicecommand',
 ]);
 
 const ALL_POLICY_RESOURCES = [
@@ -26,6 +37,8 @@ const ALL_POLICY_RESOURCES = [
   'Location',
 ];
 
+
+
 const UI_LABEL_TO_RESOURCE_KEY = {
   Entity: 'entity',
   Venue: 'venue',
@@ -35,6 +48,7 @@ const UI_LABEL_TO_RESOURCE_KEY = {
   Subscriber: 'subscriber',
   Contact: 'contact',
   Location: 'location',
+  'Device Commands': 'deviceCommand',
 };
 
 const RESOURCE_LABEL_MAP = {
@@ -48,6 +62,7 @@ const RESOURCE_LABEL_MAP = {
   subscriber: 'Subscriber',
   contact: 'Contact',
   location: 'Location',
+  devicecommand: 'Device Commands',
 };
 
 const normalizeResourceName = (raw) => {
@@ -89,7 +104,7 @@ const parseEntriesToPermissions = (entries = []) => {
       const isFull = accessList.includes('FULL') || accessList.includes('*');
       const canRead = isFull || accessList.includes('READ');
       const canCreate = isFull || accessList.includes('CREATE');
-      const canUpdate = isFull || accessList.includes('UPDATE') || accessList.includes('MODIFY');
+      const canUpdate = isFull || accessList.includes('UPDATE');
       const canDelete = isFull || accessList.includes('DELETE');
 
       for (const rawRes of entry.resources || []) {
@@ -114,7 +129,7 @@ const parseEntriesToPermissions = (entries = []) => {
 };
 
 // Mirror mergePolicyEntries from PoliciesTab.tsx
-const mergePolicyEntries = (originalEntries = [], editedPermissions) => {
+const mergePolicyEntries = (originalEntries = [], editedPermissions, editedDeviceCommandActions = []) => {
   const preservedUnmanagedEntries = [];
 
   for (const entry of originalEntries) {
@@ -170,6 +185,26 @@ const mergePolicyEntries = (originalEntries = [], editedPermissions) => {
     resources,
     access: key.split(','),
   }));
+
+  if (editedDeviceCommandActions && editedDeviceCommandActions.length > 0) {
+    const cleanActions = editedDeviceCommandActions.includes('FULL')
+      ? ['FULL']
+      : Array.from(new Set(editedDeviceCommandActions));
+
+    const fullEntry = managedEntries.find(
+      (e) => e.access.length === 1 && e.access[0] === 'FULL' && cleanActions.length === 1 && cleanActions[0] === 'FULL'
+    );
+    if (fullEntry) {
+      if (!fullEntry.resources.includes('deviceCommand')) {
+        fullEntry.resources.push('deviceCommand');
+      }
+    } else {
+      managedEntries.push({
+        resources: ['deviceCommand'],
+        access: cleanActions,
+      });
+    }
+  }
 
   return [...preservedUnmanagedEntries, ...managedEntries];
 };
@@ -330,4 +365,80 @@ test('Preserves user-scoped entries and does not promote them to global role-lev
 
   // Exactly 2 entries exist in the policy
   assert.strictEqual(merged.length, 2);
+});
+
+test('parseDeviceCommandActions does not grant commands from wildcard FULL', () => {
+  const entries = [
+    {
+      resources: ['*'],
+      access: ['FULL'],
+    },
+  ];
+
+  const actions = parseDeviceCommandActions(entries);
+  assert.deepStrictEqual(actions, []);
+});
+
+test('parseDeviceCommandActions omits device commands from wildcard (*) READ entry', () => {
+  const entries = [
+    {
+      resources: ['*'],
+      access: ['READ'],
+    },
+  ];
+
+  const actions = parseDeviceCommandActions(entries);
+  assert.deepStrictEqual(actions, [], 'Read-only wildcard policy must never grant deviceCommand actions');
+});
+
+test('parseDeviceCommandActions parses specific domain actions from deviceCommand resource', () => {
+  const entries = [
+    {
+      resources: ['deviceCommand'],
+      access: ['REBOOT', 'CONFIGURE', 'WIFI_SCAN'],
+    },
+  ];
+
+  const actions = parseDeviceCommandActions(entries);
+  assert.deepStrictEqual(actions.sort(), ['CONFIGURE', 'REBOOT', 'WIFI_SCAN'].sort());
+});
+
+test('toggleDeviceCommandAction requires explicit commands and never creates FULL', () => {
+  assert.deepStrictEqual(toggleDeviceCommandAction([], 'FULL'), []);
+  let selected = [];
+  for (const action of DEVICE_COMMAND_ACTIONS) selected = toggleDeviceCommandAction(selected, action);
+  assert.deepStrictEqual(selected, DEVICE_COMMAND_ACTIONS);
+  assert.deepStrictEqual(toggleDeviceCommandAction(selected, 'REBOOT'), DEVICE_COMMAND_ACTIONS.filter((action) => action !== 'REBOOT'));
+});
+
+test('mergePolicyEntries accurately updates deviceCommand and preserves unmanaged entries', () => {
+  const originalEntries = [
+    {
+      resources: ['customMetricTelemetry'],
+      access: ['READ'],
+    },
+  ];
+
+  const editedPermissions = [
+    { resource: 'Inventory', read: true, create: false, update: false, delete: false },
+  ];
+
+  const editedDeviceCommands = ['REBOOT', 'CONFIGURE'];
+
+  const merged = mergePolicyEntries(originalEntries, editedPermissions, editedDeviceCommands);
+
+  // 1. customMetricTelemetry preserved
+  const custom = merged.find((e) => e.resources.includes('customMetricTelemetry'));
+  assert.ok(custom);
+  assert.deepStrictEqual(custom.access, ['READ']);
+
+  // 2. Inventory READ
+  const inv = merged.find((e) => e.resources.includes('inventory'));
+  assert.ok(inv);
+  assert.deepStrictEqual(inv.access, ['READ']);
+
+  // 3. deviceCommand REBOOT, CONFIGURE
+  const devCmd = merged.find((e) => e.resources.includes('deviceCommand'));
+  assert.ok(devCmd);
+  assert.deepStrictEqual(devCmd.access.sort(), ['CONFIGURE', 'REBOOT'].sort());
 });

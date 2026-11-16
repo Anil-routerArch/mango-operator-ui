@@ -13,6 +13,7 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
+import { getApiErrorMessage } from '@/api/errors';
 import { useStartTelemetry } from '@/api/devices';
 import type { UnifiedFleetDevice } from '@/types/device';
 
@@ -72,7 +73,7 @@ export const DeviceTelemetryModal: React.FC<DeviceTelemetryModalProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Telemetry Failed',
-        description: err instanceof Error ? err.message : 'Could not start telemetry collection',
+        description: getApiErrorMessage(err, 'Could not start telemetry collection'),
         type: 'error',
       });
     }

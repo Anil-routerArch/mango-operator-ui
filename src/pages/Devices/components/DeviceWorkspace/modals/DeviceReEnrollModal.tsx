@@ -11,6 +11,7 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
+import { getApiErrorMessage } from '@/api/errors';
 import { useReEnrollDevice } from '@/api/devices';
 import type { UnifiedFleetDevice } from '@/types/device';
 
@@ -41,7 +42,7 @@ export const DeviceReEnrollModal: React.FC<DeviceReEnrollModalProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Re-Enroll Failed',
-        description: err instanceof Error ? err.message : 'Could not re-enroll device',
+        description: getApiErrorMessage(err, 'Could not re-enroll device'),
         type: 'error',
       });
     }

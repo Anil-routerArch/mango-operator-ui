@@ -19,9 +19,11 @@ export const DeviceDashboardTab: React.FC = () => {
 
   const devices = React.useMemo(() => data?.devices ?? [], [data?.devices]);
   const totalCount = data?.totalCount ?? devices.length;
+  const loadedCount = devices.length;
+  const isPartial = loadedCount < totalCount;
   const connectedCount = React.useMemo(() => devices.filter((d) => d.connected).length, [devices]);
-  const offlineCount = Math.max(0, totalCount - connectedCount);
-  const connectivityRate = totalCount > 0 ? Math.round((connectedCount / totalCount) * 100) : 0;
+  const offlineCount = Math.max(0, loadedCount - connectedCount);
+  const connectivityRate = loadedCount > 0 ? Math.round((connectedCount / loadedCount) * 100) : 0;
 
   // Calculate average sanity strictly from scored devices (no fabricated fallbacks)
   const averageSanity = React.useMemo(() => {
@@ -101,7 +103,7 @@ export const DeviceDashboardTab: React.FC = () => {
     {
       title: 'Connected (Online)',
       value: connectedCount,
-      subtitle: `${connectivityRate}% fleet availability`,
+      subtitle: `${connectivityRate}% ${isPartial ? 'loaded device' : 'fleet'} availability`,
       icon: 'check' as const,
       color: '#16a34a',
       bg: '#f0fdf4',
@@ -109,7 +111,7 @@ export const DeviceDashboardTab: React.FC = () => {
     {
       title: 'Offline / Critical',
       value: offlineCount,
-      subtitle: `${totalCount > 0 ? 100 - connectivityRate : 0}% offline or stale`,
+      subtitle: `${loadedCount > 0 ? 100 - connectivityRate : 0}% offline or stale`,
       icon: 'alertTriangle' as const,
       color: '#dc2626',
       bg: '#fef2f2',
@@ -126,6 +128,14 @@ export const DeviceDashboardTab: React.FC = () => {
 
   return (
     <VStack align="stretch" gap={6}>
+      {isPartial && (
+        <Box p={4} bg="#fffbeb" border="1px solid #fde68a" borderRadius="8px" role="status">
+          <Text fontSize="13px" color="#92400e">
+            Partial fleet data: loaded {loadedCount.toLocaleString()} of {totalCount.toLocaleString()} devices.
+            Online, offline, health, and model statistics cover only the loaded devices.
+          </Text>
+        </Box>
+      )}
       {/* 4 Fleet Metric KPI Cards */}
       <SimpleGrid columns={{ base: 1, sm: 2, lg: 4 }} gap={5}>
         {kpis.map((kpi, idx) => (
@@ -180,7 +190,7 @@ export const DeviceDashboardTab: React.FC = () => {
               </Text>
             ) : (
               modelBreakdown.map((item, idx) => {
-                const percent = totalCount > 0 ? Math.round((item.count / totalCount) * 100) : 0;
+                const percent = loadedCount > 0 ? Math.round((item.count / loadedCount) * 100) : 0;
                 return (
                   <Box key={idx}>
                     <Flex justify="space-between" align="center" fontSize="13px" mb={1}>

@@ -85,8 +85,8 @@ export const getApiErrorMessage = (
         !cleanMessage ||
         isGenericDownstream ||
         isPermissionOrAction ||
-        lowerMessage.includes('access denied') ||
-        lowerMessage.includes('not authorized')
+        (cleanMessage.length <= 25 &&
+          (lowerMessage.includes('access denied') || lowerMessage.includes('not authorized')))
       ) {
         return 'Access denied';
       }

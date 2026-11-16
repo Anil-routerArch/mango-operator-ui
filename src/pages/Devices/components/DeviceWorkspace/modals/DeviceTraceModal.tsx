@@ -13,6 +13,7 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
+import { getApiErrorMessage } from '@/api/errors';
 import { useTraceDevice } from '@/api/devices';
 import type { UnifiedFleetDevice } from '@/types/device';
 
@@ -56,7 +57,7 @@ export const DeviceTraceModal: React.FC<DeviceTraceModalProps> = ({
     } catch (err: unknown) {
       toaster.create({
         title: 'Trace Failed',
-        description: err instanceof Error ? err.message : 'Could not execute packet capture',
+        description: getApiErrorMessage(err, 'Could not execute packet capture'),
         type: 'error',
       });
     }

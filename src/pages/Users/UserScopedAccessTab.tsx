@@ -38,7 +38,10 @@ const getPolicyPermissions = (policy?: ManagementPolicy) => {
       : ['NOACCESS'];
     if (Array.isArray(entry.resources)) {
       entry.resources.forEach((res) => {
-        const displayResource = res === 'device' ? 'inventory' : res;
+        let displayResource = res === 'device' ? 'inventory' : res;
+        if (displayResource.toLowerCase() === 'devicecommand') {
+          displayResource = 'deviceCommand';
+        }
         if (!resources.includes(displayResource)) {
           resources.push(displayResource);
         }
@@ -55,7 +58,12 @@ const getPolicyPermissions = (policy?: ManagementPolicy) => {
   });
 
   return resources.map((res) => ({
-    resource: res,
+    resource:
+      res === 'deviceCommand'
+        ? 'Device Commands'
+        : res === 'managementRole'
+        ? 'Management Role'
+        : res,
     access: map[res] && map[res].length > 0 ? map[res].join(', ') : 'NOACCESS',
   }));
 };

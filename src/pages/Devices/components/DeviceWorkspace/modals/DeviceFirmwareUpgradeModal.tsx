@@ -13,6 +13,7 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
+import { getApiErrorMessage } from '@/api/errors';
 import { useUpgradeFirmware } from '@/api/devices';
 import type { UnifiedFleetDevice } from '@/types/device';
 
@@ -73,7 +74,7 @@ export const DeviceFirmwareUpgradeModal: React.FC<DeviceFirmwareUpgradeModalProp
     } catch (err: unknown) {
       toaster.create({
         title: 'Upgrade Failed',
-        description: err instanceof Error ? err.message : 'Failed to schedule firmware upgrade',
+        description: getApiErrorMessage(err, 'Failed to schedule firmware upgrade'),
         type: 'error',
       });
     }
