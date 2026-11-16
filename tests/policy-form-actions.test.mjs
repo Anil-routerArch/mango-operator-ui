@@ -34,6 +34,19 @@ test('all device commands stay explicit when selected, parsed, and saved', () =>
   assert.deepEqual(mergePolicyEntries([], permissions, selected), [{ resources: ['deviceCommand'], access: [...selected].sort() }]);
 });
 
+test('EVENTQUEUE is selectable and survives policy creation and editing', () => {
+  assert.ok(DEVICE_COMMAND_ACTIONS.includes('EVENTQUEUE'));
+  assert.ok(api.getValidActionsForResource('deviceCommand').includes('EVENTQUEUE'));
+  const selected = toggleActionForResource('deviceCommand', 'EVENTQUEUE', []);
+  assert.deepEqual(selected, ['EVENTQUEUE']);
+  const created = mergePolicyEntries([], [], selected);
+  assert.deepEqual(created, [{ resources: ['deviceCommand'], access: ['EVENTQUEUE'] }]);
+  const permissions = parseEntriesToPermissions(created);
+  assert.deepEqual(permissions.find((p) => p.resource === 'deviceCommand').actions, ['EVENTQUEUE']);
+  assert.deepEqual(mergePolicyEntries(created, permissions, selected), created);
+  assert.deepEqual(toggleActionForResource('deviceCommand', 'EVENTQUEUE', selected), []);
+});
+
 test('FULL never supplies device-command permissions through entries or save overrides', () => {
   const permissions = parseEntriesToPermissions([{ resources: ['*'], access: ['FULL'] }]);
   assert.deepEqual(permissions.find((p) => p.resource === 'deviceCommand').actions, []);

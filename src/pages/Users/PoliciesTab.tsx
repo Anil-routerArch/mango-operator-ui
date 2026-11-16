@@ -103,6 +103,7 @@ export const DEVICE_COMMAND_ACTIONS = [
   'RTTY',
   'SCRIPT',
   'RE_ENROLL',
+  'EVENTQUEUE',
 ];
 
 export const RESOURCE_DISPLAY_MAP: Record<string, string> = {
