@@ -19,14 +19,28 @@ import {
   useDeviceEventsStream,
   useRebootDevice,
   useWifiScanDevice,
-  usePushDeviceConfig,
+  useApplyProvisionedDeviceConfig,
   useDeleteDeviceFromFleet,
+  useBlinkDeviceLeds,
+  useLaunchRttySession,
 } from '@/api/devices';
 import { getApiErrorMessage } from '@/api/errors';
+import { assertDeviceCommandSucceeded, getDeviceCommandSuccessTitle } from '@/api/deviceCommandStatus';
 import { toaster } from '@/components/ui/toaster';
 import { DevicePaginationControls } from './DevicePaginationControls';
-import { DeviceRowActions } from './DeviceRowActions';
+import { DeviceRowActions, type FleetDeviceMenuAction } from './DeviceRowActions';
 import { DeviceConnectionBadge } from './DeviceConnectionBadge';
+import { DeviceActionConfirmModal } from '../common/DeviceActionConfirmModal';
+import { DeviceQuickConfigModal } from '../DeviceWorkspace/modals/DeviceQuickConfigModal';
+import { DeviceWifiScanModal } from '../DeviceWorkspace/modals/DeviceWifiScanModal';
+import { DeviceFactoryResetModal } from '../DeviceWorkspace/modals/DeviceFactoryResetModal';
+import { DeviceFirmwareUpgradeModal } from '../DeviceWorkspace/modals/DeviceFirmwareUpgradeModal';
+import { DeviceEventQueueModal } from '../DeviceWorkspace/modals/DeviceEventQueueModal';
+import { DeviceTraceModal } from '../DeviceWorkspace/modals/DeviceTraceModal';
+import { DeviceTelemetryModal } from '../DeviceWorkspace/modals/DeviceTelemetryModal';
+import { DeviceScriptModal } from '../DeviceWorkspace/modals/DeviceScriptModal';
+import { DeviceReEnrollModal } from '../DeviceWorkspace/modals/DeviceReEnrollModal';
+import { DeviceExportStatsModal } from '../DeviceWorkspace/modals/DeviceExportStatsModal';
 import {
   formatBytes,
   formatUptimeDuration,
@@ -35,7 +49,7 @@ import {
   getRevision,
   getCountryFlag,
 } from './deviceTableHelpers';
-import type { DeviceWorkspaceTab } from '@/types/device';
+import type { DeviceWorkspaceTab, UnifiedFleetDevice } from '@/types/device';
 
 export const DeviceFleetTable: React.FC = () => {
   const [, setSearchParams] = useSearchParams();
@@ -55,6 +69,8 @@ export const DeviceFleetTable: React.FC = () => {
   } = useDevicesUiStore();
 
   const [deleteTargetSerial, setDeleteTargetSerial] = useState<string | null>(null);
+  const [menuAction, setMenuAction] = useState<FleetDeviceMenuAction | null>(null);
+  const [menuActionDevice, setMenuActionDevice] = useState<UnifiedFleetDevice | null>(null);
 
   const handleSelectDevice = (serial: string, tab: DeviceWorkspaceTab = 'overview') => {
     selectDevice(serial, tab);
@@ -63,6 +79,8 @@ export const DeviceFleetTable: React.FC = () => {
       next.set('serial', serial);
       if (tab !== 'overview') {
         next.set('tab', tab);
+      } else {
+        next.delete('tab');
       }
       return next;
     });
@@ -83,8 +101,10 @@ export const DeviceFleetTable: React.FC = () => {
 
   const rebootMutation = useRebootDevice();
   const wifiScanMutation = useWifiScanDevice();
-  const syncMutation = usePushDeviceConfig();
+  const applyProvisionedMutation = useApplyProvisionedDeviceConfig();
   const deleteMutation = useDeleteDeviceFromFleet();
+  const blinkMutation = useBlinkDeviceLeds();
+  const rttyMutation = useLaunchRttySession();
 
   const devices = paginatedData?.devices ?? [];
 
@@ -130,10 +150,11 @@ export const DeviceFleetTable: React.FC = () => {
 
   const handleQuickReboot = async (serial: string) => {
     try {
-      await rebootMutation.mutateAsync({ serialNumber: serial });
+      const result = await rebootMutation.mutateAsync({ serialNumber: serial });
+      assertDeviceCommandSucceeded(result);
       toaster.create({
-        title: 'Reboot Scheduled',
-        description: `Reboot command sent to ${serial}`,
+        title: getDeviceCommandSuccessTitle('Reboot', result),
+        description: `Reboot command accepted for ${serial}.`,
         type: 'success',
       });
     } catch (err: unknown) {
@@ -147,10 +168,11 @@ export const DeviceFleetTable: React.FC = () => {
 
   const handleWifiScan = async (serial: string) => {
     try {
-      await wifiScanMutation.mutateAsync({ serialNumber: serial, verbose: true });
+      const result = await wifiScanMutation.mutateAsync({ serialNumber: serial, verbose: true });
+      assertDeviceCommandSucceeded(result);
       toaster.create({
-        title: 'Wi-Fi Scan Initiated',
-        description: `Radio analysis requested for ${serial}`,
+        title: getDeviceCommandSuccessTitle('Wi-Fi Scan', result),
+        description: `Wi-Fi scan command accepted for ${serial}.`,
         type: 'success',
       });
     } catch (err: unknown) {
@@ -162,22 +184,86 @@ export const DeviceFleetTable: React.FC = () => {
     }
   };
 
-  const handleSyncTelemetry = async (serial: string) => {
+  const handleApplyProvisionedConfiguration = async (serial: string) => {
     try {
-      await syncMutation.mutateAsync(serial);
+      const result = await applyProvisionedMutation.mutateAsync(serial);
+      const response = result as {
+        errorCode?: number | string;
+        ErrorCode?: number | string;
+        errorText?: string;
+        ErrorText?: string;
+        ErrorDescription?: string;
+      };
+      const errorCode = response?.errorCode ?? response?.ErrorCode;
+      if (errorCode !== undefined && Number(errorCode) !== 0) {
+        throw new Error(
+          response.errorText || response.ErrorText || response.ErrorDescription || 'OWPROV rejected the configuration request'
+        );
+      }
       toaster.create({
-        title: 'Configuration Pushed',
-        description: `Sync request dispatched to ${serial}`,
+        title: 'Provisioned Configuration Dispatched',
+        description: `OWPROV accepted the apply request for ${serial}`,
         type: 'success',
       });
       refetch();
     } catch (err: unknown) {
       toaster.create({
-        title: 'Sync Failed',
-        description: getApiErrorMessage(err, 'Failed to push configuration'),
+        title: 'Configuration Apply Failed',
+        description: getApiErrorMessage(err, 'Failed to apply provisioned configuration'),
         type: 'error',
       });
     }
+  };
+
+  const closeMenuAction = () => {
+    setMenuAction(null);
+    setMenuActionDevice(null);
+  };
+
+  const handleFleetMenuAction = async (device: UnifiedFleetDevice, action: FleetDeviceMenuAction) => {
+    if (action === 'blink') {
+      try {
+        const result = await blinkMutation.mutateAsync({ serialNumber: device.serialNumber, duration: 30 });
+        assertDeviceCommandSucceeded(result);
+        toaster.create({
+          title: getDeviceCommandSuccessTitle('LED Blink', result),
+          description: `LED blink command accepted for ${device.serialNumber}.`,
+          type: 'info',
+        });
+      } catch (err: unknown) {
+        toaster.create({
+          title: 'Blink Command Failed',
+          description: getApiErrorMessage(err, 'Failed to blink LEDs'),
+          type: 'error',
+        });
+      }
+      return;
+    }
+
+    if (action === 'rtty') {
+      try {
+        const result = await rttyMutation.mutateAsync({ serialNumber: device.serialNumber });
+        if (result?.server && result?.viewport && result?.connectionId) {
+          window.open(`https://${result.server}:${result.viewport}/connect/${result.connectionId}`, '_blank')?.focus();
+        } else {
+          toaster.create({
+            title: 'Terminal / RTTY Launched',
+            description: `Terminal connection requested for ${device.serialNumber}`,
+            type: 'info',
+          });
+        }
+      } catch (err: unknown) {
+        toaster.create({
+          title: 'Terminal Launch Failed',
+          description: getApiErrorMessage(err, 'Unable to initiate RTTY session'),
+          type: 'error',
+        });
+      }
+      return;
+    }
+
+    setMenuActionDevice(device);
+    setMenuAction(action);
   };
 
   const handleConfirmDelete = async () => {
@@ -201,8 +287,27 @@ export const DeviceFleetTable: React.FC = () => {
     }
   };
 
+  const escapeCsvCell = (val: unknown): string => {
+    if (val === null || val === undefined) return '""';
+    let str = String(val);
+    // Neutralize spreadsheet formula injection (CWE-1236: =, +, -, @, \t, \r)
+    if (/^[=+\-@\t\r]/.test(str)) {
+      str = `'${str}`;
+    }
+    // Escape double quotes by doubling them per RFC 4180
+    return `"${str.replace(/"/g, '""')}"`;
+  };
+
   const handleExportCsv = () => {
-    if (devices.length === 0) return;
+    if (filteredDevices.length === 0) {
+      toaster.create({
+        title: 'No Devices to Export',
+        description: 'There are no visible devices on this page matching the current filters.',
+        type: 'info',
+      });
+      return;
+    }
+
     const headers = [
       'SerialNumber',
       'Status',
@@ -229,7 +334,7 @@ export const DeviceFleetTable: React.FC = () => {
       'CertExpiry',
     ];
 
-    const rows = devices.map((d) => [
+    const rows = filteredDevices.map((d) => [
       d.serialNumber,
       d.connected ? 'Online' : 'Offline',
       d.memoryUsedPct !== undefined ? `${d.memoryUsedPct}%` : '',
@@ -255,17 +360,28 @@ export const DeviceFleetTable: React.FC = () => {
       formatCertExpiry(d.certificateExpiryDate),
     ]);
 
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.map((val) => `"${val}"`).join(','))].join('\n');
+    const csvContent = [
+      headers.map(escapeCsvCell).join(','),
+      ...rows.map((row) => row.map(escapeCsvCell).join(',')),
+    ].join('\r\n');
 
-    const encodedUri = encodeURI(csvContent);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `mango_devices_export_${Date.now()}.csv`);
+    link.href = url;
+    const filterLabel = searchQuery || statusFilter !== 'all' ? '_filtered' : '';
+    const filename = `mango_devices_page_${pageIndex + 1}${filterLabel}_${filteredDevices.length}_devices_${Date.now()}.csv`;
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    toaster.create({
+      title: 'CSV Export Downloaded',
+      description: `Exported ${filteredDevices.length} device${filteredDevices.length === 1 ? '' : 's'} (Page ${pageIndex + 1} of ${totalPages}) to CSV.`,
+      type: 'info',
+    });
   };
 
   return (
@@ -344,7 +460,7 @@ export const DeviceFleetTable: React.FC = () => {
             color={themeColors.brand.accent}
             _hover={{ bg: themeColors.brand.accentLight }}
             onClick={handleExportCsv}
-            title="Export CSV"
+            title={`Export Current Page (${filteredDevices.length} visible devices) to CSV`}
           >
             <Icon name="upload" size={15} />
           </IconButton>
@@ -412,7 +528,8 @@ export const DeviceFleetTable: React.FC = () => {
           </Flex>
         ) : (
           <Box overflowX="auto">
-            <Box minW="2400px">
+            {/* Fixed columns plus horizontal row padding require a 2450px canvas. */}
+            <Box minW="2450px">
               {/* Table Header: All 24 Columns */}
               <Flex
                 bg="#f8fafc"
@@ -450,7 +567,7 @@ export const DeviceFleetTable: React.FC = () => {
                 <Box w="45px" minW="45px" flexShrink={0} textAlign="center">6G</Box>
                 <Box w="120px" minW="120px" flexShrink={0}>Connect Reason</Box>
                 <Box w="55px" minW="55px" flexShrink={0} textAlign="center">Exp</Box>
-                <Box w="230px" minW="230px" flexShrink={0} textAlign="center">Actions</Box>
+                <Box w="170px" minW="170px" flexShrink={0} textAlign="center">Actions</Box>
               </Flex>
 
               {/* Table Rows */}
@@ -479,6 +596,7 @@ export const DeviceFleetTable: React.FC = () => {
                       <DeviceConnectionBadge
                         connected={Boolean(dev.connected)}
                         deviceType={dev.deviceType || dev.model}
+                        deviceGroup={dev.deviceGroup}
                         restricted={Boolean(dev.restricted)}
                         simulated={Boolean(dev.simulated)}
                       />
@@ -740,15 +858,15 @@ export const DeviceFleetTable: React.FC = () => {
                       {formatCertExpiry(dev.certificateExpiryDate)}
                     </Box>
 
-                    {/* 24. Actions (7 Circular Buttons) */}
-                    <Box w="230px" minW="230px" flexShrink={0} textAlign="center">
+                    {/* 24. Actions */}
+                    <Box w="170px" minW="170px" flexShrink={0} textAlign="center">
                       <DeviceRowActions
                         device={dev}
-                        onSelect={handleSelectDevice}
                         onReboot={handleQuickReboot}
                         onDelete={(s) => setDeleteTargetSerial(s)}
                         onWifiScan={handleWifiScan}
-                        onSync={handleSyncTelemetry}
+                        onApplyProvisionedConfig={handleApplyProvisionedConfiguration}
+                        onMenuAction={handleFleetMenuAction}
                       />
                     </Box>
                   </Flex>
@@ -827,6 +945,76 @@ export const DeviceFleetTable: React.FC = () => {
             </VStack>
           </Box>
         </Box>
+      )}
+
+      {menuActionDevice && (
+        <>
+          <DeviceActionConfirmModal
+            isOpen={menuAction === 'reboot'}
+            onClose={closeMenuAction}
+            onConfirm={() => {
+              const serial = menuActionDevice.serialNumber;
+              closeMenuAction();
+              void handleQuickReboot(serial);
+            }}
+            title="Reboot Device"
+            description={`Are you sure you want to reboot ${menuActionDevice.name || menuActionDevice.serialNumber} (${menuActionDevice.serialNumber})? Active client connections will be temporarily dropped.`}
+            confirmLabel="Reboot Now"
+            confirmVariant="danger"
+            icon="power"
+          />
+          <DeviceQuickConfigModal
+            isOpen={menuAction === 'configure'}
+            onClose={closeMenuAction}
+            serialNumber={menuActionDevice.serialNumber}
+            device={menuActionDevice}
+          />
+          <DeviceWifiScanModal
+            isOpen={menuAction === 'wifiScan'}
+            onClose={closeMenuAction}
+            serialNumber={menuActionDevice.serialNumber}
+          />
+          <DeviceFactoryResetModal
+            isOpen={menuAction === 'factoryReset'}
+            onClose={closeMenuAction}
+            serialNumber={menuActionDevice.serialNumber}
+          />
+          <DeviceFirmwareUpgradeModal
+            isOpen={menuAction === 'firmwareUpgrade'}
+            onClose={closeMenuAction}
+            device={menuActionDevice}
+          />
+          <DeviceEventQueueModal
+            isOpen={menuAction === 'eventQueue'}
+            onClose={closeMenuAction}
+            device={menuActionDevice}
+          />
+          <DeviceTraceModal
+            isOpen={menuAction === 'trace'}
+            onClose={closeMenuAction}
+            device={menuActionDevice}
+          />
+          <DeviceTelemetryModal
+            isOpen={menuAction === 'telemetry'}
+            onClose={closeMenuAction}
+            device={menuActionDevice}
+          />
+          <DeviceScriptModal
+            isOpen={menuAction === 'script'}
+            onClose={closeMenuAction}
+            device={menuActionDevice}
+          />
+          <DeviceReEnrollModal
+            isOpen={menuAction === 'reEnroll'}
+            onClose={closeMenuAction}
+            device={menuActionDevice}
+          />
+          <DeviceExportStatsModal
+            isOpen={menuAction === 'exportStats'}
+            onClose={closeMenuAction}
+            device={menuActionDevice}
+          />
+        </>
       )}
     </Box>
   );

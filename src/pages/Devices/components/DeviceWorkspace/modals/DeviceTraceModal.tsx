@@ -15,6 +15,12 @@ import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
 import { getApiErrorMessage } from '@/api/errors';
 import { useTraceDevice } from '@/api/devices';
+import {
+  assertDeviceCommandSucceeded,
+  getDeviceCommandOutcome,
+  getDeviceCommandResultPayload,
+  getDeviceCommandSuccessTitle,
+} from '@/api/deviceCommandStatus';
 import type { UnifiedFleetDevice } from '@/types/device';
 
 export interface DeviceTraceModalProps {
@@ -48,10 +54,14 @@ export const DeviceTraceModal: React.FC<DeviceTraceModalProps> = ({
         packets: traceType === 'packets' ? packets : undefined,
       });
 
+      assertDeviceCommandSucceeded(res);
       setTraceResult(res as Record<string, unknown>);
       toaster.create({
-        title: 'Packet Trace Complete',
-        description: `Captured network packet trace for ${device.serialNumber}.`,
+        title: getDeviceCommandSuccessTitle('Packet Trace', res),
+        description:
+          getDeviceCommandOutcome(res) === 'completed'
+            ? `Packet trace completed for ${device.serialNumber}.`
+            : `Packet trace request accepted for ${device.serialNumber}.`,
         type: 'success',
       });
     } catch (err: unknown) {
@@ -64,7 +74,8 @@ export const DeviceTraceModal: React.FC<DeviceTraceModalProps> = ({
   };
 
   const handleDownload = () => {
-    const jsonStr = JSON.stringify(traceResult ?? {}, null, 2);
+    if (!traceResult || getDeviceCommandOutcome(traceResult) !== 'completed') return;
+    const jsonStr = JSON.stringify(getDeviceCommandResultPayload(traceResult) ?? {}, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -146,37 +157,47 @@ export const DeviceTraceModal: React.FC<DeviceTraceModalProps> = ({
                   </Box>
                   <Box>
                     <Text fontSize="14px" fontWeight="700" color="#166534">
-                      Packet Capture Completed
+                      {getDeviceCommandSuccessTitle('Packet Capture', traceResult)}
                     </Text>
                     <Text fontSize="12px" color="#15803d" mt={0.5}>
-                      Network trace data is ready for inspection and export.
+                      {getDeviceCommandOutcome(traceResult) === 'completed'
+                        ? 'The packet capture completed successfully.'
+                        : 'The packet capture request was accepted by the device service.'}
                     </Text>
                   </Box>
                 </HStack>
               </Box>
 
-              <Box
-                p={4}
-                borderRadius="8px"
-                bg="#0f172a"
-                color="#f8fafc"
-                fontFamily="mono"
-                fontSize="12px"
-                maxH="220px"
-                overflowY="auto"
-                whiteSpace="pre"
-              >
-                {JSON.stringify(traceResult, null, 2)}
-              </Box>
+              {getDeviceCommandOutcome(traceResult) === 'completed' ? (
+                <Box
+                  p={4}
+                  borderRadius="8px"
+                  bg="#0f172a"
+                  color="#f8fafc"
+                  fontFamily="mono"
+                  fontSize="12px"
+                  maxH="220px"
+                  overflowY="auto"
+                  whiteSpace="pre"
+                >
+                  {JSON.stringify(getDeviceCommandResultPayload(traceResult), null, 2)}
+                </Box>
+              ) : (
+                <Text fontSize="12px" color={themeColors.text.muted} textAlign="center">
+                  Capture data is not available yet. Check command history after the device completes the request.
+                </Text>
+              )}
 
               <HStack justify="space-between" pt={2}>
                 <Button size="sm" variant="outline" onClick={() => setTraceResult(null)}>
                   Configure Another Trace
                 </Button>
-                <Button size="sm" colorPalette="blue" variant="solid" onClick={handleDownload}>
-                  <Icon name="download" size={14} />
-                  Download Trace (.json)
-                </Button>
+                {getDeviceCommandOutcome(traceResult) === 'completed' && (
+                  <Button size="sm" colorPalette="blue" variant="solid" onClick={handleDownload}>
+                    <Icon name="download" size={14} />
+                    Download Trace (.json)
+                  </Button>
+                )}
               </HStack>
             </VStack>
           ) : (

@@ -10,7 +10,7 @@ import {
   DeviceBlacklistTab,
   DeviceWorkspace,
 } from './components';
-import type { DevicesMainTab } from '@/types/device';
+import type { DevicesMainTab, DeviceWorkspaceTab } from '@/types/device';
 
 export const DevicesPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -23,28 +23,34 @@ export const DevicesPage: React.FC = () => {
     setMainTab,
   } = useDevicesUiStore();
 
-  // Sync state with URL search params on mount & changes (URL is source of truth)
+  // Sync state with URL search params on mount & changes (URL is authoritative source of truth)
   useEffect(() => {
     const serialParam = searchParams.get('serial');
     const rawTab = searchParams.get('tab');
-    const targetTab: DevicesMainTab =
-      rawTab === 'dashboard' || rawTab === 'blacklist' ? rawTab : 'all';
-
     const currentStore = useDevicesUiStore.getState();
 
     if (serialParam) {
-      if (serialParam !== currentStore.selectedSerialNumber) {
-        selectDevice(serialParam);
+      const targetWorkspaceTab: DeviceWorkspaceTab =
+        rawTab === 'configuration' || rawTab === 'activity' ? rawTab : 'overview';
+
+      if (
+        serialParam !== currentStore.selectedSerialNumber ||
+        targetWorkspaceTab !== currentStore.workspaceTab
+      ) {
+        selectDevice(serialParam, targetWorkspaceTab);
       }
     } else {
       // If there is no serial in the URL, clear selected device so back button works reliably!
       if (currentStore.selectedSerialNumber !== null) {
         clearSelectedDevice();
       }
-    }
 
-    if (targetTab !== currentStore.mainTab) {
-      setMainTab(targetTab);
+      const targetMainTab: DevicesMainTab =
+        rawTab === 'dashboard' || rawTab === 'blacklist' ? rawTab : 'all';
+
+      if (targetMainTab !== currentStore.mainTab) {
+        setMainTab(targetMainTab);
+      }
     }
   }, [searchParams, selectDevice, clearSelectedDevice, setMainTab]);
 

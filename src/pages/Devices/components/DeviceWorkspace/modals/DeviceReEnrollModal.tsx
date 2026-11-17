@@ -13,6 +13,7 @@ import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
 import { getApiErrorMessage } from '@/api/errors';
 import { useReEnrollDevice } from '@/api/devices';
+import { assertDeviceCommandSucceeded, getDeviceCommandSuccessTitle } from '@/api/deviceCommandStatus';
 import type { UnifiedFleetDevice } from '@/types/device';
 
 export interface DeviceReEnrollModalProps {
@@ -32,10 +33,11 @@ export const DeviceReEnrollModal: React.FC<DeviceReEnrollModalProps> = ({
 
   const handleReEnroll = async () => {
     try {
-      await reEnrollMutation.mutateAsync(device.serialNumber);
+      const result = await reEnrollMutation.mutateAsync(device.serialNumber);
+      assertDeviceCommandSucceeded(result);
       toaster.create({
-        title: 'Re-Enroll Initiated',
-        description: `Dispatched certificate re-enrollment for ${device.serialNumber}.`,
+        title: getDeviceCommandSuccessTitle('Re-Enroll', result),
+        description: `Certificate re-enrollment command accepted for ${device.serialNumber}.`,
         type: 'success',
       });
       onClose();

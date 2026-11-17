@@ -13,6 +13,7 @@ import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
 import { useGetEventQueue } from '@/api/devices';
+import { assertDeviceCommandSucceeded } from '@/api/deviceCommandStatus';
 import type { UnifiedFleetDevice } from '@/types/device';
 
 export interface DeviceEventQueueModalProps {
@@ -38,6 +39,7 @@ export const DeviceEventQueueModal: React.FC<DeviceEventQueueModalProps> = ({
         serialNumber: device.serialNumber,
         types,
       });
+      assertDeviceCommandSucceeded(res);
       setData(res);
     } catch (err: unknown) {
       toaster.create({

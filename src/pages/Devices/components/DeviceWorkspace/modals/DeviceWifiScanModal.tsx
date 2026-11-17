@@ -15,6 +15,7 @@ import {
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { useWifiScanDevice, type WifiScanResult } from '@/api/devices';
+import { assertDeviceCommandSucceeded, getDeviceCommandOutcome, getDeviceCommandSuccessTitle } from '@/api/deviceCommandStatus';
 import { toaster } from '@/components/ui/toaster';
 import { getApiErrorMessage } from '@/api/errors';
 
@@ -46,10 +47,17 @@ export const DeviceWifiScanModal: React.FC<DeviceWifiScanModalProps> = ({
         activeScan,
         bandwidth: bandwidth || undefined,
       });
+      assertDeviceCommandSucceeded(res);
       setScanResult(res);
+      const outcome = getDeviceCommandOutcome(res);
       toaster.create({
-        title: 'Wi-Fi Scan Completed',
-        description: `Scan completed successfully for ${serialNumber}`,
+        title: getDeviceCommandSuccessTitle('Wi-Fi Scan', res),
+        description:
+          outcome === 'completed'
+            ? `The device completed the scan for ${serialNumber}.`
+            : outcome === 'pending'
+              ? `The Wi-Fi scan is queued for ${serialNumber}.`
+              : `The Wi-Fi scan was dispatched to ${serialNumber}.`,
         type: 'success',
       });
     } catch (err: unknown) {
@@ -62,7 +70,7 @@ export const DeviceWifiScanModal: React.FC<DeviceWifiScanModalProps> = ({
   };
 
   const handleDownloadCsv = () => {
-    const list = scanResult?.scan || [];
+    const list = scanResult?.results?.status?.scan || scanResult?.scan || [];
     if (list.length === 0) return;
 
     const headers = ['SSID', 'BSSID', 'Channel', 'Signal (dBm)', 'Capability', 'MeshID'];
@@ -72,7 +80,7 @@ export const DeviceWifiScanModal: React.FC<DeviceWifiScanModalProps> = ({
       item.channel ?? '',
       item.signal ?? item.rssi ?? '',
       `"${item.capability || ''}"`,
-      `"${item.meshId || ''}"`,
+      `"${item.meshId || item.meshid || ''}"`,
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -84,9 +92,11 @@ export const DeviceWifiScanModal: React.FC<DeviceWifiScanModalProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
-  const scanList = scanResult?.scan || [];
+  const scanList = scanResult?.results?.status?.scan || scanResult?.scan || [];
+  const scanOutcome = scanResult ? getDeviceCommandOutcome(scanResult) : null;
 
   return (
     <Box
@@ -143,7 +153,7 @@ export const DeviceWifiScanModal: React.FC<DeviceWifiScanModalProps> = ({
           </HStack>
 
           <HStack gap={2}>
-            {scanResult && (
+            {scanResult && scanOutcome === 'completed' && (
               <Badge colorPalette="teal" variant="subtle" px={2} py={0.5} borderRadius="4px">
                 {scanList.length} BSSIDs Detected
               </Badge>
@@ -173,6 +183,19 @@ export const DeviceWifiScanModal: React.FC<DeviceWifiScanModalProps> = ({
                   Probing radio channels on {serialNumber}. This typically takes 5 to 15 seconds.
                 </Text>
               </Box>
+            </Center>
+          ) : scanResult && scanOutcome !== 'completed' ? (
+            <Center py={12} flexDirection="column" gap={3} bg="#f8fafc" borderRadius="8px" border="1px solid #cbd5e1">
+              <Icon name="clock" size={28} color="#0284c7" />
+              <Text fontSize="14px" fontWeight="700" color={themeColors.text.title}>
+                {getDeviceCommandSuccessTitle('Wi-Fi Scan', scanResult)}
+              </Text>
+              <Text fontSize="13px" color={themeColors.text.muted} textAlign="center" maxW="520px">
+                Results are not available yet. Open the command history after the device completes the scan.
+              </Text>
+              <Button size="xs" variant="outline" onClick={() => setScanResult(null)}>
+                Start Another Scan
+              </Button>
             </Center>
           ) : scanResult ? (
             <Box>

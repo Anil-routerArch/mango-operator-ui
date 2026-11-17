@@ -13,16 +13,10 @@ import {
 } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
-import { toaster } from '@/components/ui/toaster';
 import { getApiErrorMessage } from '@/api/errors';
-import {
-  useDeviceCommands,
-  useDeviceHealthChecks,
-  useDeviceLogs,
-  useDeleteCommand,
-} from '@/api/devices';
+import { useDeviceCommands, useDeviceHealthChecks, useDeviceLogs } from '@/api/devices';
 import { DeviceJsonViewerModal } from '../../../common/DeviceJsonViewerModal';
-import type { UnifiedFleetDevice, DeviceCommandHistory } from '@/types/device';
+import type { UnifiedFleetDevice } from '@/types/device';
 
 export interface DeviceCommandsLogsCardProps {
   device: UnifiedFleetDevice;
@@ -200,8 +194,6 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
     timeFilter?.end,
   );
 
-  const deleteCommandMutation = useDeleteCommand(device.serialNumber);
-
   const handleRefresh = () => {
     if (activeTab === 'commands') refetchCommands();
     else if (activeTab === 'health') refetchHealth();
@@ -281,24 +273,6 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
     if (diff < 60) return `${Math.max(1, diff)} seconds ago`;
     if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`;
     return `${Math.floor(diff / 3600)} hours ago`;
-  };
-
-  const handleDeleteCommand = async (cmd: DeviceCommandHistory) => {
-    if (!cmd.UUID) return;
-    try {
-      await deleteCommandMutation.mutateAsync(cmd.UUID);
-      toaster.create({
-        title: 'Command Deleted',
-        description: `Successfully deleted command ${cmd.command}`,
-        type: 'success',
-      });
-    } catch {
-      toaster.create({
-        title: 'Action Failed',
-        description: 'Failed to delete command record from gateway',
-        type: 'error',
-      });
-    }
   };
 
   // Column toggle helper
@@ -845,16 +819,6 @@ export const DeviceCommandsLogsCard: React.FC<DeviceCommandsLogsCardProps> = ({ 
                       {isColVisible('actions') && (
                         <Table.Cell>
                           <HStack justify="center" gap={1.5}>
-                            <IconButton
-                              size="2xs"
-                              colorPalette="red"
-                              variant="solid"
-                              title="Delete Command"
-                              borderRadius="full"
-                              onClick={() => handleDeleteCommand(cmd)}
-                            >
-                              <Icon name="trash" size={11} />
-                            </IconButton>
                             <IconButton
                               size="2xs"
                               colorPalette="blue"

@@ -638,25 +638,6 @@ export const useDeviceCommands = (
   });
 };
 
-export const useDeleteCommand = (defaultSerial?: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (arg: string | { commandUuid: string; serialNumber?: string }) => {
-      const commandUuid = typeof arg === 'string' ? arg : arg.commandUuid;
-      const serial = typeof arg === 'object' && arg.serialNumber ? arg.serialNumber : defaultSerial || '';
-      const clean = normalizeSerial(serial);
-      if (clean) {
-        await axiosMdu.delete(`devices/${clean}/commands/${commandUuid}`);
-      } else {
-        await axiosGw.delete(`command/${commandUuid}`);
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['device-commands'] });
-    },
-  });
-};
-
 export const getDeviceLogs = async (
   serialNumber: string,
   logType: 0 | 1 | 2 = 0,
@@ -757,12 +738,12 @@ export const useUpdateDeviceOverrides = () => {
 // 8. Device Actions (RPCs to GW & PROV)
 // ----------------------------------------------------------------------
 
-export const usePushDeviceConfig = () => {
+export const useApplyProvisionedDeviceConfig = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (serialNumber: string) => {
       const clean = normalizeSerial(serialNumber);
-      const res = await axiosProv.get(`inventory/${clean}?applyConfiguration=true`);
+      const res = await axiosMdu.post(`devices/${clean}/configuration/apply-provisioned`);
       return res.data;
     },
     onSuccess: (_, serialNumber) => {
@@ -832,16 +813,26 @@ export interface WifiScanCommandPayload {
 }
 
 export interface WifiScanResult {
-  scan?: Array<{
-    bssid?: string;
-    ssid?: string;
-    channel?: number;
-    signal?: number;
-    rssi?: number;
-    capability?: string;
-    meshId?: string;
-  }>;
+  scan?: WifiScanEntry[];
+  results?: {
+    status?: {
+      scan?: WifiScanEntry[];
+    };
+  };
   status?: string;
+  errorCode?: number;
+  errorText?: string;
+}
+
+export interface WifiScanEntry {
+  bssid?: string;
+  ssid?: string;
+  channel?: number;
+  signal?: number;
+  rssi?: number;
+  capability?: string;
+  meshId?: string;
+  meshid?: string;
 }
 
 export const useWifiScanDevice = () => {
@@ -886,20 +877,18 @@ export const useFactoryResetDevice = () => {
   });
 };
 
-export const useConfigureDeviceDirect = () => {
+export const usePushDirectDeviceConfig = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { serialNumber: string; configuration: Record<string, unknown> }) => {
+    mutationFn: async (payload: {
+      serialNumber: string;
+      configuration: Record<string, unknown>;
+      when?: number;
+    }) => {
       const clean = normalizeSerial(payload.serialNumber);
-      const now = Math.floor(Date.now() / 1000);
-      const res = await axiosMdu.post(`devices/${clean}/configure`, {
-        when: 0,
-        UUID: now,
-        serialNumber: clean,
-        configuration: {
-          ...payload.configuration,
-          uuid: now,
-        },
+      const res = await axiosMdu.post(`devices/${clean}/configuration/push-direct`, {
+        configuration: payload.configuration,
+        when: payload.when ?? 0,
       });
       return res.data;
     },
@@ -1200,6 +1189,7 @@ export const getMacOuis = async (macList: string[]) => {
 export interface DeviceRecordResponse {
   serialNumber: string;
   deviceType?: string;
+  configuration?: Record<string, unknown>;
   macAddress?: string;
   manufacturer?: string;
   notes?: DeviceNote[];
@@ -1401,13 +1391,8 @@ export interface DeviceTypeInfoResponse {
 }
 
 export const getDeviceTypeInfo = async (): Promise<DeviceTypeInfoResponse | null> => {
-  try {
-    const res = await axiosFms.get<DeviceTypeInfoResponse>('firmwares?deviceSet=true');
-    return res.data;
-  } catch (err) {
-    console.warn('Failed to fetch device type info from FMS:', err);
-    return null;
-  }
+  const res = await axiosFms.get<DeviceTypeInfoResponse>('firmwares?deviceSet=true');
+  return res.data;
 };
 
 export const useGetDeviceTypeInfo = () => {
@@ -1415,6 +1400,50 @@ export const useGetDeviceTypeInfo = () => {
     queryKey: ['get-device-type-info'],
     queryFn: getDeviceTypeInfo,
     staleTime: Infinity,
+  });
+};
+
+export interface FmsFirmwareItem {
+  id?: string;
+  deviceType?: string;
+  revision?: string;
+  uri?: string;
+  imageDate?: number | string;
+  size?: number;
+  digest?: string;
+}
+
+export interface FmsFirmwaresResponse {
+  firmwares?: FmsFirmwareItem[];
+}
+
+export const getAvailableFirmwares = async (deviceType: string): Promise<FmsFirmwareItem[]> => {
+  const clean = deviceType?.trim();
+  if (!clean) return [];
+
+  const limit = 500;
+  let offset = 0;
+  const firmwares: FmsFirmwareItem[] = [];
+  let batch: FmsFirmwareItem[];
+
+  do {
+    const res = await axiosFms.get<FmsFirmwaresResponse>(
+      `firmwares?deviceType=${encodeURIComponent(clean)}&limit=${limit}&offset=${offset}`
+    );
+    batch = res.data?.firmwares || [];
+    firmwares.push(...batch);
+    offset += limit;
+  } while (batch.length === limit);
+
+  return firmwares;
+};
+
+export const useGetAvailableFirmware = (deviceType?: string) => {
+  const clean = (deviceType || '').trim();
+  return useQuery({
+    queryKey: ['available-firmware', clean],
+    queryFn: () => getAvailableFirmwares(clean),
+    enabled: Boolean(clean),
   });
 };
 

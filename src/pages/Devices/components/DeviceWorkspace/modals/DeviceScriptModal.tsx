@@ -14,6 +14,12 @@ import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
 import { getApiErrorMessage } from '@/api/errors';
 import { useExecuteScript } from '@/api/devices';
+import {
+  assertDeviceCommandSucceeded,
+  getDeviceCommandOutcome,
+  getDeviceCommandResultPayload,
+  getDeviceCommandSuccessTitle,
+} from '@/api/deviceCommandStatus';
 import type { UnifiedFleetDevice } from '@/types/device';
 
 export interface DeviceScriptModalProps {
@@ -52,10 +58,17 @@ export const DeviceScriptModal: React.FC<DeviceScriptModalProps> = ({
         script: scriptBody,
       });
 
+      assertDeviceCommandSucceeded(res);
       setExecutionResult(res);
+      const outcome = getDeviceCommandOutcome(res);
       toaster.create({
-        title: 'Script Dispatched',
-        description: `Executed script on ${device.serialNumber}.`,
+        title: getDeviceCommandSuccessTitle('Script', res),
+        description:
+          outcome === 'completed'
+            ? `The device completed the script on ${device.serialNumber}.`
+            : outcome === 'pending'
+              ? `The script is queued for ${device.serialNumber}.`
+              : `The script was dispatched to ${device.serialNumber}.`,
         type: 'success',
       });
     } catch (err: unknown) {
@@ -163,7 +176,7 @@ export const DeviceScriptModal: React.FC<DeviceScriptModalProps> = ({
             </Box>
 
             {/* Execution Result */}
-            {Boolean(scriptMutation.isPending) ? (
+            {scriptMutation.isPending ? (
               <Center py={6}>
                 <HStack gap={2}>
                   <Spinner size="sm" color="#8b5cf6" />
@@ -177,7 +190,9 @@ export const DeviceScriptModal: React.FC<DeviceScriptModalProps> = ({
             {executionResult !== null && !scriptMutation.isPending ? (
               <Box>
                 <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
-                  Execution Output
+                  {getDeviceCommandOutcome(executionResult) === 'completed'
+                    ? 'Execution Output'
+                    : 'Command Status'}
                 </Text>
                 <Box
                   p={3}
@@ -190,9 +205,11 @@ export const DeviceScriptModal: React.FC<DeviceScriptModalProps> = ({
                   overflowY="auto"
                   whiteSpace="pre-wrap"
                 >
-                  {typeof executionResult === 'string'
-                    ? executionResult
-                    : JSON.stringify(executionResult, null, 2)}
+                  {getDeviceCommandOutcome(executionResult) === 'completed'
+                    ? typeof getDeviceCommandResultPayload(executionResult) === 'string'
+                      ? String(getDeviceCommandResultPayload(executionResult))
+                      : JSON.stringify(getDeviceCommandResultPayload(executionResult), null, 2)
+                    : 'The script was accepted but has not completed. Check command history for its eventual output.'}
                 </Box>
               </Box>
             ) : null}

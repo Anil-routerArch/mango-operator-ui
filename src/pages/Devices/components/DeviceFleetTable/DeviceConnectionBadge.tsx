@@ -5,6 +5,7 @@ import { Icon } from '@/components/icons/Icon';
 export interface DeviceConnectionBadgeProps {
   connected: boolean;
   deviceType?: string;
+  deviceGroup?: string;
   restricted?: boolean;
   simulated?: boolean;
   size?: number;
@@ -13,13 +14,14 @@ export interface DeviceConnectionBadgeProps {
 export const DeviceConnectionBadge: React.FC<DeviceConnectionBadgeProps> = ({
   connected,
   deviceType = 'ap',
+  deviceGroup,
   restricted = false,
   simulated = false,
   size = 30,
 }) => {
   const isOnline = Boolean(connected);
-  const type = (deviceType || 'ap').toLowerCase();
-  const isSwitch = type.includes('switch');
+  const type = ((deviceGroup || deviceType) || 'ap').toLowerCase();
+  const isSwitch = type.includes('switch') || type.includes('ecs');
 
   const titleText = isOnline
     ? `Online - Connected to Gateway${restricted ? ' (Restricted)' : ''}${simulated ? ' (Simulated)' : ''}`

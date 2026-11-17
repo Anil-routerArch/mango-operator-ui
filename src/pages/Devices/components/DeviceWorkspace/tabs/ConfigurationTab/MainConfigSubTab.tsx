@@ -22,32 +22,6 @@ export interface MainConfigSubTabProps {
   device: UnifiedFleetDevice;
 }
 
-const DEVICE_TYPES_BY_GROUP: Record<string, string[]> = {
-  ap: [
-    'asus_rt-ax53u',
-    'edgecore_eap104',
-    'edgecore_eap102',
-    'edgecore_eap101',
-    'cig_wf188n',
-    'cig_wf194c',
-    'gl_inet_ax1800',
-    'indio_um-305ac',
-    'wlan_ap_generic',
-  ],
-  switch: [
-    'edgecore_ecs4100_12ph',
-    'edgecore_ecs4100_28p',
-    'edgecore_ecs4100_52p',
-    'generic_switch',
-  ],
-  olg: [
-    'asus_rt-ax53u',
-    'gl_inet_ax1800',
-    'generic_olg',
-    'openlan_gateway',
-  ],
-};
-
 export const getDeviceGroupFromType = (
   deviceType?: string,
   deviceTypesByClass?: Record<string, string[]>
@@ -59,7 +33,13 @@ export const getDeviceGroupFromType = (
 };
 
 export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) => {
-  const { data: fmsDeviceTypeInfo } = useGetDeviceTypeInfo();
+  const {
+    data: fmsDeviceTypeInfo,
+    isLoading: isDeviceCatalogLoading,
+    isError: isDeviceCatalogError,
+    error: deviceCatalogError,
+    refetch: refetchDeviceCatalog,
+  } = useGetDeviceTypeInfo();
   const { data: entities = [] } = useGetEntities();
   const { data: venues = [] } = useGetVenues();
 
@@ -104,7 +84,7 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
     const rawGrp = dev.deviceGroup?.toLowerCase();
     if (rawGrp === 'ap' || rawGrp === 'switch' || rawGrp === 'olg') return rawGrp;
 
-    return 'ap';
+    return '';
   };
 
   const resolveInitialType = (dev: UnifiedFleetDevice): string => {
@@ -173,23 +153,24 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
     if (fmsDeviceTypeInfo?.deviceClasses && fmsDeviceTypeInfo.deviceClasses.length > 0) {
       return fmsDeviceTypeInfo.deviceClasses;
     }
-    return ['ap', 'switch', 'olg'];
-  }, [fmsDeviceTypeInfo]);
+    const catalogClasses = Object.keys(fmsDeviceTypeInfo?.deviceTypesByClass || {});
+    if (catalogClasses.length > 0) return catalogClasses;
+    return deviceGroup ? [deviceGroup] : [];
+  }, [fmsDeviceTypeInfo, deviceGroup]);
 
   const availableDeviceTypes = useMemo(() => {
     if (fmsDeviceTypeInfo?.deviceTypesByClass && fmsDeviceTypeInfo.deviceTypesByClass[deviceGroup]) {
       return fmsDeviceTypeInfo.deviceTypesByClass[deviceGroup];
     }
-    return DEVICE_TYPES_BY_GROUP[deviceGroup] || [];
-  }, [fmsDeviceTypeInfo, deviceGroup]);
+    const existingGroup = resolveInitialGroup(device);
+    const existingType = resolveInitialType(device);
+    return deviceGroup === existingGroup && existingType ? [existingType] : [];
+  }, [fmsDeviceTypeInfo, deviceGroup, device]);
 
   // Handle group change
   const handleGroupChange = (newGroup: string) => {
     setDeviceGroup(newGroup);
-    const validTypes =
-      fmsDeviceTypeInfo?.deviceTypesByClass?.[newGroup] ||
-      DEVICE_TYPES_BY_GROUP[newGroup] ||
-      [];
+    const validTypes = fmsDeviceTypeInfo?.deviceTypesByClass?.[newGroup] || [];
     if (!validTypes.includes(deviceType)) {
       setDeviceType(validTypes[0] || '');
     }
@@ -207,6 +188,14 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
       return;
     }
     try {
+      const initialGroup = resolveInitialGroup(device, fmsDeviceTypeInfo?.deviceTypesByClass);
+      const initialType = resolveInitialType(device);
+      const hardwareSelectionChanged = deviceGroup !== initialGroup || deviceType !== initialType;
+      const authoritativeTypes = fmsDeviceTypeInfo?.deviceTypesByClass?.[deviceGroup] || [];
+      if (hardwareSelectionChanged && !authoritativeTypes.includes(deviceType)) {
+        throw new Error('Select a device group and hardware type from the current FMS catalog before saving hardware changes.');
+      }
+
       const entityId = parent.startsWith('ent:') ? parent.slice(4) : '';
       const venueId = parent.startsWith('ven:') ? parent.slice(4) : '';
 
@@ -295,6 +284,32 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
   return (
     <Box p={6}>
       <VStack align="stretch" gap={6}>
+        {isDeviceCatalogError && (
+          <Flex
+            p={3}
+            gap={3}
+            align="center"
+            bg="#fff7ed"
+            border="1px solid #fed7aa"
+            borderRadius="8px"
+          >
+            <Icon name="alertTriangle" size={18} color="#c2410c" />
+            <Box flex="1">
+              <Text fontSize="13px" fontWeight="700" color="#9a3412">
+                Hardware catalog unavailable
+              </Text>
+              <Text fontSize="12px" color="#9a3412">
+                {deviceCatalogError instanceof Error
+                  ? deviceCatalogError.message
+                  : 'FMS could not return the authoritative device groups and hardware types.'}
+              </Text>
+            </Box>
+            <Button size="xs" variant="outline" onClick={() => void refetchDeviceCatalog()}>
+              Retry
+            </Button>
+          </Flex>
+        )}
+
         {/* Row 1: Primary Identification & Platform Hierarchy */}
         <SimpleGrid columns={{ base: 1, md: 2, lg: 4, xl: 7 }} gap={4}>
           {/* 1. Serial Number */}
@@ -352,7 +367,9 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
               value={deviceGroup}
               onChange={(e) => handleGroupChange(e.target.value)}
               style={selectStyle}
+              disabled={isDeviceCatalogLoading || isDeviceCatalogError}
             >
+              {!deviceGroup && <option value="">Select device group</option>}
               {availableDeviceClasses.map((cls) => (
                 <option key={cls} value={cls}>
                   {cls === 'ap'
@@ -376,7 +393,9 @@ export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) =>
               value={deviceType}
               onChange={(e) => setDeviceType(e.target.value)}
               style={selectStyle}
+              disabled={isDeviceCatalogLoading || isDeviceCatalogError}
             >
+              {!deviceType && <option value="">Select device type</option>}
               {availableDeviceTypes.map((t) => (
                 <option key={t} value={t}>
                   {t}

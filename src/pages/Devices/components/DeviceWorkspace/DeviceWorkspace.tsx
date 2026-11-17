@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Box, Button, Flex, Spinner, Text, VStack } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
@@ -15,7 +16,31 @@ export interface DeviceWorkspaceProps {
 }
 
 export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }) => {
+  const [, setSearchParams] = useSearchParams();
   const { workspaceTab, setWorkspaceTab, clearSelectedDevice } = useDevicesUiStore();
+
+  const handleTabChange = (newTab: DeviceWorkspaceTab) => {
+    setWorkspaceTab(newTab);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (newTab === 'overview') {
+        next.delete('tab');
+      } else {
+        next.set('tab', newTab);
+      }
+      return next;
+    });
+  };
+
+  const handleBackToFleet = () => {
+    clearSelectedDevice();
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('serial');
+      next.delete('tab');
+      return next;
+    });
+  };
 
   const { data: device, isLoading, error, refetch, isFetching } = useDeviceOverview(serialNumber);
 
@@ -67,7 +92,7 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
           </Text>
         </VStack>
         <Flex gap={2}>
-          <Button size="sm" variant="outline" onClick={clearSelectedDevice} gap={1.5}>
+          <Button size="sm" variant="outline" onClick={handleBackToFleet} gap={1.5}>
             <Icon name="chevronLeft" size={14} />
             Back to Device Fleet
           </Button>
@@ -98,7 +123,7 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
             .
           </Text>
         </VStack>
-        <Button size="sm" variant="outline" onClick={clearSelectedDevice} gap={1.5}>
+        <Button size="sm" variant="outline" onClick={handleBackToFleet} gap={1.5}>
           <Icon name="chevronLeft" size={14} />
           Back to Device Fleet
         </Button>
@@ -128,6 +153,7 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
         device={activeDevice}
         onRefresh={() => refetch()}
         isLoading={isFetching}
+        onBackToFleet={handleBackToFleet}
       />
 
       {/* Partial Telemetry Failure Notice */}
@@ -167,7 +193,7 @@ export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }
                 borderColor={isActive ? themeColors.brand.accent : 'transparent'}
                 transition="all 0.15s ease"
                 _hover={{ color: themeColors.brand.accent }}
-                onClick={() => setWorkspaceTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 whiteSpace="nowrap"
               >
                 {tab.label}

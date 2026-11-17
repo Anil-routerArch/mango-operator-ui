@@ -8,8 +8,13 @@ import {
 } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
-import { useConfigureDeviceDirect, useDeviceRecord } from '@/api/devices';
+import { useDeviceRecord, usePushDirectDeviceConfig } from '@/api/devices';
 import { toaster } from '@/components/ui/toaster';
+import {
+  assertDeviceCommandSucceeded,
+  getDeviceCommandOutcome,
+  getDeviceCommandSuccessTitle,
+} from '@/api/deviceCommandStatus';
 import { ConfigurationSectionsCard } from '@/pages/Configuration/components/ConfigurationSectionsCard';
 import type { ConfigurationSectionsState } from '@/pages/Configuration/components/ConfigurationSectionsCard/types';
 import type { PlatformType } from '@/pages/Configuration/types/configuration';
@@ -28,8 +33,22 @@ export const DeviceQuickConfigModal: React.FC<DeviceQuickConfigModalProps> = ({
   serialNumber,
   device,
 }) => {
-  const { data: deviceRecord, isFetching: isFetchingDevice } = useDeviceRecord(serialNumber);
-  const configureMutation = useConfigureDeviceDirect();
+  const {
+    data: deviceRecord,
+    isFetching: isFetchingDevice,
+    isError: isDeviceError,
+    error: deviceError,
+    refetch: refetchDevice,
+  } = useDeviceRecord(serialNumber);
+  const configureMutation = usePushDirectDeviceConfig();
+
+  // Match OWGW's ConfigureModal behavior: always reload the current gateway
+  // device record when the operator opens the form instead of trusting cache.
+  useEffect(() => {
+    if (isOpen) {
+      void refetchDevice();
+    }
+  }, [isOpen, refetchDevice, serialNumber]);
 
   // Determine platform type (olg, switch, ap) based on device metadata
   const platform: PlatformType = useMemo(() => {
@@ -41,34 +60,43 @@ export const DeviceQuickConfigModal: React.FC<DeviceQuickConfigModalProps> = ({
     return 'ap';
   }, [device]);
 
-  // Extract initial JSON string from device record or device prop
+  // Only edit a configuration loaded from the device record. The fleet row can
+  // contain partial data and must not be treated as an authoritative config.
   const initialJson = useMemo(() => {
-    if (deviceRecord?.configuration && typeof deviceRecord.configuration === 'object') {
+    if (
+      deviceRecord?.configuration &&
+      typeof deviceRecord.configuration === 'object' &&
+      !Array.isArray(deviceRecord.configuration) &&
+      Object.keys(deviceRecord.configuration).some((key) => key !== 'uuid')
+    ) {
       try {
         return JSON.stringify(deviceRecord.configuration, null, 2);
       } catch {
-        // fallback
-      }
-    }
-    if (device?.configuration && typeof device.configuration === 'object') {
-      try {
-        return JSON.stringify(device.configuration, null, 2);
-      } catch {
-        // fallback
+        return '';
       }
     }
     return '';
-  }, [deviceRecord, device]);
+  }, [deviceRecord]);
 
   const [currentJson, setCurrentJson] = useState(initialJson);
   const [isExecuting, setIsExecuting] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
-    if (initialJson) {
-      setCurrentJson(initialJson);
-    }
+    setCurrentJson(initialJson);
   }, [initialJson]);
+
+  const parsedConfiguration = useMemo(() => {
+    if (!currentJson.trim()) return null;
+    try {
+      const parsed = JSON.parse(currentJson) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      const configuration = parsed as Record<string, unknown>;
+      return Object.keys(configuration).some((key) => key !== 'uuid') ? configuration : null;
+    } catch {
+      return null;
+    }
+  }, [currentJson]);
 
   // Real-time elapsed timer tracking live device command execution
   useEffect(() => {
@@ -101,31 +129,35 @@ export const DeviceQuickConfigModal: React.FC<DeviceQuickConfigModalProps> = ({
 
   const handlePush = async () => {
     if (isExecuting) return;
+    if (!parsedConfiguration) {
+      toaster.create({
+        title: 'Configuration Not Available',
+        description: 'Load a valid current device configuration before pushing changes.',
+        type: 'error',
+      });
+      return;
+    }
     setIsExecuting(true);
     const startTime = Date.now();
     try {
-      let configObj: Record<string, unknown> = {};
-      if (currentJson && currentJson.trim()) {
-        configObj = JSON.parse(currentJson);
-      }
-
-      // Preserve uuid from original configuration if available
-      const origConfig = (deviceRecord?.configuration || device?.configuration) as
-        | Record<string, unknown>
-        | undefined;
-      if (origConfig?.uuid && !configObj.uuid) {
-        configObj.uuid = origConfig.uuid;
-      }
-
-      await configureMutation.mutateAsync({
+      const result = await configureMutation.mutateAsync({
         serialNumber,
-        configuration: configObj,
+        configuration: parsedConfiguration,
+        when: 0,
       });
 
+      assertDeviceCommandSucceeded(result);
+
       const finalElapsed = Math.max(1, Math.floor((Date.now() - startTime) / 1000));
+      const outcome = getDeviceCommandOutcome(result);
       toaster.create({
-        title: 'Configuration Applied',
-        description: `Configuration successfully acknowledged and applied by device ${serialNumber} in ${finalElapsed}s`,
+        title: getDeviceCommandSuccessTitle('Configuration', result),
+        description:
+          outcome === 'completed'
+            ? `The device completed the configuration command in ${finalElapsed}s.`
+            : outcome === 'pending'
+              ? `The configuration is queued for ${serialNumber} and will run when the device is available.`
+              : `The gateway accepted the configuration request for ${serialNumber}.`,
         type: 'success',
       });
       onClose();
@@ -175,12 +207,13 @@ export const DeviceQuickConfigModal: React.FC<DeviceQuickConfigModalProps> = ({
         color="#ffffff"
         display="grid"
         placeItems="center"
-        cursor={isExecuting ? 'not-allowed' : 'pointer'}
-        opacity={isExecuting ? 0.8 : 1}
-        _hover={isExecuting ? {} : { bg: '#0f766e', transform: 'scale(1.05)' }}
+        cursor={isExecuting || !parsedConfiguration ? 'not-allowed' : 'pointer'}
+        opacity={isExecuting || !parsedConfiguration ? 0.5 : 1}
+        _hover={isExecuting || !parsedConfiguration ? {} : { bg: '#0f766e', transform: 'scale(1.05)' }}
         transition="all 0.15s ease"
-        onClick={handlePush}
-        title={isExecuting ? `Applying configuration... (${elapsedSeconds}s elapsed)` : 'Push Configuration to Device'}
+        onClick={isExecuting || !parsedConfiguration ? undefined : handlePush}
+        aria-disabled={isExecuting || !parsedConfiguration}
+        title={isExecuting ? `Dispatching configuration... (${elapsedSeconds}s elapsed)` : 'Push Configuration to Device'}
       >
         {isExecuting ? (
           <Spinner size="xs" color="#ffffff" />
@@ -252,7 +285,7 @@ export const DeviceQuickConfigModal: React.FC<DeviceQuickConfigModalProps> = ({
               <Box>
                 <HStack gap={2}>
                   <Text fontSize="13px" fontWeight="700" color="#15803d">
-                    Applying configuration to device {serialNumber}...
+                    Dispatching configuration to device {serialNumber}...
                   </Text>
                   <Box
                     px={2}
@@ -263,11 +296,11 @@ export const DeviceQuickConfigModal: React.FC<DeviceQuickConfigModalProps> = ({
                     fontSize="11px"
                     fontWeight="600"
                   >
-                    Live Command Active
+                    Request in progress
                   </Box>
                 </HStack>
                 <Text fontSize="12px" color="#166534" mt={0.5}>
-                  The physical device is receiving parameters, validating changes, and restarting services. Please wait.
+                  MDU is authorizing and sending this configuration to the gateway. Please wait.
                 </Text>
               </Box>
             </HStack>
@@ -284,7 +317,7 @@ export const DeviceQuickConfigModal: React.FC<DeviceQuickConfigModalProps> = ({
           </Box>
         )}
 
-        {isFetchingDevice && !initialJson ? (
+        {isFetchingDevice ? (
           <Center py={24} flexDirection="column" gap={3}>
             <Spinner size="xl" color="#8b5cf6" />
             <Text fontSize="14px" fontWeight="600" color={themeColors.text.title}>
@@ -293,6 +326,29 @@ export const DeviceQuickConfigModal: React.FC<DeviceQuickConfigModalProps> = ({
             <Text fontSize="12px" color={themeColors.text.muted}>
               Retrieving active configuration profile for {serialNumber}
             </Text>
+          </Center>
+        ) : isDeviceError ? (
+          <Center py={24} px={8} flexDirection="column" gap={3} textAlign="center">
+            <Icon name="alertTriangle" size={28} color="#dc2626" />
+            <Text fontSize="14px" fontWeight="700" color={themeColors.text.title}>
+              Failed to Load Current Configuration
+            </Text>
+            <Text fontSize="12px" color={themeColors.text.muted} maxW="520px">
+              {deviceError instanceof Error ? deviceError.message : 'The current OWGW device record could not be loaded through MDU.'}
+            </Text>
+            <Box
+              as="button"
+              px={3}
+              py={1.5}
+              borderRadius="6px"
+              bg="#0d9488"
+              color="#ffffff"
+              fontSize="12px"
+              fontWeight="700"
+              onClick={() => void refetchDevice()}
+            >
+              Retry
+            </Box>
           </Center>
         ) : (
           <Box flex="1" overflowY="auto">

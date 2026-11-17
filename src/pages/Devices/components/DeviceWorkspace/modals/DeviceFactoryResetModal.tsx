@@ -14,6 +14,7 @@ import { themeColors } from '@/theme';
 import { useFactoryResetDevice } from '@/api/devices';
 import { toaster } from '@/components/ui/toaster';
 import { getApiErrorMessage } from '@/api/errors';
+import { assertDeviceCommandSucceeded, getDeviceCommandSuccessTitle } from '@/api/deviceCommandStatus';
 
 export interface DeviceFactoryResetModalProps {
   isOpen: boolean;
@@ -33,14 +34,15 @@ export const DeviceFactoryResetModal: React.FC<DeviceFactoryResetModalProps> = (
 
   const handleSubmit = async () => {
     try {
-      await resetMutation.mutateAsync({
+      const result = await resetMutation.mutateAsync({
         serialNumber,
         keepRedirector,
       });
+      assertDeviceCommandSucceeded(result);
 
       toaster.create({
-        title: 'Factory Reset Dispatched',
-        description: `Factory reset command sent to device ${serialNumber}`,
+        title: getDeviceCommandSuccessTitle('Factory Reset', result),
+        description: `Factory reset command accepted for ${serialNumber}.`,
         type: 'success',
       });
       onClose();

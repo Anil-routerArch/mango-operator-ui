@@ -254,7 +254,7 @@ test('DeviceFleetTable.tsx connects paginated hook and pagination controls', () 
   }
 });
 
-test('DeviceRowActions.tsx renders all 7 action buttons', () => {
+test('DeviceRowActions.tsx keeps fleet actions compact and uses row click for workspace navigation', () => {
   const actionsPath = path.join(
     ROOT_DIR,
     'src',
@@ -268,12 +268,31 @@ test('DeviceRowActions.tsx renders all 7 action buttons', () => {
 
   const content = fs.readFileSync(actionsPath, 'utf-8');
   assert.ok(content.includes('Delete device'), 'Must have Delete action');
-  assert.ok(content.includes('Edit device configuration'), 'Must have Configure action');
-  assert.ok(content.includes('Sync telemetry and configuration'), 'Must have Sync action');
+  assert.ok(content.includes('Apply provisioned configuration'), 'Must have provisioned configuration action');
+  assert.ok(content.includes('name="send"'), 'Provisioned configuration action must use a send icon');
   assert.ok(content.includes('Reboot device'), 'Must have Reboot action');
   assert.ok(content.includes('Wi-Fi scan'), 'Must have Wi-Fi Scan action');
-  assert.ok(content.includes('Device diagnostics'), 'Must have Diagnostics action');
-  assert.ok(content.includes('View device workspace'), 'Must have View Details action');
+  assert.ok(content.includes('Commands & Actions'), 'Must have the workspace-style actions menu');
+  for (const action of [
+    'Blink LEDs (30s)',
+    'Configure',
+    'Connect (Terminal / RTTY)',
+    'Event Queue',
+    'Factory Reset',
+    'Firmware Upgrade',
+    'Reboot',
+    'Re-Enroll Device',
+    'Telemetry Stream',
+    'Run Script',
+    'Network Packet Trace',
+    'Wi-Fi Radio Scan',
+    'Export Statistics',
+  ]) {
+    assert.ok(content.includes(action), `Fleet actions menu must include ${action}`);
+  }
+  assert.strictEqual(content.includes('Edit device configuration'), false, 'Must not duplicate configuration navigation in fleet actions');
+  assert.strictEqual(content.includes('Device diagnostics'), false, 'Must replace the diagnostics shortcut with the actions menu');
+  assert.strictEqual(content.includes('View device workspace'), false, 'Must use row click instead of a View Details icon');
 });
 
 test('deviceTableHelpers.ts formats bytes, durations, and flags correctly', () => {
@@ -426,14 +445,12 @@ test('DeviceCommandsLogsCard supports extensive OpenWiFi APIs with newest=true, 
     apiContent.includes('devices/${clean}/logs?newest=true&limit=${limit}&logType=${logType}'),
     'logs API must query MDU with newest=true, limit, and logType for RBAC protection'
   );
+  assert.ok(!apiContent.includes('useDeleteCommand'), 'Command-record deletion API must remain disabled');
   assert.ok(
-    apiContent.includes('export const useDeleteCommand'),
-    'Must export useDeleteCommand mutation'
+    !apiContent.includes('axiosGw.delete(`command/${commandUuid}`)'),
+    'UI must not bypass MDU by deleting command records directly in OWGW'
   );
-  assert.ok(
-    apiContent.includes('axiosMdu.delete(`devices/${clean}/commands/${commandUuid}`)'),
-    'useDeleteCommand must query MDU delete endpoint for RBAC verification'
-  );
+  assert.ok(!cardContent.includes('Delete Command'), 'Command history must not expose a delete action');
 
   // Verify Column Filtering interactive capabilities
   assert.ok(cardContent.includes('TAB_COLUMNS'), 'Must define TAB_COLUMNS for all 5 tabs');
@@ -660,6 +677,7 @@ test('DeviceHeader renders icon-only action capsule with tooltips matching OWGW 
   assert.ok(content.includes('title="Delete Device"'), 'Must render Delete Device icon button with tooltip');
   assert.ok(content.includes('title="Connect (Terminal / RTTY)"'), 'Must render Connect icon button with tooltip');
   assert.ok(content.includes('title="Configure"'), 'Must render Configure icon button with tooltip');
+  assert.ok(content.includes('title="Apply Provisioned Configuration"'), 'Must expose provisioned apply in the device workspace');
   assert.ok(content.includes('title="Reboot"') || content.includes('title={isConnected ? \'Reboot\''), 'Must render Reboot icon button with tooltip');
   assert.ok(content.includes('title="Commands & Actions"'), 'Must render Commands & Actions icon button with tooltip');
   assert.ok(content.includes('title="Refresh"'), 'Must render Refresh icon button with tooltip');
@@ -668,6 +686,7 @@ test('DeviceHeader renders icon-only action capsule with tooltips matching OWGW 
   assert.ok(content.includes('name="trash"'), 'Must render trash icon for delete');
   assert.ok(content.includes('name="terminal"'), 'Must render terminal icon for connect');
   assert.ok(content.includes('name="barcode"'), 'Must render barcode icon for configure');
+  assert.ok(content.includes('name="send"'), 'Must render send icon for provisioned apply');
   assert.ok(content.includes('name="power"'), 'Must render power icon for reboot');
   assert.ok(content.includes('name="wrench"'), 'Must render wrench icon for commands');
   assert.ok(content.includes('name="refresh"'), 'Must render refresh icon for refresh');
@@ -682,7 +701,14 @@ test('Device actions and commands route through MDU with RBAC and provide OWGW m
   assert.ok(apiContent.includes('axiosMdu.post(`devices/${clean}/leds`'), 'Blink LEDs command must route via axiosMdu');
   assert.ok(apiContent.includes('axiosMdu.post(`devices/${clean}/wifiscan`'), 'Wi-Fi scan command must route via axiosMdu');
   assert.ok(apiContent.includes('axiosMdu.post(`devices/${clean}/factory`'), 'Factory reset command must route via axiosMdu');
-  assert.ok(apiContent.includes('axiosMdu.post(`devices/${clean}/configure`'), 'Direct configure command must route via axiosMdu');
+  assert.ok(
+    apiContent.includes('axiosMdu.post(`devices/${clean}/configuration/push-direct`'),
+    'Direct configure command must route through the explicit MDU endpoint'
+  );
+  assert.ok(
+    apiContent.includes('axiosMdu.post(`devices/${clean}/configuration/apply-provisioned`'),
+    'Provisioned configuration apply must route through MDU'
+  );
   assert.ok(apiContent.includes('axiosMdu.get<DeviceRttyResponse>(`devices/${clean}/rtty`)'), 'RTTY connection details must route via axiosMdu');
   assert.ok(apiContent.includes('axiosMdu.delete(`devices/${clean}`)'), 'Delete device must route via axiosMdu');
 
@@ -729,6 +755,39 @@ test('DeviceQuickConfigModal integrates modular ConfigurationSectionsCard with p
   assert.ok(modalContent.includes('showWarningBanner={true}'), 'Must pass showWarningBanner to ConfigurationSectionsCard');
   assert.ok(modalContent.includes('title="Configure"'), 'Must set title to Configure');
   assert.ok(modalContent.includes('Icon name="send"'), 'Must render teal send/push button');
+  assert.ok(modalContent.includes('usePushDirectDeviceConfig'), 'Must use the explicit direct configuration mutation');
+  assert.ok(
+    modalContent.includes('if (isOpen)') && modalContent.includes('void refetchDevice()'),
+    'Must refetch the current OWGW device record through MDU whenever the configure modal opens'
+  );
+  assert.ok(
+    modalContent.includes('Object.keys(deviceRecord.configuration).some'),
+    'Must recognize a non-empty current configuration when one exists'
+  );
+  assert.strictEqual(
+    modalContent.includes('deviceRecord?.configuration || device?.configuration'),
+    false,
+    'Must not fall back to partial fleet-row configuration data'
+  );
+  assert.strictEqual(
+    modalContent.includes(') : !initialJson ? ('),
+    false,
+    'Must open the configuration form even when the device has no existing configuration'
+  );
+  assert.ok(
+    modalContent.includes('if (!currentJson.trim()) return null'),
+    'Must keep direct push disabled until the operator creates a non-empty configuration'
+  );
+  assert.strictEqual(
+    modalContent.includes("title: 'Configuration Applied'"),
+    false,
+    'Must not claim the device already applied the request'
+  );
+  assert.ok(
+    modalContent.includes("getDeviceCommandSuccessTitle('Configuration', result)") ||
+      modalContent.includes("title: 'Configuration Dispatched'"),
+    'Must use dynamic or dispatched title rather than assuming execution completion'
+  );
 
   // Verify ConfigurationSectionsCard contains the warning banner matching screenshot
   const cardPath = path.join(
@@ -858,6 +917,67 @@ test('DeviceHeader renders all 13 OpenWiFi Gateway command actions and integrati
       `DeviceHeader must mount modal: ${modal}`
     );
   }
+});
+
+test('DeviceFirmwareUpgradeModal resolves authoritative SKU and retrieves real FMS images without hardcoded models or URLs (Finding F5)', () => {
+  const modalPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'modals',
+    'DeviceFirmwareUpgradeModal.tsx'
+  );
+  const modalContent = fs.readFileSync(modalPath, 'utf-8');
+
+  // Must not have hardcoded fallback model or guessed version strings
+  assert.strictEqual(
+    modalContent.includes('asus_rt-ax53u'),
+    false,
+    'Must not default to asus_rt-ax53u when hardware SKU is unknown'
+  );
+  assert.strictEqual(
+    modalContent.includes('tip.openwifi.cloud/firmware/'),
+    false,
+    'Must not construct guessed firmware download URLs'
+  );
+
+  // Must use FMS hook
+  assert.ok(
+    modalContent.includes('useGetAvailableFirmware'),
+    'Must query FMS using useGetAvailableFirmware hook'
+  );
+
+  // Verify devices.ts exports the FMS hook and queries firmwares?deviceType=
+  const apiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
+  const apiContent = fs.readFileSync(apiPath, 'utf-8');
+  assert.ok(
+    apiContent.includes('useGetAvailableFirmware'),
+    'devices.ts must export useGetAvailableFirmware'
+  );
+  assert.ok(
+    apiContent.includes('firmwares?deviceType='),
+    'devices.ts must query firmwares?deviceType= from FMS'
+  );
+  assert.ok(
+    apiContent.includes('&offset=${offset}') && apiContent.includes('while (batch.length === limit)'),
+    'FMS firmware loading must paginate until the final partial page'
+  );
+  const firmwareLoader = apiContent.slice(
+    apiContent.indexOf('export const getAvailableFirmwares'),
+    apiContent.indexOf('export const useGetAvailableFirmware')
+  );
+  assert.strictEqual(
+    firmwareLoader.includes('catch ('),
+    false,
+    'FMS failures must reach React Query instead of being converted to an empty catalog'
+  );
+  assert.ok(
+    modalContent.includes('isFirmwareError') && modalContent.includes('Failed to Load Firmware Catalog'),
+    'Firmware modal must distinguish an FMS failure from an empty compatible catalog'
+  );
 });
 
 test('DeviceConfigTab implements all 6 OWPROV provisioning subtabs and all 11 Main tab fields', () => {
@@ -1517,6 +1637,31 @@ test('Device group persistence aligns with OWPROV platform contract and eliminat
     !mainTabContent.includes("DEVICE_TYPES_BY_GROUP[deviceGroup] || ['asus_rt-ax53u'"),
     'availableDeviceTypes must not default to asus_rt-ax53u when group types are missing'
   );
+  assert.strictEqual(
+    mainTabContent.includes('const DEVICE_TYPES_BY_GROUP'),
+    false,
+    'Main configuration must not retain a hardcoded hardware SKU catalog'
+  );
+  assert.ok(
+    mainTabContent.includes('fmsDeviceTypeInfo?.deviceTypesByClass?.[newGroup] || []'),
+    'Changing device group must only select hardware types returned by FMS'
+  );
+  assert.ok(
+    mainTabContent.includes('hardwareSelectionChanged') &&
+      mainTabContent.includes('!authoritativeTypes.includes(deviceType)'),
+    'Hardware changes must be rejected unless the selected SKU exists in the current FMS catalog'
+  );
+
+  const devicesApiContent = fs.readFileSync(path.join(ROOT_DIR, 'src', 'api', 'devices.ts'), 'utf-8');
+  const catalogLoader = devicesApiContent.slice(
+    devicesApiContent.indexOf('export const getDeviceTypeInfo'),
+    devicesApiContent.indexOf('export const useGetDeviceTypeInfo')
+  );
+  assert.strictEqual(
+    catalogLoader.includes('catch ('),
+    false,
+    'FMS device catalog failures must be visible to the form instead of enabling stale fallback SKUs'
+  );
 
   // 4. Save-then-reload simulation test
   // FMS catalog fixture
@@ -1621,26 +1766,26 @@ test('useUpdateInventoryTag and device mutations invalidate active workspace and
     'useUpdateInventoryTag must invalidate device-computed-config'
   );
 
-  // Verify useConfigureDeviceDirect invalidates single-device-overview and paginated-fleet-devices
-  const configureBlock = devicesApiContent.match(/export const useConfigureDeviceDirect = [\s\S]*?^};/m)?.[0] || '';
+  // Verify direct configuration invalidates single-device-overview and paginated-fleet-devices
+  const configureBlock = devicesApiContent.match(/export const usePushDirectDeviceConfig = [\s\S]*?^};/m)?.[0] || '';
   assert.ok(
     configureBlock.includes("queryKey: ['single-device-overview'"),
-    'useConfigureDeviceDirect must invalidate single-device-overview'
+    'usePushDirectDeviceConfig must invalidate single-device-overview'
   );
   assert.ok(
     configureBlock.includes("queryKey: ['paginated-fleet-devices']"),
-    'useConfigureDeviceDirect must invalidate paginated-fleet-devices'
+    'usePushDirectDeviceConfig must invalidate paginated-fleet-devices'
   );
 
-  // Verify usePushDeviceConfig invalidates single-device-overview and paginated-fleet-devices
-  const pushBlock = devicesApiContent.match(/export const usePushDeviceConfig = [\s\S]*?^};/m)?.[0] || '';
+  // Verify provisioned apply invalidates single-device-overview and paginated-fleet-devices
+  const pushBlock = devicesApiContent.match(/export const useApplyProvisionedDeviceConfig = [\s\S]*?^};/m)?.[0] || '';
   assert.ok(
     pushBlock.includes("queryKey: ['single-device-overview'"),
-    'usePushDeviceConfig must invalidate single-device-overview'
+    'useApplyProvisionedDeviceConfig must invalidate single-device-overview'
   );
   assert.ok(
     pushBlock.includes("queryKey: ['paginated-fleet-devices']"),
-    'usePushDeviceConfig must invalidate paginated-fleet-devices'
+    'useApplyProvisionedDeviceConfig must invalidate paginated-fleet-devices'
   );
 });
 
@@ -1822,44 +1967,102 @@ test('Multi-device simulation: updating or resetting one device does not affect 
   );
 });
 
-test('useConfigureDeviceDirect aligns with OWPROV protocol: sends timestamp UUID and configuration.uuid (Issue #5)', async () => {
+test('Copy-on-write preserves unknown and vendor-specific modular configuration deviceRules (Finding F6)', async () => {
+  const subTabPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'tabs',
+    'ConfigurationTab',
+    'DeviceSpecificConfigSubTab.tsx'
+  );
+  const content = fs.readFileSync(subTabPath, 'utf-8');
+
+  // Must spread existing modular configuration deviceRules
+  assert.ok(
+    content.includes('...existingConfigRules') || content.includes('...(configData?.deviceRules'),
+    'newConfigPayload.deviceRules must spread existing modular configuration deviceRules'
+  );
+
+  // Simulation: Modular configuration containing custom vendor rules survives device-specific edit
+  const originalModularConfig = {
+    id: 'cfg-custom-carrier-123',
+    name: 'Carrier Venue Template',
+    deviceRules: {
+      rrm: 'inherit',
+      firmwareUpgrade: 'no',
+      rcOnly: 'no',
+      customCarrierPolicy: { fastBss: true, roamingDbm: -72 },
+      dfsWaitSeconds: 120,
+    },
+    configuration: [
+      { name: 'radios', weight: 1, configuration: '{"radios":[{"band":"2G","channel":6}]}' }
+    ],
+  };
+
+  const simulateCowWithRules = (originalConfig, modifiedSections) => {
+    const existingRules =
+      originalConfig?.deviceRules && typeof originalConfig.deviceRules === 'object'
+        ? originalConfig.deviceRules
+        : {};
+
+    const newConfigPayload = {
+      name: 'device:112233445566',
+      deviceRules: {
+        ...existingRules,
+        rrm: 'inherit',
+        firmwareUpgrade: 'no',
+        rcOnly: 'no',
+      },
+      configuration: modifiedSections,
+    };
+    return newConfigPayload;
+  };
+
+  // Operator edits radio to channel 11
+  const editedPayload = simulateCowWithRules(originalModularConfig, [
+    { name: 'radios', weight: 1, configuration: '{"radios":[{"band":"2G","channel":11}]}' }
+  ]);
+
+  // Assert unknown custom rules survived the edit
+  assert.deepStrictEqual(
+    editedPayload.deviceRules.customCarrierPolicy,
+    { fastBss: true, roamingDbm: -72 },
+    'Custom carrier policy inside deviceRules must survive device-specific radio edit'
+  );
+  assert.strictEqual(
+    editedPayload.deviceRules.dfsWaitSeconds,
+    120,
+    'dfsWaitSeconds rule must survive device-specific radio edit'
+  );
+});
+
+test('configuration actions use explicit MDU provisioned and direct routes', async () => {
   const devicesApiPath = path.join(ROOT_DIR, 'src', 'api', 'devices.ts');
   const devicesApiContent = fs.readFileSync(devicesApiPath, 'utf-8');
 
-  const configureBlock = devicesApiContent.match(/export const useConfigureDeviceDirect = [\s\S]*?^};/m)?.[0] || '';
-  assert.ok(configureBlock, 'useConfigureDeviceDirect must be declared in devices.ts');
-
-  // 1. Must NOT contain hardcoded UUID: 1
-  assert.strictEqual(
-    configureBlock.includes('UUID: 1'),
-    false,
-    'useConfigureDeviceDirect must not send hardcoded UUID: 1'
-  );
-
-  // 2. Must use timestamp-based UUID consistent with OWPROV (Date.now() / 1000)
+  const configureBlock = devicesApiContent.match(/export const usePushDirectDeviceConfig = [\s\S]*?^};/m)?.[0] || '';
+  assert.ok(configureBlock, 'usePushDirectDeviceConfig must be declared in devices.ts');
   assert.ok(
-    configureBlock.includes('Date.now() / 1000') || configureBlock.includes('Math.floor(Date.now()'),
-    'useConfigureDeviceDirect must calculate timestamp-based UUID'
+    configureBlock.includes('configuration/push-direct'),
+    'direct configuration must use the explicit MDU push-direct route'
   );
   assert.ok(
-    configureBlock.includes('UUID: now') || configureBlock.includes('UUID:'),
-    'useConfigureDeviceDirect must pass timestamp UUID'
+    configureBlock.includes('configuration: payload.configuration'),
+    'direct configuration must send the concrete configuration to MDU'
   );
+  assert.strictEqual(configureBlock.includes('UUID:'), false, 'MDU, not the UI, must build the OWGW command envelope');
+  assert.strictEqual(configureBlock.includes('uuid:'), false, 'MDU, not the UI, must generate configuration.uuid');
 
-  // 3. Must inject uuid into the inner configuration object
-  assert.ok(
-    configureBlock.includes('uuid: now') || configureBlock.includes('uuid:'),
-    'useConfigureDeviceDirect must inject uuid into configuration object'
-  );
+  const provisionedBlock = devicesApiContent.match(/export const useApplyProvisionedDeviceConfig = [\s\S]*?^};/m)?.[0] || '';
+  assert.ok(provisionedBlock.includes('configuration/apply-provisioned'));
+  assert.ok(provisionedBlock.includes('axiosMdu.post'));
+  assert.strictEqual(provisionedBlock.includes('axiosProv'), false, 'provisioned apply must enter through MDU');
+  assert.strictEqual(provisionedBlock.includes('applyConfiguration=true'), false, 'the browser must not call OWPROV directly');
 
-  // 4. Must preserve when: 0 and normalized serialNumber
-  assert.ok(configureBlock.includes('when: 0'), 'useConfigureDeviceDirect must preserve when: 0');
-  assert.ok(
-    configureBlock.includes('serialNumber: clean'),
-    'useConfigureDeviceDirect must send normalized serialNumber'
-  );
-
-  // 5. Simulation: Request payload construction and forwarding through MDU to OWGW
   const normalizeSerial = (s) => (s || '').toLowerCase().replace(/[^a-f0-9]/g, '');
 
   let forwardedToMdu = null;
@@ -1872,15 +2075,9 @@ test('useConfigureDeviceDirect aligns with OWPROV protocol: sends timestamp UUID
 
   const simulateConfigure = async (payload) => {
     const clean = normalizeSerial(payload.serialNumber);
-    const now = Math.floor(Date.now() / 1000);
-    const res = await mockAxiosMdu.post(`devices/${clean}/configure`, {
+    const res = await mockAxiosMdu.post(`devices/${clean}/configuration/push-direct`, {
+      configuration: payload.configuration,
       when: 0,
-      UUID: now,
-      serialNumber: clean,
-      configuration: {
-        ...payload.configuration,
-        uuid: now,
-      },
     });
     return res.data;
   };
@@ -1890,41 +2087,57 @@ test('useConfigureDeviceDirect aligns with OWPROV protocol: sends timestamp UUID
     radios: [{ band: '5G', channel: 36 }],
   };
 
-  const beforeTime = Math.floor(Date.now() / 1000);
   const result = await simulateConfigure({
     serialNumber: '60:CF:84:F2:22:90',
     configuration: configInput,
   });
-  const afterTime = Math.floor(Date.now() / 1000);
-
   assert.strictEqual(result.success, true);
-  assert.strictEqual(forwardedToMdu.endpoint, 'devices/60cf84f22290/configure');
-  assert.strictEqual(forwardedToMdu.data.serialNumber, '60cf84f22290');
+  assert.strictEqual(forwardedToMdu.endpoint, 'devices/60cf84f22290/configuration/push-direct');
   assert.strictEqual(forwardedToMdu.data.when, 0);
-
-  // Assert outer UUID is a valid timestamp
-  assert.ok(
-    forwardedToMdu.data.UUID >= beforeTime && forwardedToMdu.data.UUID <= afterTime,
-    'Outer UUID must be current epoch timestamp'
-  );
-
-  // Assert inner configuration.uuid matches outer UUID
-  assert.strictEqual(
-    forwardedToMdu.data.configuration.uuid,
-    forwardedToMdu.data.UUID,
-    'Inner configuration.uuid must match outer command UUID'
-  );
-
-  // Assert other configuration blocks are preserved
   assert.deepStrictEqual(forwardedToMdu.data.configuration.globals, configInput.globals);
   assert.deepStrictEqual(forwardedToMdu.data.configuration.radios, configInput.radios);
+  assert.strictEqual('UUID' in forwardedToMdu.data, false);
+  assert.strictEqual('serialNumber' in forwardedToMdu.data, false);
+});
 
-  // 6. Simulate OWGW REST API validation (ra-wlan-cloud-ucentralgw/src/RESTAPI/RESTAPI_device_commandHandler.cpp)
-  const owgwReceivedBody = forwardedToMdu.data;
-  assert.ok('serialNumber' in owgwReceivedBody, 'OWGW requires serialNumber');
-  assert.ok('UUID' in owgwReceivedBody, 'OWGW requires UUID');
-  assert.ok('configuration' in owgwReceivedBody, 'OWGW requires configuration');
-  assert.strictEqual(typeof owgwReceivedBody.configuration.uuid, 'number', 'uCentral AP requires numeric uuid');
+test('device command result views respect OWGW lifecycle status and nested result envelopes (Finding F4)', () => {
+  const modalsDir = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'modals'
+  );
+  const wifi = fs.readFileSync(path.join(modalsDir, 'DeviceWifiScanModal.tsx'), 'utf-8');
+  const trace = fs.readFileSync(path.join(modalsDir, 'DeviceTraceModal.tsx'), 'utf-8');
+  const script = fs.readFileSync(path.join(modalsDir, 'DeviceScriptModal.tsx'), 'utf-8');
+  const telemetry = fs.readFileSync(path.join(modalsDir, 'DeviceTelemetryModal.tsx'), 'utf-8');
+
+  assert.ok(
+    wifi.includes('scanResult?.results?.status?.scan || scanResult?.scan'),
+    'Wi-Fi scan must read the nested OWGW results.status.scan contract while retaining legacy compatibility'
+  );
+  assert.ok(
+    wifi.includes("scanOutcome !== 'completed'") && wifi.includes('Results are not available yet'),
+    'Queued scans must not be rendered as completed empty scan results'
+  );
+  assert.ok(
+    trace.includes("getDeviceCommandOutcome(traceResult) === 'completed'") &&
+      trace.includes('getDeviceCommandResultPayload(traceResult)'),
+    'Trace downloads must only expose completed nested result payloads'
+  );
+  assert.ok(
+    script.includes("getDeviceCommandOutcome(executionResult) === 'completed'") &&
+      script.includes('has not completed'),
+    'Pending scripts must not present the command envelope as execution output'
+  );
+  assert.ok(
+    telemetry.includes("getDeviceCommandOutcome(result) === 'completed'") &&
+      telemetry.includes('has not confirmed that the stream is active'),
+    'Telemetry must not claim an active stream before command completion'
+  );
 });
 
 test('Copy-on-write guards against empty block saves and fetch failures without premature deletion (P1 #2 & F1)', async () => {
@@ -2230,24 +2443,222 @@ test('Simulation: Separation of concerns between OWGW operational notes and OWPR
   assert.strictEqual(mockProvInventoryNotes.get(serial)[0].note, 'Asset Tag: BLDG4-RACK2-U12');
 });
 
+test('CSV export uses filtered visible fleet records, neutralizes formula injection, and uses downloadable Blob (Finding F9)', () => {
+  const fleetTablePath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceFleetTable',
+    'DeviceFleetTable.tsx'
+  );
+  const fleetTableContent = fs.readFileSync(fleetTablePath, 'utf-8');
 
+  // 1. Must export filteredDevices instead of raw devices
+  assert.ok(
+    fleetTableContent.includes('const rows = filteredDevices.map'),
+    'Must export filteredDevices so filter/search criteria are strictly respected'
+  );
+  assert.strictEqual(
+    fleetTableContent.includes('const rows = devices.map'),
+    false,
+    'Must not export unfiltered devices'
+  );
 
+  // 2. Must use downloadable Blob and URL.createObjectURL rather than data: URI encodeURI
+  assert.ok(
+    fleetTableContent.includes('new Blob([csvContent], { type: \'text/csv;charset=utf-8;\' })'),
+    'Must create Blob for CSV content'
+  );
+  assert.ok(
+    fleetTableContent.includes('URL.createObjectURL(blob)'),
+    'Must use URL.createObjectURL for downloadable link'
+  );
+  assert.ok(
+    fleetTableContent.includes('URL.revokeObjectURL(url)'),
+    'Must revoke object URL after download'
+  );
+  assert.strictEqual(
+    fleetTableContent.includes('encodeURI(csvContent)'),
+    false,
+    'Must not use encodeURI with data: URL'
+  );
 
+  // 3. Must implement RFC 4180 quote escaping and formula injection neutralization
+  assert.ok(
+    fleetTableContent.includes('escapeCsvCell'),
+    'Must include escapeCsvCell helper'
+  );
+  assert.ok(
+    fleetTableContent.includes('/^[=+\\-@\\t\\r]/.test(str)'),
+    'Must neutralize spreadsheet formula injection characters (=, +, -, @, \\t, \\r)'
+  );
+  assert.ok(
+    fleetTableContent.includes('str.replace(/"/g, \'""\')'),
+    'Must double-escape double quotes per RFC 4180'
+  );
 
+  // 4. Must clearly label the scope in button title and export filename
+  assert.ok(
+    fleetTableContent.includes('Export Current Page (${filteredDevices.length} visible devices) to CSV'),
+    'Button tooltip must clearly state scope and device count'
+  );
+  assert.ok(
+    fleetTableContent.includes('mango_devices_page_${pageIndex + 1}'),
+    'Filename must explicitly indicate the page number'
+  );
 
+  // 5. Functional simulation of escapeCsvCell
+  const escapeCsvCell = (val) => {
+    if (val === null || val === undefined) return '""';
+    let str = String(val);
+    if (/^[=+\-@\t\r]/.test(str)) {
+      str = `'${str}`;
+    }
+    return `"${str.replace(/"/g, '""')}"`;
+  };
 
+  // Test quotes
+  assert.strictEqual(escapeCsvCell('Device "Main" Entrance'), '"Device ""Main"" Entrance"');
+  // Test formula injection with =
+  assert.strictEqual(escapeCsvCell('=cmd|\' /C calc\'!A0'), '"\'=cmd|\' /C calc\'!A0"');
+  // Test formula injection with @
+  assert.strictEqual(escapeCsvCell('@SUM(1+1)'), '"\'@SUM(1+1)"');
+  // Test formula injection with + and -
+  assert.strictEqual(escapeCsvCell('+12345'), '"\'+12345"');
+  assert.strictEqual(escapeCsvCell('-54321'), '"\'-54321"');
+  // Test null/undefined
+  assert.strictEqual(escapeCsvCell(null), '""');
+  assert.strictEqual(escapeCsvCell(undefined), '""');
+});
 
+test('Device workspace navigation fully synchronizes with URL parameters and browser history (Finding F10)', () => {
+  const devicesPagePath = path.join(ROOT_DIR, 'src', 'pages', 'Devices', 'DevicesPage.tsx');
+  const devicesPageContent = fs.readFileSync(devicesPagePath, 'utf-8');
 
+  // 1. DevicesPage must resolve workspace tabs when serial is present and pass it to selectDevice
+  assert.ok(
+    devicesPageContent.includes("targetWorkspaceTab: DeviceWorkspaceTab ="),
+    'DevicesPage must calculate targetWorkspaceTab from URL searchParams'
+  );
+  assert.ok(
+    devicesPageContent.includes("selectDevice(serialParam, targetWorkspaceTab)"),
+    'DevicesPage must pass targetWorkspaceTab to selectDevice on fresh load or URL change'
+  );
 
+  const workspacePath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'DeviceWorkspace.tsx'
+  );
+  const workspaceContent = fs.readFileSync(workspacePath, 'utf-8');
 
+  // 2. DeviceWorkspace must synchronize tab changes with setSearchParams
+  assert.ok(
+    workspaceContent.includes('useSearchParams'),
+    'DeviceWorkspace must import useSearchParams'
+  );
+  assert.ok(
+    workspaceContent.includes('handleTabChange'),
+    'DeviceWorkspace must include handleTabChange helper'
+  );
+  assert.ok(
+    workspaceContent.includes("next.set('tab', newTab)"),
+    'DeviceWorkspace must update URL tab param when switching tabs'
+  );
+  assert.ok(
+    workspaceContent.includes("next.delete('tab')"),
+    'DeviceWorkspace must delete tab param when on default overview tab'
+  );
 
+  // 3. DeviceWorkspace must clean up searchParams when returning to fleet
+  assert.ok(
+    workspaceContent.includes('handleBackToFleet'),
+    'DeviceWorkspace must provide handleBackToFleet helper'
+  );
+  assert.ok(
+    workspaceContent.includes("next.delete('serial')"),
+    'handleBackToFleet must delete serial from searchParams'
+  );
+  assert.ok(
+    workspaceContent.includes('onBackToFleet={handleBackToFleet}'),
+    'DeviceWorkspace must pass onBackToFleet to DeviceHeader'
+  );
 
+  const headerPath = path.join(
+    ROOT_DIR,
+    'src',
+    'pages',
+    'Devices',
+    'components',
+    'DeviceWorkspace',
+    'DeviceHeader.tsx'
+  );
+  const headerContent = fs.readFileSync(headerPath, 'utf-8');
 
+  // 4. DeviceHeader must include breadcrumb and clean URL cleanup
+  assert.ok(
+    headerContent.includes('onBackToFleet'),
+    'DeviceHeader must accept and trigger onBackToFleet'
+  );
+  assert.ok(
+    headerContent.includes('Breadcrumb Navigation'),
+    'DeviceHeader must render breadcrumb navigation'
+  );
 
+  // 5. Functional simulation of URL synchronization state machine
+  let currentUrl = new URLSearchParams('serial=60cf84f22290&tab=configuration');
+  let selectedSerial = null;
+  let activeWorkspaceTab = 'overview';
 
+  const simulateUrlSync = (params) => {
+    const serialParam = params.get('serial');
+    const rawTab = params.get('tab');
+    if (serialParam) {
+      const targetWorkspaceTab = rawTab === 'configuration' || rawTab === 'activity' ? rawTab : 'overview';
+      selectedSerial = serialParam;
+      activeWorkspaceTab = targetWorkspaceTab;
+    } else {
+      selectedSerial = null;
+    }
+  };
 
+  // Simulate fresh link open with ?serial=60cf84f22290&tab=configuration
+  simulateUrlSync(currentUrl);
+  assert.strictEqual(selectedSerial, '60cf84f22290');
+  assert.strictEqual(activeWorkspaceTab, 'configuration', 'Fresh load must honor tab=configuration');
 
+  // Simulate tab switch to activity
+  const switchTab = (tab) => {
+    activeWorkspaceTab = tab;
+    if (tab === 'overview') currentUrl.delete('tab');
+    else currentUrl.set('tab', tab);
+  };
+  switchTab('activity');
+  assert.strictEqual(currentUrl.get('tab'), 'activity');
 
+  // Simulate browser Back button (URL changes back to ?serial=60cf84f22290&tab=configuration)
+  currentUrl.set('tab', 'configuration');
+  simulateUrlSync(currentUrl);
+  assert.strictEqual(activeWorkspaceTab, 'configuration', 'Back button must restore previous workspace tab');
+
+  // Simulate clicking Back to Fleet
+  const backToFleet = () => {
+    selectedSerial = null;
+    currentUrl.delete('serial');
+    currentUrl.delete('tab');
+  };
+  backToFleet();
+  assert.strictEqual(currentUrl.get('serial'), null);
+  assert.strictEqual(currentUrl.get('tab'), null);
+  simulateUrlSync(currentUrl);
+  assert.strictEqual(selectedSerial, null, 'Must clear selected device and stay on fleet view');
+});
 
 
 

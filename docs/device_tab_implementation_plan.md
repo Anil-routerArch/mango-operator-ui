@@ -179,7 +179,6 @@ The Devices interface in `mango-operator-ui` is structured into two core layers:
 | 10 | Get Recent Statistics | `GET /api/v1/device/{serial}/statistics?newest=true&limit=30` | `axiosGw` | `newest=true`, `limit=30` | None | `{ "data": [ { "data": { ... }, "recorded": 1729... } ] }` |
 | 11 | Historical Statistics | `GET /api/v1/device/{serial}/statistics?startDate=X&endDate=Y` | `axiosGw` | `startDate`, `endDate`, `offset`, `limit` | None | `{ "data": [ { "data": { ... }, "recorded": ... } ] }` |
 | 12 | Get Commands History | `GET /api/v1/commands?serialNumber={serial}&newest=true` | `axiosGw` | `serialNumber`, `newest=true`, `limit` | None | `{ "commands": [ { "UUID": "...", "command": "reboot", "status": "Completed" } ] }` |
-| 13 | Delete Command | `DELETE /api/v1/command/{id}` | `axiosGw` | None | None | `{}` |
 | 14 | Get Health Checks | `GET /api/v1/device/{serial}/healthchecks?newest=true` | `axiosGw` | `newest=true`, `limit` | None | `{ "values": [ { "recorded": 1729..., "sanity": 100, "values": { ... } } ] }` |
 | 15 | Get System Logs | `GET /api/v1/device/{serial}/logs?logType=0&newest=true` | `axiosGw` | `logType=0`, `newest=true`, `limit` | None | `{ "values": [ { "recorded": 1729..., "severity": 6, "log": "..." } ] }` |
 | 16 | Get Crash Logs | `GET /api/v1/device/{serial}/logs?logType=1&newest=true` | `axiosGw` | `logType=1`, `newest=true`, `limit` | None | `{ "values": [ { "recorded": 1729..., "log": "Kernel panic..." } ] }` |

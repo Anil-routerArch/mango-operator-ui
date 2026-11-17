@@ -283,17 +283,24 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
         throw new Error('Original configuration blocks could not be verified. Aborting save to prevent overwriting with empty configuration.');
       }
 
-      // Interim Copy-On-Write (COW) approach (Issue #1):
+      // Interim Copy-On-Write (COW) approach (Issue #1 & F6):
       // Do not update an existing modular configuration in place, which could unintentionally
       // modify shared configurations referenced by other devices.
       // Instead, create a new device-specific configuration preserving metadata, variables, and rules,
       // and associate it with the selected device only after successful creation.
+      // Preserves existing modular deviceRules (Finding F6) to prevent wiping unknown/vendor-specific rules.
+      const existingConfigRules =
+        configData?.deviceRules && typeof configData.deviceRules === 'object'
+          ? (configData.deviceRules as Record<string, unknown>)
+          : {};
+
       const newConfigPayload: ModularConfigurationPayload = {
         name: `device:${device.serialNumber}`,
         description: configData?.description || 'Device-specific configuration',
         deviceGroup: resolvedGroup,
         deviceTypes: resolvedType ? [resolvedType] : (configData?.deviceTypes || []),
         deviceRules: {
+          ...existingConfigRules,
           rrm: normalizedRrm,
           firmwareUpgrade,
           rcOnly: firmwareRCOnly ? 'yes' : 'no',

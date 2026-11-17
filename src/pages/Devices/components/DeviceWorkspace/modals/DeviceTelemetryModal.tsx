@@ -15,6 +15,11 @@ import { themeColors } from '@/theme';
 import { toaster } from '@/components/ui/toaster';
 import { getApiErrorMessage } from '@/api/errors';
 import { useStartTelemetry } from '@/api/devices';
+import {
+  assertDeviceCommandSucceeded,
+  getDeviceCommandOutcome,
+  getDeviceCommandSuccessTitle,
+} from '@/api/deviceCommandStatus';
 import type { UnifiedFleetDevice } from '@/types/device';
 
 export interface DeviceTelemetryModalProps {
@@ -64,10 +69,11 @@ export const DeviceTelemetryModal: React.FC<DeviceTelemetryModalProps> = ({
         types: selectedTypes,
       });
 
+      assertDeviceCommandSucceeded(res);
       setResult(res);
       toaster.create({
-        title: 'Telemetry Stream Started',
-        description: `Dispatched telemetry stream collection for ${device.serialNumber}.`,
+        title: getDeviceCommandSuccessTitle('Telemetry Stream', res),
+        description: `Telemetry stream command accepted for ${device.serialNumber}.`,
         type: 'success',
       });
     } catch (err: unknown) {
@@ -83,7 +89,7 @@ export const DeviceTelemetryModal: React.FC<DeviceTelemetryModalProps> = ({
     navigator.clipboard.writeText(JSON.stringify(result ?? {}, null, 2));
     toaster.create({
       title: 'Copied',
-      description: 'Telemetry result copied to clipboard',
+      description: 'Telemetry command response copied to clipboard',
       type: 'info',
     });
   };
@@ -152,10 +158,14 @@ export const DeviceTelemetryModal: React.FC<DeviceTelemetryModalProps> = ({
             <VStack align="stretch" gap={4}>
               <Box p={4} borderRadius="8px" bg="#f0fdf4" border="1px solid #bbf7d0">
                 <Text fontSize="13px" fontWeight="700" color="#166534">
-                  Telemetry Session Active
+                  {getDeviceCommandOutcome(result) === 'completed'
+                    ? 'Telemetry Session Active'
+                    : getDeviceCommandSuccessTitle('Telemetry Stream', result)}
                 </Text>
                 <Text fontSize="12px" color="#15803d" mt={0.5}>
-                  Streaming every {intervalSec}s for {durationMin} minutes. Streams: {selectedTypes.join(', ')}.
+                  {getDeviceCommandOutcome(result) === 'completed'
+                    ? `Streaming every ${intervalSec}s for ${durationMin} minutes. Streams: ${selectedTypes.join(', ')}.`
+                    : 'The telemetry request was accepted but the device has not confirmed that the stream is active.'}
                 </Text>
               </Box>
 
@@ -179,7 +189,7 @@ export const DeviceTelemetryModal: React.FC<DeviceTelemetryModalProps> = ({
                 </Button>
                 <Button size="sm" variant="outline" onClick={handleCopy}>
                   <Icon name="copy" size={14} />
-                  Copy Payload
+                  Copy Command Response
                 </Button>
               </HStack>
             </VStack>

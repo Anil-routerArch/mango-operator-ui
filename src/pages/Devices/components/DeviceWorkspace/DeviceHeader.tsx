@@ -27,8 +27,10 @@ import {
   useBlinkDeviceLeds,
   useDeleteDeviceFromFleet,
   useLaunchRttySession,
+  useApplyProvisionedDeviceConfig,
 } from '@/api/devices';
 import { getApiErrorMessage } from '@/api/errors';
+import { assertDeviceCommandSucceeded, getDeviceCommandSuccessTitle } from '@/api/deviceCommandStatus';
 import { toaster } from '@/components/ui/toaster';
 import { type UnifiedFleetDevice, normalizePlatformDeviceType } from '@/types/device';
 
@@ -36,12 +38,14 @@ export interface DeviceHeaderProps {
   device: UnifiedFleetDevice;
   onRefresh?: () => void;
   isLoading?: boolean;
+  onBackToFleet?: () => void;
 }
 
 export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
   device,
   onRefresh,
   isLoading = false,
+  onBackToFleet,
 }) => {
   const { clearSelectedDevice } = useDevicesUiStore();
   const [isRebootOpen, setIsRebootOpen] = useState(false);
@@ -63,6 +67,7 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
   const blinkMutation = useBlinkDeviceLeds();
   const deleteMutation = useDeleteDeviceFromFleet();
   const rttyMutation = useLaunchRttySession();
+  const applyProvisionedMutation = useApplyProvisionedDeviceConfig();
 
   const isConnected = !!device.connected;
   const displayName = device.name || device.serialNumber;
@@ -96,10 +101,11 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
 
   const handleReboot = async () => {
     try {
-      await rebootMutation.mutateAsync({ serialNumber: device.serialNumber });
+      const result = await rebootMutation.mutateAsync({ serialNumber: device.serialNumber });
+      assertDeviceCommandSucceeded(result);
       toaster.create({
-        title: 'Reboot Scheduled',
-        description: `Reboot command sent to device ${device.serialNumber}`,
+        title: getDeviceCommandSuccessTitle('Reboot', result),
+        description: `Reboot command accepted for ${device.serialNumber}.`,
         type: 'success',
       });
     } catch (err: unknown) {
@@ -120,7 +126,11 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
         description: `Device ${device.serialNumber} removed from inventory`,
         type: 'success',
       });
-      clearSelectedDevice();
+      if (onBackToFleet) {
+        onBackToFleet();
+      } else {
+        clearSelectedDevice();
+      }
     } catch (err: unknown) {
       toaster.create({
         title: 'Delete Failed',
@@ -159,10 +169,11 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
 
   const handleBlink = async () => {
     try {
-      await blinkMutation.mutateAsync({ serialNumber: device.serialNumber, duration: 30 });
+      const result = await blinkMutation.mutateAsync({ serialNumber: device.serialNumber, duration: 30 });
+      assertDeviceCommandSucceeded(result);
       toaster.create({
-        title: 'LEDs Blinking',
-        description: `LED blink command sent for 30s to ${device.serialNumber}`,
+        title: getDeviceCommandSuccessTitle('LED Blink', result),
+        description: `LED blink command accepted for ${device.serialNumber}.`,
         type: 'info',
       });
     } catch (err: unknown) {
@@ -174,10 +185,58 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
     }
   };
 
+  const handleApplyProvisionedConfiguration = async () => {
+    try {
+      const result = await applyProvisionedMutation.mutateAsync(device.serialNumber);
+      const response = result as {
+        errorCode?: number | string;
+        ErrorCode?: number | string;
+        errorText?: string;
+        ErrorText?: string;
+        ErrorDescription?: string;
+      };
+      const errorCode = response?.errorCode ?? response?.ErrorCode;
+      if (errorCode !== undefined && Number(errorCode) !== 0) {
+        throw new Error(
+          response.errorText || response.ErrorText || response.ErrorDescription || 'OWPROV rejected the configuration request'
+        );
+      }
+      toaster.create({
+        title: 'Provisioned Configuration Dispatched',
+        description: `OWPROV accepted the apply request for ${device.serialNumber}`,
+        type: 'success',
+      });
+    } catch (err: unknown) {
+      toaster.create({
+        title: 'Configuration Apply Failed',
+        description: getApiErrorMessage(err, 'Failed to apply provisioned configuration'),
+        type: 'error',
+      });
+    }
+  };
+
 
 
   return (
     <Box mb={5}>
+      {/* Breadcrumb Navigation */}
+      <Flex align="center" gap={1.5} mb={2} fontSize="13px">
+        <Box
+          as="button"
+          onClick={onBackToFleet || clearSelectedDevice}
+          color={themeColors.brand.accent}
+          _hover={{ textDecoration: 'underline' }}
+          fontWeight="500"
+          cursor="pointer"
+        >
+          Devices
+        </Box>
+        <Text color={themeColors.text.muted}>/</Text>
+        <Text color={themeColors.text.secondary} fontWeight="600" fontFamily="monospace">
+          {device.serialNumber}
+        </Text>
+      </Flex>
+
       {/* Main Header Row */}
       <Flex justify="space-between" align="center" wrap="wrap" gap={4}>
         {/* Left: Device Name, Status Badges, Subtitle */}
@@ -307,7 +366,27 @@ export const DeviceHeader: React.FC<DeviceHeaderProps> = ({
               <Icon name="barcode" size={16} color="#ffffff" />
             </IconButton>
 
-            {/* 6. Commands / Actions (Light / Dark Outlined Wrench) */}
+            {/* 6. Apply compiled OWPROV configuration (Blue) */}
+            <IconButton
+              size="sm"
+              w="32px"
+              h="32px"
+              minW="32px"
+              borderRadius="8px"
+              bg="#2563eb"
+              color="#ffffff"
+              _hover={{ bg: '#1d4ed8', transform: 'scale(1.05)' }}
+              transition="all 0.15s ease"
+              title="Apply Provisioned Configuration"
+              aria-label="Apply Provisioned Configuration"
+              onClick={handleApplyProvisionedConfiguration}
+              loading={applyProvisionedMutation.isPending}
+              p={0}
+            >
+              <Icon name="send" size={16} color="#ffffff" />
+            </IconButton>
+
+            {/* 7. Commands / Actions (Light / Dark Outlined Wrench) */}
             <Box position="relative" ref={menuRef}>
               <IconButton
                 size="sm"
