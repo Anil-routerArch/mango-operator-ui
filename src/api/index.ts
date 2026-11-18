@@ -6,3 +6,4 @@ export * from './users';
 export * from './defaultConfigurations';
 export * from './modularConfigurations';
 export * from './queryClient';
+export * from './devices';

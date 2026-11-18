@@ -38,6 +38,9 @@ interface ConfigurationSectionsCardProps {
   disabled?: boolean;
   isDefaultConfig?: boolean;
   availableResources?: VariableBlockApiResponse[];
+  title?: string;
+  showWarningBanner?: boolean;
+  extraRightButtons?: React.ReactNode;
 }
 
 export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps> = ({
@@ -48,6 +51,9 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
   disabled = false,
   isDefaultConfig = false,
   availableResources = [],
+  title,
+  showWarningBanner = false,
+  extraRightButtons,
 }) => {
   const [sectionsState, setSectionsState] = useState<ConfigurationSectionsState>(() => {
     if (initialJson && initialJson.trim()) {
@@ -187,7 +193,7 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
         borderColor="#cbd5e1"
       >
         <Text fontSize="14px" fontWeight="700" color={themeColors.text.title}>
-          Configuration Sections
+          {title || 'Configuration Sections'}
         </Text>
 
         {/* Circular Action Icons matching screenshot */}
@@ -296,8 +302,42 @@ export const ConfigurationSectionsCard: React.FC<ConfigurationSectionsCardProps>
           >
             <Icon name="maximize" size={14} />
           </Box>
+
+          {extraRightButtons}
         </HStack>
       </Flex>
+
+      {/* Warning banner matching OWGW screenshot */}
+      {showWarningBanner && (
+        <Box
+          mx={4}
+          mt={3}
+          mb={1}
+          p="8px 14px"
+          bg="#fef3c7"
+          border="1px solid #fde68a"
+          borderRadius="6px"
+        >
+          <HStack gap={2}>
+            <Box
+              w="18px"
+              h="18px"
+              borderRadius="50%"
+              bg="#d97706"
+              color="#ffffff"
+              display="grid"
+              placeItems="center"
+              fontSize="11px"
+              fontWeight="bold"
+            >
+              !
+            </Box>
+            <Text fontSize="12px" color="#92400e" fontWeight="500">
+              Be warned: there will only be minimal tests done on this configuration
+            </Text>
+          </HStack>
+        </Box>
+      )}
 
       {/* Horizontal Subsection Tabs */}
       {sectionsState.activeSections.length > 0 && (

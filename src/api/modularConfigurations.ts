@@ -3,7 +3,7 @@ import { axiosProv } from './client';
 
 export interface DeviceRulesPayload {
   rcOnly?: 'inherit' | 'yes' | 'no' | string;
-  rrm?: 'inherit' | 'on' | 'off' | string;
+  rrm?: 'inherit' | 'no' | 'enabled' | string;
   firmwareUpgrade?: 'inherit' | 'yes' | 'no' | string;
 }
 

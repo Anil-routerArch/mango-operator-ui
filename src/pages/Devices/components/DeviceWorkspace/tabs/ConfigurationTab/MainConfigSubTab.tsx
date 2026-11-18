@@ -1,0 +1,574 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Box,
+  Button,
+  Flex,
+  Input,
+  SimpleGrid,
+  Spinner,
+  Text,
+  VStack,
+} from '@chakra-ui/react';
+import { Icon } from '@/components/icons/Icon';
+import { themeColors } from '@/theme';
+import { useUpdateDeviceTag, useGetDeviceTypeInfo } from '@/api/devices';
+import { useGetEntities, useGetVenues } from '@/api/users';
+import { toaster } from '@/components/ui/toaster';
+import type { UnifiedFleetDevice } from '@/types/device';
+import { RrmEditorField } from './RrmEditorField';
+import { normalizeRrmForSubmission } from './rrmHelper';
+
+export interface MainConfigSubTabProps {
+  device: UnifiedFleetDevice;
+}
+
+export const getDeviceGroupFromType = (
+  deviceType?: string,
+  deviceTypesByClass?: Record<string, string[]>
+): string => {
+  if (!deviceType || !deviceTypesByClass) return '';
+  const entries = Object.entries(deviceTypesByClass);
+  const match = entries.find(([, types]) => types?.includes(deviceType));
+  return match ? match[0] : '';
+};
+
+export const MainConfigSubTab: React.FC<MainConfigSubTabProps> = ({ device }) => {
+  const {
+    data: fmsDeviceTypeInfo,
+    isLoading: isDeviceCatalogLoading,
+    isError: isDeviceCatalogError,
+    error: deviceCatalogError,
+    refetch: refetchDeviceCatalog,
+  } = useGetDeviceTypeInfo();
+  const { data: entities = [] } = useGetEntities();
+  const { data: venues = [] } = useGetVenues();
+
+  const resolveInitialParent = (d: UnifiedFleetDevice): string => {
+    if (d.provTag?.venue) return `ven:${d.provTag.venue}`;
+    if (d.provTag?.entity) return `ent:${d.provTag.entity}`;
+    if (d.venueId) return `ven:${d.venueId}`;
+    if (d.entityId) return `ent:${d.entityId}`;
+    return '';
+  };
+
+  const resolveInitialGroup = (
+    dev: UnifiedFleetDevice,
+    typesByClass?: Record<string, string[]>
+  ): string => {
+    // 1. Authoritative dynamic resolution from deviceType via FMS catalog (matching owprov-ui)
+    const rawType =
+      dev.provTag?.deviceType ||
+      (dev.deviceType && dev.deviceType !== 'ap' && dev.deviceType !== 'switch' && dev.deviceType !== 'olg'
+        ? dev.deviceType
+        : undefined) ||
+      (dev.model && dev.model !== 'Universal AP' ? dev.model : undefined);
+    const derivedFromFms = getDeviceGroupFromType(rawType, typesByClass);
+    if (derivedFromFms) return derivedFromFms;
+
+    // 2. Authoritative OWPROV database platform column
+    if (dev.provTag?.platform) {
+      const lowerPlatform = dev.provTag.platform.toLowerCase();
+      if (lowerPlatform === 'ap' || lowerPlatform === 'switch' || lowerPlatform === 'olg') {
+        return lowerPlatform;
+      }
+    }
+
+    // 3. Fallback to provTag deviceGroup or unified deviceGroup
+    if (dev.provTag?.deviceGroup) {
+      const lowerGroup = dev.provTag.deviceGroup.toLowerCase();
+      if (lowerGroup === 'ap' || lowerGroup === 'switch' || lowerGroup === 'olg') {
+        return lowerGroup;
+      }
+    }
+
+    const rawGrp = dev.deviceGroup?.toLowerCase();
+    if (rawGrp === 'ap' || rawGrp === 'switch' || rawGrp === 'olg') return rawGrp;
+
+    return '';
+  };
+
+  const resolveInitialType = (dev: UnifiedFleetDevice): string => {
+    if (dev.provTag?.deviceType) return dev.provTag.deviceType;
+    if (dev.deviceType && dev.deviceType !== 'ap' && dev.deviceType !== 'switch' && dev.deviceType !== 'olg') {
+      return dev.deviceType;
+    }
+    if (dev.model && dev.model !== 'Universal AP') return dev.model;
+    return '';
+  };
+
+  const [name, setName] = useState(device.name || device.serialNumber);
+  const [description, setDescription] = useState(device.description || '');
+  const [deviceGroup, setDeviceGroup] = useState(
+    resolveInitialGroup(device, fmsDeviceTypeInfo?.deviceTypesByClass)
+  );
+  const [deviceType, setDeviceType] = useState(resolveInitialType(device));
+  const [parent, setParent] = useState(resolveInitialParent(device));
+  const [rcOnly, setRcOnly] = useState<'inherit' | 'yes' | 'no'>(
+    (device.provTag?.deviceRules?.rcOnly as 'inherit' | 'yes' | 'no') || 'inherit'
+  );
+  const [rrm, setRrm] = useState<string>(
+    (device.provTag?.deviceRules?.rrm as string) || 'inherit'
+  );
+  const [firmwareUpgrade, setFirmwareUpgrade] = useState<'inherit' | 'yes' | 'no'>(
+    (device.provTag?.deviceRules?.firmwareUpgrade as 'inherit' | 'yes' | 'no') || 'inherit'
+  );
+  const [devClass, setDevClass] = useState<'any' | 'entity' | 'venue' | 'subscriber'>(
+    (device.provTag?.devClass as 'any' | 'entity' | 'venue' | 'subscriber') || 'any'
+  );
+  const [ignoreOverrides, setIgnoreOverrides] = useState<boolean>(
+    Boolean(device.provTag?.doNotAllowOverrides)
+  );
+
+  useEffect(() => {
+    if (device) {
+      setName(device.name || device.serialNumber);
+      setDescription(device.description || '');
+      setDeviceGroup(resolveInitialGroup(device, fmsDeviceTypeInfo?.deviceTypesByClass));
+      setDeviceType(resolveInitialType(device));
+      setParent(resolveInitialParent(device));
+      if (device.provTag) {
+        if (device.provTag.devClass) setDevClass(device.provTag.devClass as 'any' | 'entity' | 'venue' | 'subscriber');
+        if (device.provTag.doNotAllowOverrides !== undefined) setIgnoreOverrides(device.provTag.doNotAllowOverrides);
+        if (device.provTag.deviceRules) {
+          if (device.provTag.deviceRules.rcOnly) setRcOnly(device.provTag.deviceRules.rcOnly as 'inherit' | 'yes' | 'no');
+          if (device.provTag.deviceRules.rrm !== undefined) {
+            setRrm((device.provTag.deviceRules.rrm as string) || 'inherit');
+          }
+          if (device.provTag.deviceRules.firmwareUpgrade) setFirmwareUpgrade(device.provTag.deviceRules.firmwareUpgrade as 'inherit' | 'yes' | 'no');
+        }
+      }
+    }
+  }, [device, fmsDeviceTypeInfo?.deviceTypesByClass]);
+
+  const sortedEntities = useMemo(
+    () => [...entities].sort((a, b) => a.name.localeCompare(b.name)),
+    [entities]
+  );
+  const sortedVenues = useMemo(
+    () => [...venues].sort((a, b) => a.name.localeCompare(b.name)),
+    [venues]
+  );
+
+  const availableDeviceClasses = useMemo(() => {
+    if (fmsDeviceTypeInfo?.deviceClasses && fmsDeviceTypeInfo.deviceClasses.length > 0) {
+      return fmsDeviceTypeInfo.deviceClasses;
+    }
+    const catalogClasses = Object.keys(fmsDeviceTypeInfo?.deviceTypesByClass || {});
+    if (catalogClasses.length > 0) return catalogClasses;
+    return deviceGroup ? [deviceGroup] : [];
+  }, [fmsDeviceTypeInfo, deviceGroup]);
+
+  const availableDeviceTypes = useMemo(() => {
+    if (fmsDeviceTypeInfo?.deviceTypesByClass && fmsDeviceTypeInfo.deviceTypesByClass[deviceGroup]) {
+      return fmsDeviceTypeInfo.deviceTypesByClass[deviceGroup];
+    }
+    const existingGroup = resolveInitialGroup(device);
+    const existingType = resolveInitialType(device);
+    return deviceGroup === existingGroup && existingType ? [existingType] : [];
+  }, [fmsDeviceTypeInfo, deviceGroup, device]);
+
+  // Handle group change
+  const handleGroupChange = (newGroup: string) => {
+    setDeviceGroup(newGroup);
+    const validTypes = fmsDeviceTypeInfo?.deviceTypesByClass?.[newGroup] || [];
+    if (!validTypes.includes(deviceType)) {
+      setDeviceType(validTypes[0] || '');
+    }
+  };
+
+  const updateMutation = useUpdateDeviceTag();
+
+  const handleSave = async () => {
+    if (!device.provTag) {
+      toaster.create({
+        title: 'Action Blocked',
+        description: 'Cannot update configuration while authoritative inventory is unavailable from OWPROV',
+        type: 'error',
+      });
+      return;
+    }
+    try {
+      const initialGroup = resolveInitialGroup(device, fmsDeviceTypeInfo?.deviceTypesByClass);
+      const initialType = resolveInitialType(device);
+      const hardwareSelectionChanged = deviceGroup !== initialGroup || deviceType !== initialType;
+      const authoritativeTypes = fmsDeviceTypeInfo?.deviceTypesByClass?.[deviceGroup] || [];
+      if (hardwareSelectionChanged && !authoritativeTypes.includes(deviceType)) {
+        throw new Error('Select a device group and hardware type from the current FMS catalog before saving hardware changes.');
+      }
+
+      const entityId = parent.startsWith('ent:') ? parent.slice(4) : '';
+      const venueId = parent.startsWith('ven:') ? parent.slice(4) : '';
+
+      // Field-scoped update (Issue #4):
+      // Only submit fields intentionally managed by MainConfigSubTab.
+      // Do not resend unrelated state, deviceConfiguration, subscriber, or notes.
+      const payload: Record<string, unknown> = {
+        name,
+        description,
+        deviceGroup,
+        platform: deviceGroup.toUpperCase(),
+        devClass,
+        doNotAllowOverrides: ignoreOverrides,
+      };
+
+      // Concurrency protection for deviceRules (Issue F3):
+      // Only attach deviceRules if the operator explicitly modified rrm, rcOnly, or firmwareUpgrade.
+      // If untouched, omit deviceRules to avoid overwriting recent changes from another subtab/operator.
+      // When modified, merge against authoritative rules to preserve any unmanaged/unknown properties.
+      const authoritativeRules = device.provTag?.deviceRules;
+      const initialRcOnly = (authoritativeRules?.rcOnly as 'inherit' | 'yes' | 'no') || 'inherit';
+      const initialRrm = (typeof authoritativeRules?.rrm === 'object' && authoritativeRules?.rrm !== null)
+        ? JSON.stringify(authoritativeRules.rrm)
+        : (authoritativeRules?.rrm as string) || 'inherit';
+      const initialFirmwareUpgrade = (authoritativeRules?.firmwareUpgrade as 'inherit' | 'yes' | 'no') || 'inherit';
+
+      const isRulesDirty =
+        rcOnly !== initialRcOnly ||
+        rrm !== initialRrm ||
+        firmwareUpgrade !== initialFirmwareUpgrade;
+
+      if (isRulesDirty) {
+        payload.deviceRules = {
+          ...(authoritativeRules || {}),
+          firmwareUpgrade,
+          rcOnly,
+          rrm: normalizeRrmForSubmission(rrm),
+        };
+      }
+
+      if (deviceType) {
+        payload.deviceType = deviceType;
+      }
+
+      if (venueId) {
+        payload.venue = venueId;
+      } else if (entityId) {
+        payload.entity = entityId;
+      } else if (parent === '') {
+        payload.venue = '';
+        payload.entity = '';
+      }
+
+      await updateMutation.mutateAsync({
+        serialNumber: device.serialNumber,
+        payload,
+      });
+      toaster.create({
+        title: 'Device Tag Updated',
+        description: `Configuration properties saved for ${device.serialNumber} in OWPROV`,
+        type: 'success',
+      });
+    } catch (err: unknown) {
+      toaster.create({
+        title: 'Save Failed',
+        description: err instanceof Error ? err.message : 'Could not update device tag',
+        type: 'error',
+      });
+    }
+  };
+
+  const selectStyle: React.CSSProperties = {
+    width: '100%',
+    height: '36px',
+    paddingLeft: '10px',
+    paddingRight: '10px',
+    borderRadius: '6px',
+    border: `1px solid ${themeColors.input.border}`,
+    fontSize: '13px',
+    backgroundColor: '#ffffff',
+    color: themeColors.text.primary,
+    outline: 'none',
+    cursor: 'pointer',
+  };
+
+  return (
+    <Box p={6}>
+      <VStack align="stretch" gap={6}>
+        {isDeviceCatalogError && (
+          <Flex
+            p={3}
+            gap={3}
+            align="center"
+            bg="#fff7ed"
+            border="1px solid #fed7aa"
+            borderRadius="8px"
+          >
+            <Icon name="alertTriangle" size={18} color="#c2410c" />
+            <Box flex="1">
+              <Text fontSize="13px" fontWeight="700" color="#9a3412">
+                Hardware catalog unavailable
+              </Text>
+              <Text fontSize="12px" color="#9a3412">
+                {deviceCatalogError instanceof Error
+                  ? deviceCatalogError.message
+                  : 'FMS could not return the authoritative device groups and hardware types.'}
+              </Text>
+            </Box>
+            <Button size="xs" variant="outline" onClick={() => void refetchDeviceCatalog()}>
+              Retry
+            </Button>
+          </Flex>
+        )}
+
+        {/* Row 1: Primary Identification & Platform Hierarchy */}
+        <SimpleGrid columns={{ base: 1, md: 2, lg: 4, xl: 7 }} gap={4}>
+          {/* 1. Serial Number */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Serial Number <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <Input
+              value={device.serialNumber}
+              disabled
+              bg="#f8fafc"
+              borderColor={themeColors.input.border}
+              fontSize="13px"
+              fontFamily="monospace"
+              h="36px"
+            />
+          </Box>
+
+          {/* 2. Name */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Name <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. 60cf84f22290"
+              borderColor={themeColors.input.border}
+              fontSize="13px"
+              h="36px"
+            />
+          </Box>
+
+          {/* 3. Description */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Description
+            </Text>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Description..."
+              borderColor={themeColors.input.border}
+              fontSize="13px"
+              h="36px"
+            />
+          </Box>
+
+          {/* 4. Device Group */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Device Group <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <select
+              value={deviceGroup}
+              onChange={(e) => handleGroupChange(e.target.value)}
+              style={selectStyle}
+              disabled={isDeviceCatalogLoading || isDeviceCatalogError}
+            >
+              {!deviceGroup && <option value="">Select device group</option>}
+              {availableDeviceClasses.map((cls) => (
+                <option key={cls} value={cls}>
+                  {cls === 'ap'
+                    ? 'ap (Wi-Fi Access Point)'
+                    : cls === 'switch'
+                      ? 'switch (Network Switch)'
+                      : cls === 'olg'
+                        ? 'olg (OpenLAN Gateway)'
+                        : cls}
+                </option>
+              ))}
+            </select>
+          </Box>
+
+          {/* 5. Device Type */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Device Type <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <select
+              value={deviceType}
+              onChange={(e) => setDeviceType(e.target.value)}
+              style={selectStyle}
+              disabled={isDeviceCatalogLoading || isDeviceCatalogError}
+            >
+              {!deviceType && <option value="">Select device type</option>}
+              {availableDeviceTypes.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </Box>
+
+          {/* 6. Parent */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Parent
+            </Text>
+            <select
+              value={parent}
+              onChange={(e) => setParent(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="">None</option>
+
+              {parent &&
+                !sortedEntities.some((e) => `ent:${e.id}` === parent) &&
+                !sortedVenues.some((v) => `ven:${v.id}` === parent) && (
+                  <option value={parent}>
+                    {parent.startsWith('ven:')
+                      ? `${device.venueName || parent.slice(4)} (Venue)`
+                      : parent.startsWith('ent:')
+                        ? `${device.entityName || parent.slice(4)} (Entity)`
+                        : parent}
+                  </option>
+                )}
+
+              {sortedEntities.length > 0 && (
+                <optgroup label="Entities">
+                  {sortedEntities.map((ent) => (
+                    <option key={`ent:${ent.id}`} value={`ent:${ent.id}`}>
+                      {ent.name}{ent.description ? `: ${ent.description}` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+
+              {sortedVenues.length > 0 && (
+                <optgroup label="Venues">
+                  {sortedVenues.map((ven) => (
+                    <option key={`ven:${ven.id}`} value={`ven:${ven.id}`}>
+                      {ven.name}{ven.description ? `: ${ven.description}` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </Box>
+
+          {/* 7. Release Candidates Only */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Release Candidates Only
+            </Text>
+            <select
+              value={rcOnly}
+              onChange={(e) => setRcOnly(e.target.value as 'inherit' | 'yes' | 'no')}
+              style={selectStyle}
+            >
+              <option value="inherit">Inherit</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </Box>
+        </SimpleGrid>
+
+        {/* Row 2: Operational Rules, Classification & Overrides */}
+        <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} gap={4} pt={2}>
+          {/* 8. RRM */}
+          <RrmEditorField
+            value={rrm}
+            onChange={setRrm}
+            selectStyle={selectStyle}
+          />
+
+          {/* 9. Firmware Upgrade */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Firmware Upgrade
+            </Text>
+            <select
+              value={firmwareUpgrade}
+              onChange={(e) =>
+                setFirmwareUpgrade(e.target.value as 'inherit' | 'yes' | 'no')
+              }
+              style={selectStyle}
+            >
+              <option value="inherit">Inherit</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </Box>
+
+          {/* 10. Device Class */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Device Class <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <select
+              value={devClass}
+              onChange={(e) =>
+                setDevClass(e.target.value as 'any' | 'entity' | 'venue' | 'subscriber')
+              }
+              style={selectStyle}
+            >
+              <option value="any">any</option>
+              <option value="entity">entity</option>
+              <option value="venue">venue</option>
+              <option value="subscriber">subscriber</option>
+            </select>
+          </Box>
+
+          {/* 11. Ignore Configuration Overrides */}
+          <Box>
+            <Text fontSize="12px" fontWeight="600" color={themeColors.text.primary} mb={1}>
+              Ignore Configuration Overrides <span style={{ color: '#ef4444' }}>*</span>
+            </Text>
+            <Flex align="center" h="36px" gap={2.5}>
+              <Box
+                w="38px"
+                h="22px"
+                borderRadius="full"
+                bg={ignoreOverrides ? '#0d9488' : '#cbd5e1'}
+                position="relative"
+                cursor="pointer"
+                transition="background-color 0.2s"
+                onClick={() => setIgnoreOverrides(!ignoreOverrides)}
+              >
+                <Box
+                  w="18px"
+                  h="18px"
+                  borderRadius="full"
+                  bg="#ffffff"
+                  position="absolute"
+                  top="2px"
+                  left={ignoreOverrides ? '18px' : '2px'}
+                  transition="left 0.2s"
+                  boxShadow="0 1px 2px rgba(0,0,0,0.25)"
+                />
+              </Box>
+              <Text fontSize="12px" fontWeight="500" color={ignoreOverrides ? '#0d9488' : themeColors.text.muted}>
+                {ignoreOverrides ? 'Yes' : 'No'}
+              </Text>
+            </Flex>
+          </Box>
+        </SimpleGrid>
+
+        {/* Save Bar */}
+        <Flex justify="flex-end" pt={4} borderTop="1px solid" borderColor={themeColors.panel.divider}>
+          <Button
+            size="sm"
+            bg={device.provTag ? themeColors.brand.primary : '#94a3b8'}
+            color="#ffffff"
+            _hover={device.provTag ? { bg: themeColors.brand.primaryHover } : undefined}
+            onClick={device.provTag ? handleSave : undefined}
+            disabled={!device.provTag || updateMutation.isPending}
+            cursor={device.provTag ? 'pointer' : 'not-allowed'}
+            title={!device.provTag ? 'Configuration editing is disabled because inventory records failed to load' : 'Save Changes'}
+            gap={1.5}
+            px={5}
+          >
+            {updateMutation.isPending ? <Spinner size="xs" /> : <Icon name="check" size={14} />}
+            {device.provTag ? 'Save Changes' : 'Editing Disabled (No Inventory)'}
+          </Button>
+        </Flex>
+      </VStack>
+    </Box>
+  );
+};
+
+export default MainConfigSubTab;
