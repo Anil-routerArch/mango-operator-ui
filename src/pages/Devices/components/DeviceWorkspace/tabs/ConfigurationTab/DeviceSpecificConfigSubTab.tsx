@@ -183,7 +183,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
   };
 
   const handleDeleteConfig = async () => {
-    if (!window.confirm('Are you sure you want to reset this device-specific configuration? This will detach the configuration without deleting the shared template.')) {
+    if (!window.confirm('Are you sure you want to detach this device-specific configuration? The shared template and device rules will be preserved.')) {
       return;
     }
     try {
@@ -195,27 +195,17 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       // preserving the profile for any other devices referencing it.
       const authoritativeDevClass = device.provTag?.devClass || 'any';
 
-      // Field-scoped update (Issue #4):
-      // Reset Configuration clears deviceConfiguration and resets deviceRules without touching
-      // unrelated entity/venue, subscriber, state, hardware type, or class metadata.
+      // Match OWPROV UI behavior: detach only the modular configuration. Device rules and
+      // unrelated inventory metadata remain unchanged.
       await updateMutation.mutateAsync({
         serialNumber: device.serialNumber,
         payload: {
           name: device.name || device.serialNumber,
           devClass: authoritativeDevClass,
           deviceConfiguration: '',
-          deviceRules: {
-            ...(device.provTag?.deviceRules || {}),
-            rrm: 'inherit',
-            firmwareUpgrade: 'no',
-            rcOnly: 'no',
-          },
         } as any,
       });
 
-      setRrm('inherit');
-      setFirmwareUpgrade('no');
-      setFirmwareRCOnly(false);
       setCurrentJson('{}');
       setLatestSectionsState(null);
       if (configId) {
@@ -226,7 +216,7 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
       queryClient.invalidateQueries({ queryKey: ['paginated-fleet-devices'] });
 
       toaster.create({
-        title: 'Configuration Reset',
+        title: 'Configuration Detached',
         description: 'Device-specific configuration detached successfully.',
         type: 'success',
       });
@@ -407,8 +397,8 @@ export const DeviceSpecificConfigSubTab: React.FC<DeviceSpecificConfigSubTabProp
               _hover={{ bg: '#b91c1c' }}
               _active={{ bg: '#991b1b' }}
               onClick={handleDeleteConfig}
-              title="Reset Configuration"
-              aria-label="Reset Configuration"
+              title="Detach Device-Specific Configuration"
+              aria-label="Detach Device-Specific Configuration"
             >
               <Icon name="trash" size={16} />
             </Button>

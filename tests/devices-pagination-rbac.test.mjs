@@ -1845,6 +1845,11 @@ test('DeviceSpecificConfigSubTab implements Copy-On-Write (COW) to prevent mutat
     content.includes("deviceConfiguration: ''"),
     'handleDeleteConfig must detach by setting deviceConfiguration to empty string'
   );
+  assert.strictEqual(
+    deleteConfigBlock.includes('deviceRules:'),
+    false,
+    'handleDeleteConfig must preserve existing device rules'
+  );
 });
 
 test('Multi-device simulation: updating or resetting one device does not affect another device sharing the same configuration (Issue #1)', async () => {
@@ -1935,7 +1940,6 @@ test('Multi-device simulation: updating or resetting one device does not affect 
     inventoryDB.set(serialNumber, {
       ...dev,
       deviceConfiguration: '',
-      deviceRules: { rrm: 'inherit', firmwareUpgrade: 'no', rcOnly: 'no' },
     });
   };
 
@@ -1945,10 +1949,17 @@ test('Multi-device simulation: updating or resetting one device does not affect 
   // 4. Device BBB has detached its configuration pointer
   assert.strictEqual(inventoryDB.get('dev-serial-BBB').deviceConfiguration, '');
 
-  // 5. The shared configuration still exists in configurationsDB and was NOT deleted
+  // 5. Device rules are unchanged, matching OWPROV UI detach behavior
+  assert.deepStrictEqual(inventoryDB.get('dev-serial-BBB').deviceRules, {
+    rrm: 'inherit',
+    firmwareUpgrade: 'yes',
+    rcOnly: 'no',
+  });
+
+  // 6. The shared configuration still exists in configurationsDB and was NOT deleted
   assert.ok(configurationsDB.has(SHARED_CONFIG_ID), 'Shared configuration must not be deleted on reset');
 
-  // 6. Error handling simulation: failure during creation does not alter device tag
+  // 7. Error handling simulation: failure during creation does not alter device tag
   const devBeforeFailedAttempt = JSON.parse(JSON.stringify(inventoryDB.get('dev-serial-AAA')));
   const simulateFailedSave = async (serialNumber) => {
     try {

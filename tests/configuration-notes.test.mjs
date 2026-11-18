@@ -378,17 +378,14 @@ test('Simulation: field-scoped saving prevents overwriting unrelated inventory p
   assert.strictEqual(dbRecord.deviceType, 'edgecore_ecs4100_52p', 'Config save must not overwrite deviceType');
 
   // Step 3: DeviceSpecificConfigSubTab resets configuration to inherited
+  const rulesBeforeDetach = JSON.parse(JSON.stringify(dbRecord.deviceRules));
   simulateOwprovPut({
     name: dbRecord.name,
     devClass: dbRecord.devClass,
     deviceConfiguration: '',
-    deviceRules: {
-      firmwareUpgrade: 'no',
-      rcOnly: 'no',
-      rrm: 'inherit',
-    },
   });
   assert.strictEqual(dbRecord.deviceConfiguration, '', 'Configuration should be detached');
+  assert.deepStrictEqual(dbRecord.deviceRules, rulesBeforeDetach, 'Detaching config must preserve deviceRules');
   assert.strictEqual(dbRecord.entity, 'entity-uuid-abc', 'Resetting config must not unlink entity');
   assert.strictEqual(dbRecord.subscriber, 'sub-uuid-xyz', 'Resetting config must not unlink subscriber');
 
