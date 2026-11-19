@@ -6,10 +6,10 @@
 
 | Attribute | Value |
 | :--- | :--- |
-| **Document Version** | 1.1.0 |
-| **Modules** | Administration (Users & Access), Configuration (Configuration Profiles & Modular Configurations) |
+| **Document Version** | 1.2.0 |
+| **Modules** | Properties & Venues, Administration (Users & Access), Configuration (Configuration Profiles & Modular Configurations) |
 | **Target Codebase** | `mango-operator-ui` (React / TypeScript / TanStack Query / Vite) |
-| **Reference Implementation** | `ra-wlan-cloud-owprov-ui` (`src/hooks/Network/Users.ts`, `src/hooks/Network/ManagementRoles.ts`, `src/hooks/Network/VariableBlocks.ts`, `src/hooks/Network/Configurations.ts`) |
+| **Reference Implementation** | `ra-wlan-cloud-owprov-ui` for established OWPROV workflows; `mango-operator-ui/src/pages/Properties` and `mango-mdu-service/internal/services/property_service.go` for the Phase 1 Property module |
 | **Downstream Microservices** | `OWSEC` (Port 9002), `OWPROV` (Port 9005 / V1 & V2), `OWGW` (Port 9000) |
 | **Target Audience** | Frontend Engineers, QA Automation Engineers, Backend Integration Engineers |
 | **Status** | Authoritative Normative Specification |
@@ -27,9 +27,10 @@
 > 2. **Policies Tab (Administration):** Management policy catalog, headline policy KPIs, resource permissions visualizer, overview aggregation API, and root-only policy lifecycle administration.
 > 3. **Configuration Profiles Tab (Configuration):** Section-level reusable configuration building blocks mapping directly to OWPROV `VariableBlock` resources, with specialized form builders, validation rules, and JSON wire serializers across eight (8) foundational profile sections (`radio`, `interface.ssid`, `interface.ipv4`, `interface.ssid.radius`, `interface.vlan`, `interface.tunnel`, `interface.captive`, `interface.ssid.openroaming`).
 > 4. **Configurations Tab (Configuration):** Modular multi-section configuration authoring, deep recursive variable block scanning (`__variableBlock`) for read-time name resolution (`?select=`), lossless configuration editing with root `variables[]` preservation, and lifecycle management.
+> 5. **Properties Module (Operations):** Authorized Property/Venue hierarchy, portfolio and scope workspaces, direct OWPROV metadata/CRUD workflows, MDU operational aggregation, scoped Devices, and scoped Configurations.
 >
 > **Scope of this Document:**  
-> This specification covers the core modules of Phase 1: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab, its resource permissions configuration, and aggregation integrations; **Part 3** details the Configuration Profiles Tab and supported section schemas; **Part 4** details the Modular Configurations Tab, read-only variable extraction algorithms, lossless editing guarantees, and deployment lifecycle. This document provides the authoritative normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
+> This specification covers the core modules of Phase 1: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab; **Part 3** details Configuration Profiles; **Part 4** details Modular Configurations; and **Part 5** details the Properties module, its OWPROV/OWGW ownership boundaries, MDU aggregation contracts, direct OWPROV lifecycle workflows, and remaining scale/deferred capabilities. This document provides the authoritative normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
 
 ---
 
@@ -2316,6 +2317,455 @@ export interface ModularConfigurationApiResponse {
 - **TC-CFG-012 (Configuration Deletion):** Delete an unassigned configuration. Verify `DELETE /api/v1/configuration/{id}` executes and refreshes table.
 - **TC-CFG-013 (Assigned Configuration Deletion Guard):** Attempt to delete an assigned configuration (`inUse` non-empty). Verify deletion is blocked with an explanatory dialog and `StillInUse` error handling.
 - **TC-CFG-014 (List Pagination Fleet Scaling):** Ingest more than 500 configurations or profiles. Verify iterative batch ingestion loops collect all records across page boundaries without silent truncation.
+
+---
+
+# Part 5: Properties Module Specification
+
+## 36. Architecture and Domain Mapping
+
+### 36.1 Service Ownership
+
+```text
+                         +-------------------------+
+                         | mango-operator-ui       |
+                         | Property workspace      |
+                         +-----------+-------------+
+                                     |
+               +---------------------+---------------------+
+               |                                           |
+               | combined operational reads                | authorized metadata,
+               |                                           | CRUD and configurations
+               v                                           v
+   +-------------------------+                 +-------------------------+
+   | mango-mdu-service       |---------------->| OWPROV                  |
+   | hierarchy normalization |                 | Entity/Venue hierarchy  |
+   | scope aggregation       |                 | Contacts/Locations      |
+   | paging/data quality     |                 | Inventory/Configurations|
+   +------------+------------+                 +-------------------------+
+                |
+                | current Device status
+                v
+   +-------------------------+
+   | OWGW                    |
+   | Connection/device state |
+   | Sanity/health signals   |
+   +-------------------------+
+```
+
+1. OWPROV is authoritative for Entity/Property, Venue, Contact, Location, inventory ownership, and scoped Configuration data.
+2. OWGW is authoritative for current Device connection and operational state it owns.
+3. MDU normalizes and aggregates combined operational reads but does not maintain another Property hierarchy store.
+4. The UI uses MDU when a read combines OWPROV and OWGW at scope/fleet scale.
+5. Phase 1 uses direct authenticated UI-to-OWPROV calls for scope details and lifecycle, Contacts, Locations, eligible Venue Locations, and scoped Configuration reads. OWPROV performs authorization.
+
+### 36.2 Product Mapping
+
+| Product term | Backend representation | Rule |
+|---|---|---|
+| Property | Every authorized OWPROV Entity | Root/operator/normal/parent/child classifications do not change the UI term. |
+| Child Property | OWPROV Entity with an Entity parent | Recursively represented as Property. |
+| Venue | Every authorized OWPROV Venue | May bind directly to an Entity or another Venue. |
+| Nested Venue | OWPROV Venue with a Venue parent | Recursively represented as Venue. |
+| Property/Venue Device | OWPROV InventoryTag | Bound to Entity XOR Venue. |
+| Operational state | OWGW Device result | Normalized by MDU. |
+
+Synthetic discovery wrappers such as `Assigned Scopes` are not domain objects and must be flattened. Unauthorized ancestors, names, identifiers, paths, and counts must not be exposed.
+
+### 36.3 Inventory Scope Rule
+
+An Entity inventory query returns directly bound Devices and does not by itself represent all Devices beneath the Property. Recursive Property scope is the deduplicated union of direct Entity Devices plus Devices belonging to included descendant Entities and Venues. Recursive Venue scope is the deduplicated union of the selected Venue and included descendant Venues.
+
+## 37. Existing OWPROV Contracts
+
+The browser uses the established authenticated OWPROV client. Authorization and dependency validation remain OWPROV responsibilities.
+
+| Capability | Existing endpoint or query |
+|---|---|
+| Authorized hierarchy | `GET /api/v1/entity?getTree=true` |
+| Entity detail | `GET /api/v1/entity/{uuid}?withExtendedInfo=true` |
+| Entity create/update/delete | `POST /api/v1/entity/0`, `PUT/DELETE /api/v1/entity/{uuid}` |
+| Venue detail | `GET /api/v1/venue/{uuid}?withExtendedInfo=true` |
+| Venue create/update/delete | `POST /api/v1/venue/0`, `PUT/DELETE /api/v1/venue/{uuid}` |
+| Contacts | `GET/POST /api/v1/contact[/0]`, `GET/PUT/DELETE /api/v1/contact/{uuid}` |
+| Locations | `GET/POST /api/v1/location[/0]`, `GET/PUT/DELETE /api/v1/location/{uuid}` |
+| Eligible Venue Locations | `GET /api/v1/venue?locationsForVenue={venueId}` |
+| Direct Entity inventory | `GET /api/v1/inventory?entity={uuid}` |
+| Direct Venue inventory | `GET /api/v1/inventory?venue={uuid}` |
+| Configurations | `GET /api/v1/configuration` and existing detail/lifecycle queries |
+| Computed affected Devices | `GET /api/v1/configuration/{uuid}?computedAffected=true` |
+
+The current OWPROV Configuration model does not provide authoritative product lifecycle, semantic category, or complete version-history values. The UI must not synthesize them.
+
+## 38. Existing Public MDU Property APIs
+
+### 38.1 Authorized Tree
+
+```http
+GET /api/v1/properties/tree
+```
+
+Response:
+
+```ts
+interface PropertyTreeResponse {
+  nodes: PropertyTreeNode[];
+}
+
+interface PropertyTreeNode {
+  id: string;
+  type: 'property' | 'venue';
+  name: string;
+  devices: string[];
+  children: PropertyTreeNode[];
+  summary?: ScopeSummary;
+}
+```
+
+Every OWPROV Entity is normalized to `property`; every OWPROV Venue is normalized to `venue`.
+
+### 38.2 Portfolio
+
+```http
+GET /api/v1/properties/portfolio
+```
+
+```ts
+interface PropertyPortfolioResponse {
+  nodes: PropertyTreeNode[];
+  summary: ScopeSummary;
+  dataQuality: DataQuality;
+  propertyCount: number;
+  venueCount: number;
+  nestedVenueCount: number;
+}
+```
+
+The current implementation aggregates authorized row summaries in one request. Hierarchy metadata remains separately cacheable through the tree endpoint. Lazy per-node aggregation is a future scale optimization if performance testing requires it.
+
+### 38.3 Scope Overview
+
+```http
+GET /api/v1/properties/{propertyId}/overview
+GET /api/v1/venues/{venueId}/overview
+```
+
+```ts
+interface ScopeOverviewResponse {
+  id: string;
+  type: 'property' | 'venue';
+  name: string;
+  summary: ScopeSummary;
+  children: Array<{
+    id: string;
+    type: 'property' | 'venue';
+    name: string;
+    summary: ScopeSummary;
+  }>;
+  dataQuality: DataQuality;
+  includesDescendants: boolean;
+}
+```
+
+A Property may return both direct child Properties and direct Venues. A Venue returns direct nested Venues. Summary values may include descendants as identified by `includesDescendants`.
+
+### 38.4 Scoped Devices
+
+```http
+GET /api/v1/properties/{propertyId}/devices
+GET /api/v1/venues/{venueId}/devices
+```
+
+| Query | Current contract |
+|---|---|
+| `pageIndex` | Zero-based integer; default `0`. |
+| `pageSize` | Bounded integer; default `25`. |
+| `search` | Device name or normalized serial search. |
+| `venue` | Authorized descendant Venue filter. |
+| `availability` | `online`, `offline`, or `unknown`. |
+| `health` | `healthy`, `warning`, `critical`, or `unknown`. |
+| `type` | Device type/class filter. |
+| `includeDescendants` | Include descendants when true. |
+
+Search and filters execute before pagination. `orderBy` and `direction` are not implemented.
+
+```ts
+interface ScopedDevicesResponse {
+  devices: PropertyDevice[];
+  totalCount: number;
+  pageIndex: number;
+  pageSize: number;
+  totalPages: number;
+  summary: ScopeSummary;
+  dataQuality: DataQuality;
+}
+```
+
+## 39. Normalized Operational Contracts
+
+```ts
+type Availability = 'online' | 'offline' | 'unknown';
+type Health = 'healthy' | 'warning' | 'critical' | 'unknown';
+type DataQualityState = 'complete' | 'partial' | 'stale' | 'unavailable';
+
+interface ScopeSummary {
+  totalDevices: number;
+  onlineDevices: number;
+  offlineDevices: number;
+  unknownDevices: number;
+  needsAttention: number;
+  healthyDevices: number;
+  warningDevices: number;
+  criticalDevices: number;
+  unknownHealth: number;
+  health: Health;
+  primaryReason?: string;
+  statusMeasuredFor: number;
+}
+
+interface DataQuality {
+  state: DataQualityState;
+  partial: boolean;
+  unknownDeviceCount: number;
+  asOf: string;
+  errors: Array<{
+    source: string;
+    code: string;
+    retryable: boolean;
+  }>;
+}
+```
+
+A missing Device in an incomplete OWGW contribution is Unknown, not Offline. Zero is authoritative only when the response is complete for that measurement. HTTP 200 may contain partial data only when `dataQuality` explicitly reports it.
+
+## 40. Health and Availability
+
+Availability and health are independent dimensions. Availability uses authoritative current connection/report state and otherwise resolves to Unknown when the evidence is missing or incomplete.
+
+The current MDU implementation derives Device health from OWGW sanity (`>= 80` Healthy, `>= 50` Warning, otherwise Critical). Scope health includes provisional rollup rules, including Critical when any Device is Critical or the offline ratio reaches 10 percent. These thresholds are implementation defaults, not an approved immutable policy, and are not currently returned with a calculation version.
+
+Before final health-policy acceptance, MDU must calibrate these thresholds against the Phase 1 policy and should expose a `calculationVersion`. The UI consumes normalized health and must not independently calculate it. Zero-Device scope health is Unknown/Empty rather than Healthy.
+
+## 41. UI Routing and Structure
+
+Implemented routes:
+
+```text
+/properties
+/properties/:scopeType/:scopeId/:tab
+```
+
+`scopeType` is `property` or `venue`. The workspace supports Overview, Properties & Venues/Nested Venues, Devices, Configuration, and Details. Unknown route values must normalize to a safe tab.
+
+```text
+PropertiesPage
+├── PropertyPortfolio
+│   ├── summary cards and filters
+│   ├── hierarchy/list and conditional map view
+│   └── selected-scope drawer
+└── PropertyWorkspace
+    ├── ScopeHeader and ScopeTabs
+    ├── ScopeOverviewTab
+    ├── ScopeChildrenTab
+    ├── ScopeDevicesTab
+    ├── ScopeConfigurationsTab
+    └── ScopeDetailsTab
+        ├── metadata, behavior, and notes
+        ├── Contacts and ContactEditorModal
+        └── Locations and LocationEditorModal
+```
+
+Existing Device and Configuration workspaces must be reused rather than duplicating their permission, command, or editing behavior.
+
+## 42. Direct OWPROV Details and Lifecycle
+
+### 42.1 Scope Reads and Updates
+
+Details use `entity/{id}?withExtendedInfo=true` or `venue/{id}?withExtendedInfo=true`. Updates must preserve unknown fields, Device Rules, collections, and associations not owned by the form.
+
+### 42.2 Property Create
+
+```json
+{
+  "name": "Sunrise Apartments",
+  "parent": "authorized-parent-entity-uuid",
+  "description": "Optional description",
+  "notes": [{ "note": "Optional note" }],
+  "sourceIP": [],
+  "deviceRules": {}
+}
+```
+
+The parent is fixed by launch context or selected explicitly. A context-free child Property create must not be submitted.
+
+### 42.3 Venue Create
+
+Top-level Venue supplies `entity`; nested Venue supplies `parent`. Exactly one binding is submitted.
+
+```json
+{
+  "name": "Tower A",
+  "entity": "property-uuid",
+  "description": "Optional description",
+  "notes": [{ "note": "Optional note" }],
+  "sourceIP": [],
+  "deviceRules": {},
+  "location": "optional-location-uuid"
+}
+```
+
+### 42.4 Delete
+
+Scope deletion requires explicit confirmation. OWPROV dependency validation is authoritative. The UI must not imply cascading deletion.
+
+## 43. Contacts and Locations
+
+Contacts and Locations use direct OWPROV reads and mutations. Selected records are retrieved with `withExtendedInfo=true` and `select={ids}` where supported.
+
+1. Entity-owned Contact/Location payloads carry the owning Entity.
+2. A newly created Venue Contact is associated by updating the Venue's `contacts` collection.
+3. A newly created Venue Location is associated by updating the Venue's single `location` reference.
+4. `GET /api/v1/venue?locationsForVenue={venueId}` supplies available Location choices.
+5. Contact and Location creation/editing are implemented in the new workspace.
+6. Contact/Location deletion and appending/editing existing scope notes are not currently implemented and must not be presented as completed.
+7. The UI must not invent a persistent primary-Contact designation.
+
+## 44. Scoped Configurations
+
+Current status: **direct OWPROV workaround**.
+
+The UI retrieves authorized modular Configurations through the existing OWPROV list contract and filters records against the selected scope and descendant IDs. Only authoritative fields are displayed. Version, lifecycle, and semantic category values must not be invented.
+
+The following endpoints are **proposed**, not implemented:
+
+```http
+GET /api/v1/properties/{propertyId}/configurations
+GET /api/v1/venues/{venueId}/configurations?includeDescendants=true
+```
+
+A future contract must perform scope filtering before pagination and preserve OWPROV authorization. OWGW Gateway Default Configurations are a different concept and must remain separately labeled.
+
+## 45. Query and Cache Strategy
+
+```text
+['property-tree']
+['property-portfolio']
+['scope-overview', scopeType, scopeId]
+['scope-details', scopeType, scopeId]
+['scope-contacts', sortedContactIds]
+['scope-locations', sortedLocationIds]
+['available-venue-locations', venueId]
+['scope-devices', scopeType, scopeId, filters]
+['scope-configurations', sortedScopeIds]
+```
+
+Hierarchy metadata and operational summaries use separate freshness windows. Scope mutations invalidate tree, portfolio, details, and affected overview queries. Status refresh failures should retain safe previous values as stale, with their age, rather than replacing them with fabricated zeros.
+
+## 46. Current Implementation Gaps
+
+The following remain required work and must not be documented as completed:
+
+1. Server-side Device sorting.
+2. Venue and Device-type controls in the scoped Devices UI, although fields exist in the backend query model.
+3. Unsaved-form navigation warnings.
+4. Capability-discovery-driven action visibility; backend `403` handling remains mandatory meanwhile.
+5. Contact/Location delete workflows and scope-note append/edit in the new workspace.
+6. Server-side paginated scoped Configuration aggregation.
+7. Approved/versioned health thresholds.
+8. Historical Property/Venue health and availability.
+9. Portfolio-wide map geometry and historical health trend data.
+
+## 47. Proposed OWPROV Scale Enhancement
+
+For efficient Property-scale inventory, OWPROV should add an authorization-safe descendant-aware query equivalent to:
+
+```http
+GET /api/v1/inventory
+  ?entity={propertyId}
+  &includeVenues=true
+  &includeDescendants=true
+  &search={text}
+  &offset={offset}
+  &limit={limit}
+  &orderBy={field}
+```
+
+It must include direct Entity Devices and eligible descendant Entity/Venue Devices, apply filters before pagination, return the matching total, and avoid leaking denied scopes. Until then, MDU may resolve authorized scope IDs, retrieve and deduplicate serials, batch OWGW status requests, and report partial data with explicit concurrency and scale limits.
+
+## 48. Deferred Capabilities
+
+| Capability | Required platform addition |
+|---|---|
+| 24-hour Property/Venue trends | Persisted aggregate time series or analytics read model |
+| Property image | Media storage and Entity image reference |
+| Property type/owner/manager | Structured Entity metadata/relationship |
+| Authoritative primary Contact | Backend reference or validated flag |
+| Portfolio map | Reliable geospatial coordinates/geometry |
+| Configuration version/history | Versioned Configuration contract |
+| Draft/Active/Archived | Configuration lifecycle state and transitions |
+| Configuration category | Typed metadata contract |
+
+Missing trend buckets must never be rendered as zero, and historical views must not fan out to every Device at request time.
+
+## 49. Error and Authorization Behavior
+
+| Condition | Required behavior |
+|---|---|
+| Hierarchy unavailable | Full workspace error with retry; no fabricated scopes. |
+| Operational result partial | Show known values plus Unknown counts and a visible warning. |
+| Forbidden scope | Permission-safe denial without resource detail leakage. |
+| Missing scope | Not-found state and safe navigation to authorized content. |
+| Mutation validation failure | Preserve safe input and show authoritative backend error. |
+| Dependency-protected delete | Explain dependencies; do not report success. |
+| Status refresh failure | Retain safe stale values with timestamp and retry. |
+| Configuration affected-count failure | Keep metadata and mark count unavailable. |
+
+UI visibility is not a security boundary. OWPROV authorizes direct reads/mutations; MDU authorizes public aggregation calls and forwards authenticated user context plus required service identity downstream.
+
+## 50. Accessibility and Responsive Behavior
+
+Scope tabs and hierarchy controls must support keyboard navigation and a visible focus indication. Selected tabs may use a bottom border as their selected-state treatment, but keyboard focus must remain perceivable through a separate accessible focus style. Status must not rely on color alone. Desktop may use a detail drawer; small viewports require a full-width or full-page equivalent.
+
+## 51. Test Requirements
+
+### 51.1 MDU
+
+- Normalize every Entity to Property and every Venue to Venue.
+- Flatten synthetic wrappers without leaking unauthorized ancestors.
+- Deduplicate direct and descendant Devices.
+- Apply search/filter before zero-based pagination.
+- Convert incomplete status evidence to Unknown rather than Offline.
+- Return partial/unavailable data quality for downstream failures.
+- Return Unknown/Empty health for zero-Device scopes.
+- Keep child Property and Venue summaries correctly typed.
+
+### 51.2 UI
+
+- Preserve scope and active tab in the URL.
+- Render Property child Properties and direct Venues separately.
+- Create Property with contextual parent.
+- Create Venue with `entity` XOR `parent`.
+- Create/edit full Contact and Location forms and associate Venue records correctly.
+- Launch Create Location from the Venue Location selector.
+- Render partial/Unknown separately from Offline.
+- Use server totals and zero-based pagination for scoped Devices.
+- Exclude fabricated Configuration lifecycle/version/category.
+- Preserve visible keyboard focus and permission-safe errors.
+
+### 51.3 Scale
+
+Validate 10,000- and 50,000-Device Properties, deep Venue nesting, concurrent portfolio/Device requests, failed OWGW batches, and searches matching records beyond the first logical page. Fleet-scale approval requires agreed latency and resource ceilings.
+
+## 52. Property Module Definition of Done
+
+1. Every displayed field is authoritative or clearly marked unavailable.
+2. Authorized Property/Venue hierarchy and recursive Device scope are correct.
+3. Search/filter/pagination operate over the complete selected scope.
+4. Unknown and partial data cannot be mistaken for Offline, Healthy, or zero.
+5. Direct OWPROV lifecycle operations preserve unmanaged data and associations.
+6. Existing Device and Configuration workflows are reused consistently.
+7. Existing, workaround, proposed, deferred, and incomplete capabilities remain explicitly distinguished.
+8. Required MDU/UI tests and agreed scale tests pass.
 
 
 
