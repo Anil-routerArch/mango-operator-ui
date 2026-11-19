@@ -9,7 +9,7 @@
 | **Document Version** | 1.2.0 |
 | **Modules** | Properties & Venues, Administration (Users & Access), Configuration (Configuration Profiles & Modular Configurations) |
 | **Target Codebase** | `mango-operator-ui` (React / TypeScript / TanStack Query / Vite) |
-| **Reference Implementation** | `ra-wlan-cloud-owprov-ui` for established OWPROV workflows; `mango-operator-ui/src/pages/Properties` and `mango-mdu-service/internal/services/property_service.go` for the Phase 1 Property module |
+| **Reference and implementation targets** | `ra-wlan-cloud-owprov-ui` for established OWPROV workflows; planned Property implementation under `mango-operator-ui/src/pages/Properties` and `mango-mdu-service/internal/services/property_service.go` after this specification is approved |
 | **Downstream Microservices** | `OWSEC` (Port 9002), `OWPROV` (Port 9005 / V1 & V2), `OWGW` (Port 9000) |
 | **Target Audience** | Frontend Engineers, QA Automation Engineers, Backend Integration Engineers |
 | **Status** | Authoritative Normative Specification |
@@ -2322,6 +2322,9 @@ export interface ModularConfigurationApiResponse {
 
 # Part 5: Properties Module Specification
 
+> [!IMPORTANT]
+> **Delivery status:** Part 5 defines the target contract for a subsequent Properties implementation PR. The Property workspace and MDU Property routes described below are not present in the target branches at the time this documentation PR is reviewed. Routes, components, hooks, workflows, and MDU contracts in this part are therefore **planned/proposed**, unless an item is explicitly identified as an already available OWPROV or OWGW capability. This documentation is intended to merge first so that the implementation can be reviewed against an approved contract.
+
 ## 36. Architecture and Domain Mapping
 
 ### 36.1 Service Ownership
@@ -2355,9 +2358,9 @@ export interface ModularConfigurationApiResponse {
 
 1. OWPROV is authoritative for Entity/Property, Venue, Contact, Location, inventory ownership, and scoped Configuration data.
 2. OWGW is authoritative for current Device connection and operational state it owns.
-3. MDU normalizes and aggregates combined operational reads but does not maintain another Property hierarchy store.
-4. The UI uses MDU when a read combines OWPROV and OWGW at scope/fleet scale.
-5. Phase 1 uses direct authenticated UI-to-OWPROV calls for scope details and lifecycle, Contacts, Locations, eligible Venue Locations, and scoped Configuration reads. OWPROV performs authorization.
+3. The proposed MDU implementation will normalize and aggregate combined operational reads without maintaining another Property hierarchy store.
+4. The planned UI will use MDU when a read combines OWPROV and OWGW at scope/fleet scale.
+5. The planned UI will use direct authenticated UI-to-OWPROV calls for scope details and lifecycle, Contacts, Locations, eligible Venue Locations, and scoped Configuration reads. OWPROV will perform authoritative authorization.
 
 ### 36.2 Product Mapping
 
@@ -2397,7 +2400,9 @@ The browser uses the established authenticated OWPROV client. Authorization and 
 
 The current OWPROV Configuration model does not provide authoritative product lifecycle, semantic category, or complete version-history values. The UI must not synthesize them.
 
-## 38. Existing Public MDU Property APIs
+## 38. Proposed MDU Property API Contracts
+
+None of the six endpoints in this section are registered on the target `mango-mdu-service` main branch at the time this documentation PR is reviewed. They define the contracts that the MDU implementation PR must add before the planned UI integrates them.
 
 ### 38.1 Authorized Tree
 
@@ -2441,7 +2446,7 @@ interface PropertyPortfolioResponse {
 }
 ```
 
-The current implementation aggregates authorized row summaries in one request. Hierarchy metadata remains separately cacheable through the tree endpoint. Lazy per-node aggregation is a future scale optimization if performance testing requires it.
+The proposed initial implementation may aggregate authorized row summaries in one request. Hierarchy metadata remains separately cacheable through the tree endpoint. Lazy per-node aggregation is a future scale optimization if performance testing requires it.
 
 ### 38.3 Scope Overview
 
@@ -2476,7 +2481,7 @@ GET /api/v1/properties/{propertyId}/devices
 GET /api/v1/venues/{venueId}/devices
 ```
 
-| Query | Current contract |
+| Query | Proposed initial contract |
 |---|---|
 | `pageIndex` | Zero-based integer; default `0`. |
 | `pageSize` | Bounded integer; default `25`. |
@@ -2487,7 +2492,7 @@ GET /api/v1/venues/{venueId}/devices
 | `type` | Device type/class filter. |
 | `includeDescendants` | Include descendants when true. |
 
-Search and filters execute before pagination. `orderBy` and `direction` are not implemented.
+Search and filters must execute before pagination. `orderBy` and `direction` are deferred from the initial contract and must not be sent until added to MDU.
 
 ```ts
 interface ScopedDevicesResponse {
@@ -2542,20 +2547,25 @@ A missing Device in an incomplete OWGW contribution is Unknown, not Offline. Zer
 
 Availability and health are independent dimensions. Availability uses authoritative current connection/report state and otherwise resolves to Unknown when the evidence is missing or incomplete.
 
-The current MDU implementation derives Device health from OWGW sanity (`>= 80` Healthy, `>= 50` Warning, otherwise Critical). Scope health includes provisional rollup rules, including Critical when any Device is Critical or the offline ratio reaches 10 percent. These thresholds are implementation defaults, not an approved immutable policy, and are not currently returned with a calculation version.
+The proposed initial MDU algorithm derives Device health from OWGW sanity (`>= 80` Healthy, `>= 50` Warning, otherwise Critical). The proposed scope rollup includes Critical when any Device is Critical or the offline ratio reaches 10 percent. These thresholds are provisional defaults, not an approved immutable policy, and the proposed contract does not yet expose a calculation version.
 
 Before final health-policy acceptance, MDU must calibrate these thresholds against the Phase 1 policy and should expose a `calculationVersion`. The UI consumes normalized health and must not independently calculate it. Zero-Device scope health is Unknown/Empty rather than Healthy.
 
 ## 41. UI Routing and Structure
 
-Implemented routes:
+Planned routes:
 
 ```text
-/properties
-/properties/:scopeType/:scopeId/:tab
+React Router path: /properties
+Browser URL:       #/properties
+
+Proposed React Router path: /properties/:scopeType/:scopeId/:tab
+Proposed browser URL:       #/properties/:scopeType/:scopeId/:tab
 ```
 
-`scopeType` is `property` or `venue`. The workspace supports Overview, Properties & Venues/Nested Venues, Devices, Configuration, and Details. Unknown route values must normalize to a safe tab.
+The application uses `HashRouter`; route declarations omit `#`, while user-visible browser URLs include it. Only `/properties` is registered on the target branch. The selected-scope route is proposed for the implementation PR.
+
+`scopeType` is `property` or `venue`. The planned workspace will support Overview, Properties & Venues/Nested Venues, Devices, Configuration, and Details. Unknown route values must normalize to a safe tab.
 
 ```text
 PropertiesPage
@@ -2577,11 +2587,11 @@ PropertiesPage
 
 Existing Device and Configuration workspaces must be reused rather than duplicating their permission, command, or editing behavior.
 
-## 42. Direct OWPROV Details and Lifecycle
+## 42. Planned Direct OWPROV Details and Lifecycle
 
 ### 42.1 Scope Reads and Updates
 
-Details use `entity/{id}?withExtendedInfo=true` or `venue/{id}?withExtendedInfo=true`. Updates must preserve unknown fields, Device Rules, collections, and associations not owned by the form.
+The planned UI will read details through `entity/{id}?withExtendedInfo=true` or `venue/{id}?withExtendedInfo=true`. Updates must preserve unknown fields, Device Rules, collections, and associations not owned by the form.
 
 ### 42.2 Property Create
 
@@ -2618,23 +2628,31 @@ Top-level Venue supplies `entity`; nested Venue supplies `parent`. Exactly one b
 
 Scope deletion requires explicit confirmation. OWPROV dependency validation is authoritative. The UI must not imply cascading deletion.
 
-## 43. Contacts and Locations
+## 43. Planned Contacts and Locations
 
-Contacts and Locations use direct OWPROV reads and mutations. Selected records are retrieved with `withExtendedInfo=true` and `select={ids}` where supported.
+Contacts and Locations will use direct OWPROV reads and mutations. Selected records will be retrieved with `withExtendedInfo=true` and `select={ids}` where supported.
 
 1. Entity-owned Contact/Location payloads carry the owning Entity.
 2. A newly created Venue Contact is associated by updating the Venue's `contacts` collection.
 3. A newly created Venue Location is associated by updating the Venue's single `location` reference.
 4. `GET /api/v1/venue?locationsForVenue={venueId}` supplies available Location choices.
-5. Contact and Location creation/editing are implemented in the new workspace.
-6. Contact/Location deletion and appending/editing existing scope notes are not currently implemented and must not be presented as completed.
+5. Contact and Location creation/editing are required in the initial Property workspace implementation.
+6. Contact/Location deletion and appending/editing existing scope notes are deferred from the initial implementation increment and must not be presented as completed.
 7. The UI must not invent a persistent primary-Contact designation.
 
-## 44. Scoped Configurations
+## 44. Planned Scoped Configurations
 
-Current status: **direct OWPROV workaround**.
+Initial integration design: **direct OWPROV workaround**.
 
-The UI retrieves authorized modular Configurations through the existing OWPROV list contract and filters records against the selected scope and descendant IDs. Only authoritative fields are displayed. Version, lifecycle, and semantic category values must not be invented.
+The planned UI will retrieve authorized modular Configurations through the existing OWPROV list contract and filter records against the selected scope and descendant IDs. Only authoritative fields may be displayed. Version, lifecycle, and semantic category values must not be invented.
+
+Authorization and completeness rules for this workaround are mandatory:
+
+1. OWPROV must evaluate the authenticated user's scope and permissions before returning each Configuration record. The list response delivered to the browser must contain only Configurations the user is authorized to read.
+2. Browser-side scope filtering may only narrow that already-authorized result set. It is a presentation/scoping operation and must never be treated as an authorization boundary.
+3. The UI must retrieve every authorized list page before claiming that its client-filtered scoped result is complete. It must not stop at an arbitrary page or record limit.
+4. If any page fails, is truncated, or cannot be confirmed complete, the UI may display already-authorized records that were successfully loaded only with an explicit partial-data warning. Counts, empty states, and "no Configurations" results must be marked unavailable or incomplete rather than presented as authoritative.
+5. If the OWPROV list contract cannot provide a reliable completion signal at the required scale, the workaround is not eligible for fleet-scale approval and the proposed server-paginated MDU scope contract must be used instead.
 
 The following endpoints are **proposed**, not implemented:
 
@@ -2643,9 +2661,9 @@ GET /api/v1/properties/{propertyId}/configurations
 GET /api/v1/venues/{venueId}/configurations?includeDescendants=true
 ```
 
-A future contract must perform scope filtering before pagination and preserve OWPROV authorization. OWGW Gateway Default Configurations are a different concept and must remain separately labeled.
+A future contract must enforce authorization, then apply scope filtering, search, and ordering before pagination, and must return completion/data-quality metadata. OWGW Gateway Default Configurations are a different concept and must remain separately labeled.
 
-## 45. Query and Cache Strategy
+## 45. Planned Query and Cache Strategy
 
 ```text
 ['property-tree']
@@ -2659,11 +2677,13 @@ A future contract must perform scope filtering before pagination and preserve OW
 ['scope-configurations', sortedScopeIds]
 ```
 
-Hierarchy metadata and operational summaries use separate freshness windows. Scope mutations invalidate tree, portfolio, details, and affected overview queries. Status refresh failures should retain safe previous values as stale, with their age, rather than replacing them with fabricated zeros.
+Hierarchy metadata and operational summaries must use separate freshness windows. Scope mutations must invalidate tree, portfolio, details, and affected overview queries. Status refresh failures should retain safe previous values as stale, with their age, rather than replacing them with fabricated zeros.
 
-## 46. Current Implementation Gaps
+## 46. Delivery Status and Planned Follow-up
 
-The following remain required work and must not be documented as completed:
+The Property UI is not present in the target branch for this documentation PR. Sections 41–45 specify the implementation that will follow after this document is approved and merged.
+
+The initial implementation PR must deliver the planned routes, component structure, operational reads, lifecycle forms, Contact/Location editing, scoped Devices, and scoped Configurations described above. The following are follow-up requirements and must not be documented as completed by that initial increment unless they are also implemented:
 
 1. Server-side Device sorting.
 2. Venue and Device-type controls in the scoped Devices UI, although fields exist in the backend query model.
@@ -2691,6 +2711,8 @@ GET /api/v1/inventory
 ```
 
 It must include direct Entity Devices and eligible descendant Entity/Venue Devices, apply filters before pagination, return the matching total, and avoid leaking denied scopes. Until then, MDU may resolve authorized scope IDs, retrieve and deduplicate serials, batch OWGW status requests, and report partial data with explicit concurrency and scale limits.
+
+The same authorization ordering applies to Configuration aggregation: authorization must occur before any result is returned to the browser, and any UI filtering may only narrow an already-authorized dataset. Partial pagination must be reported as incomplete rather than interpreted as an authoritative empty or total result.
 
 ## 48. Deferred Capabilities
 
