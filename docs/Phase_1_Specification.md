@@ -2421,13 +2421,13 @@ interface PropertyTreeNode {
   id: string;
   type: 'property' | 'venue';
   name: string;
-  devices: string[];
   children: PropertyTreeNode[];
-  summary?: ScopeSummary;
 }
 ```
 
 Every OWPROV Entity is normalized to `property`; every OWPROV Venue is normalized to `venue`.
+
+The tree response must not embed Device serial numbers, Device counts, or enumerate inventory. It is a structural navigation contract and must remain independently cacheable from Device inventory. Authoritative counts and their `dataQuality` are obtained through the portfolio/overview contracts. Device identities are available only through the paginated scoped-Device endpoints.
 
 ### 38.2 Portfolio
 
@@ -2514,15 +2514,15 @@ type Health = 'healthy' | 'warning' | 'critical' | 'unknown';
 type DataQualityState = 'complete' | 'partial' | 'stale' | 'unavailable';
 
 interface ScopeSummary {
-  totalDevices: number;
-  onlineDevices: number;
-  offlineDevices: number;
-  unknownDevices: number;
-  needsAttention: number;
-  healthyDevices: number;
-  warningDevices: number;
-  criticalDevices: number;
-  unknownHealth: number;
+  totalDevices: number | null;
+  onlineDevices: number | null;
+  offlineDevices: number | null;
+  unknownDevices: number | null;
+  needsAttention: number | null;
+  healthyDevices: number | null;
+  warningDevices: number | null;
+  criticalDevices: number | null;
+  unknownHealth: number | null;
   health: Health;
   primaryReason?: string;
   statusMeasuredFor: number;
@@ -2530,26 +2530,74 @@ interface ScopeSummary {
 
 interface DataQuality {
   state: DataQualityState;
-  partial: boolean;
-  unknownDeviceCount: number;
-  asOf: string;
-  errors: Array<{
-    source: string;
-    code: string;
-    retryable: boolean;
+  generatedAt: string;
+  inventoryComplete: boolean;
+  statusComplete: boolean;
+  authoritativeCounts: {
+    inventory: boolean;
+    availability: boolean;
+    health: boolean;
+    needsAttention: boolean;
+  };
+  inventoryAsOf?: string;
+  oldestStatusMeasurementAt?: string;
+  newestStatusMeasurementAt?: string;
+  freshnessWindowSeconds: number;
+  sources: Array<{
+    source: 'owprov-inventory' | 'owgw-status' | 'owgw-health' | 'configuration-state';
+    state: DataQualityState;
+    requestedCount?: number;
+    returnedCount?: number;
+    asOf?: string;
+    errors: Array<{
+      code: string;
+      retryable: boolean;
+    }>;
   }>;
 }
 ```
 
-A missing Device in an incomplete OWGW contribution is Unknown, not Offline. Zero is authoritative only when the response is complete for that measurement. HTTP 200 may contain partial data only when `dataQuality` explicitly reports it.
+`state` is the single authoritative quality classification; a separate `partial` boolean is intentionally omitted so contradictory combinations cannot occur:
+
+- `complete`: inventory enumeration is complete and every required operational contribution is present and within the freshness window;
+- `partial`: a usable subset exists, but one or more required pages, Devices, or signals are missing;
+- `stale`: the required result was collected, but one or more measurements are older than `freshnessWindowSeconds`;
+- `unavailable`: no safe operational result can be produced.
+
+When more than one condition applies, the response-level state uses this precedence: `unavailable` when no usable result exists; otherwise `partial` when any required contribution is missing; otherwise `stale` when the complete result is older than its freshness window; otherwise `complete`. Individual entries in `sources[]` retain their own state.
+
+`generatedAt` is always the time MDU produced the response. Source `asOf` values are optional because OWPROV inventory lists and OWGW Device lists do not provide a common snapshot timestamp. OWGW `lastContact`, health-check `recorded`, and dashboard `snapshot` values may be used only for the measurements they actually describe; they must not be promoted into a fabricated fleet-wide timestamp.
+
+OWPROV and OWGW expose offset/limit listing and separate count queries rather than a snapshot-consistent page envelope. MDU must therefore:
+
+1. exhaust every required authorized OWPROV inventory page;
+2. deduplicate serial numbers;
+3. reconcile the enumerated count with `countOnly` results for the same exact scopes where available;
+4. treat a page failure, count mismatch, or scope change detected during enumeration as incomplete inventory; and
+5. compare each OWGW batch response with the exact serials requested.
+
+If inventory enumeration is incomplete, `inventoryComplete` and every `authoritativeCounts` flag are false, aggregate count fields are `null`, scope health is `unknown`, and the UI must not present a total, zero, percentage, or empty state as authoritative. Successfully measured subset records may still be returned with `state: 'partial'` and a warning.
+
+If inventory is complete but OWGW status is incomplete, `totalDevices` remains authoritative. Every unmeasured Device is classified as Unknown, never Offline, so availability counts still reconcile as `onlineDevices + offlineDevices + unknownDevices = totalDevices`; health counts likewise include `unknownHealth`. The corresponding inventory, availability, and health count flags may therefore be true even while `statusComplete` is false. `needsAttention` must be `null` and its authority flag false unless every trigger required by the health policy was evaluated. The response state remains `partial`. HTTP 200 may carry partial or stale data only with this explicit metadata.
 
 ## 40. Health and Availability
 
-Availability and health are independent dimensions. Availability uses authoritative current connection/report state and otherwise resolves to Unknown when the evidence is missing or incomplete.
+Availability and health are independent dimensions. Availability uses authoritative current connection/report state and otherwise resolves to Unknown when evidence is missing, stale, or incomplete.
 
-The proposed initial MDU algorithm derives Device health from OWGW sanity (`>= 80` Healthy, `>= 50` Warning, otherwise Critical). The proposed scope rollup includes Critical when any Device is Critical or the offline ratio reaches 10 percent. These thresholds are provisional defaults, not an approved immutable policy, and the proposed contract does not yet expose a calculation version.
+OWGW exposes useful but separate inputs, including connection state, `lastContact`, sanity, memory/load, certificate information, and timestamped health-check records. A sanity score is one health signal; it is not the final Device-health decision and a high score cannot override another Critical or Warning condition.
 
-Before final health-policy acceptance, MDU must calibrate these thresholds against the Phase 1 policy and should expose a `calculationVersion`. The UI consumes normalized health and must not independently calculate it. Zero-Device scope health is Unknown/Empty rather than Healthy.
+The proposed MDU evaluation must use deterministic severity precedence and return `health`, `needsAttention`, `reasons[]`, `evaluatedAt`, `calculationVersion`, and whether required signals were complete:
+
+1. **Critical:** any confirmed critical condition wins, including an expired/invalid management certificate, crash-reboot loop, critical sustained memory/CPU exhaustion, confirmed uplink failure, or sanity below the approved critical threshold.
+2. **Warning:** when no Critical condition exists, any warning condition wins, including elevated memory/CPU, RF or radio degradation, certificate expiry approaching, Configuration drift/pending synchronization, failed/timed-out/expired Configuration deployment, or sanity within the approved warning band.
+3. **Healthy:** allowed only when all required signals are present and fresh, no Critical or Warning condition exists, the Device is operationally in sync, and sanity—when supplied—does not indicate impairment.
+4. **Unknown:** used when the required health evidence is missing or stale and no confirmed Critical or Warning condition is available. Missing evidence must never default to Healthy.
+
+Initial sanity bands may use `<50` as Critical, `50–79` as Warning, and `>=80` as no sanity impairment, but `>=80` does not independently produce Healthy. A failed, timed-out, or expired deployment must set `needsAttention` and prevent Healthy; it is at least Warning unless an approved policy or another signal makes it Critical.
+
+Scope rollup follows the existing Phase 1 precedence: confirmed Critical evidence first; otherwise Warning evidence; Healthy only when the scope is complete and every included Device/child scope is Healthy; otherwise Unknown. The existing 10-percent Offline rule may elevate a complete scope to Critical, while any smaller non-zero Offline count produces at least Warning. A zero-Device scope is Unknown/Empty rather than Healthy.
+
+The UI consumes this normalized result and must not independently calculate health. Thresholds and required-signal policy must be versioned through `calculationVersion` before production acceptance.
 
 ## 41. UI Routing and Structure
 
@@ -2754,10 +2802,14 @@ Scope tabs and hierarchy controls must support keyboard navigation and a visible
 
 - Normalize every Entity to Property and every Venue to Venue.
 - Flatten synthetic wrappers without leaking unauthorized ancestors.
+- Keep the tree response free of Device serial numbers and inventory enumeration, including for a 50,000-Device scope.
 - Deduplicate direct and descendant Devices.
 - Apply search/filter before zero-based pagination.
 - Convert incomplete status evidence to Unknown rather than Offline.
-- Return partial/unavailable data quality for downstream failures.
+- Return `null` aggregate counts and Unknown scope health when inventory enumeration is incomplete or its count cannot be reconciled.
+- Enforce response/source quality-state invariants and distinguish `generatedAt` from optional downstream measurement timestamps.
+- Verify complete inventory plus partial OWGW status reconciles Online + Offline + Unknown to Total without making Needs Attention authoritative.
+- Evaluate certificate, resource, uplink, radio, Configuration-state, and sanity signals using severity precedence; verify high sanity cannot override an expired certificate or failed deployment.
 - Return Unknown/Empty health for zero-Device scopes.
 - Keep child Property and Venue summaries correctly typed.
 
@@ -2784,10 +2836,12 @@ Validate 10,000- and 50,000-Device Properties, deep Venue nesting, concurrent po
 2. Authorized Property/Venue hierarchy and recursive Device scope are correct.
 3. Search/filter/pagination operate over the complete selected scope.
 4. Unknown and partial data cannot be mistaken for Offline, Healthy, or zero.
-5. Direct OWPROV lifecycle operations preserve unmanaged data and associations.
-6. Existing Device and Configuration workflows are reused consistently.
-7. Existing, workaround, proposed, deferred, and incomplete capabilities remain explicitly distinguished.
-8. Required MDU/UI tests and agreed scale tests pass.
+5. The hierarchy payload remains independent of Device inventory size and contains no Device serial-number collection.
+6. Device health uses the versioned multi-signal Phase 1 policy rather than sanity alone.
+7. Direct OWPROV lifecycle operations preserve unmanaged data and associations.
+8. Existing Device and Configuration workflows are reused consistently.
+9. Existing, workaround, proposed, deferred, and incomplete capabilities remain explicitly distinguished.
+10. Required MDU/UI tests and agreed scale tests pass.
 
 
 

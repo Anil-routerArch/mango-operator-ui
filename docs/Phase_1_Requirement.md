@@ -405,9 +405,20 @@ These baseline indicators, trigger conditions, rollup formulas, and numerical th
 
 # 8. Property and Venue Requirements
 
-## 8.1 Preserved Baseline Requirement IDs
+## 8.1 Legacy Identifier Continuity and Revised Contracts
 
-The identifiers below retain their original Phase 1 meanings so existing tests, tickets, approvals, and implementation plans remain traceable. Expanded requirements introduced by this revision use the new `PVT-*` namespace and do not redefine the legacy identifiers.
+The identifiers below are retained so existing tests, tickets, approvals, and implementation plans can be traced to the revised requirements. Their wording is a **versioned revision that supersedes the earlier contract**; this document does not claim that every original meaning remains unchanged. References that depend on the earlier wording should cite the earlier document version, while new implementation and validation must use this version.
+
+Notable intentional extensions include:
+
+| Identifier | Revision in this version |
+|---|---|
+| `PROP-008` | Expands the Venue-only list into a child-scope list that can include child Properties and Venues. |
+| `PROP-009` | Extends navigation from Venue selection to child Property or Venue selection. |
+| `PROP-012` | Extends the hierarchy relationship from Property→Venue to Property→Property and Property→Venue. |
+| `VEN-005` | Clarifies that a Venue Device list may cover the explicitly selected recursive Venue scope. |
+
+Requirements introduced by this revision use the `PVT-*` namespace so they do not silently reuse a legacy identifier.
 
 - **PROP-001:** The Properties module must show only Properties and Venues available to the current user.
 - **PROP-002:** The current scope must be clearly visible.
@@ -469,6 +480,8 @@ Property
 - **PVT-009:** The portfolio may provide a map only when valid geospatial data exists; otherwise it must provide a usable non-map hierarchy/list view and identify the map as unavailable.
 - **PVT-010:** The selected-scope drawer must provide Overview, child scopes, Devices, and Details without fabricating unsupported trends or metadata.
 - **PVT-011:** A Venue-only user must be able to begin at an authorized Venue without seeing an unauthorized parent Property.
+- **PVT-053:** The hierarchy/tree response must contain structural Property and Venue metadata only; it must not embed Device serial-number collections or require inventory enumeration.
+- **PVT-054:** Device counts and Device identities must be obtained through quality-qualified operational summaries and paginated scoped-Device APIs, independently of hierarchy metadata.
 
 ## 8.4 Scope Workspace
 
@@ -530,6 +543,10 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-050:** The UI must provide keyboard navigation, visible focus, labeled controls, and status indicators that do not rely on color alone.
 - **PVT-051:** Loading, empty, permission-denied, stale, partial-data, and error states must exist for each primary view.
 - **PVT-052:** Logs and user-facing errors must not expose tokens, service keys, or sensitive Configuration values.
+- **PVT-055:** Device health must evaluate all available Phase 1 operational signals; OWGW sanity is one input and must not override certificate, resource, uplink, radio, Configuration-state, or other higher-severity evidence.
+- **PVT-056:** Healthy may be reported only when required health signals are complete and fresh and no Warning or Critical condition exists; missing evidence must resolve to Unknown rather than Healthy.
+- **PVT-057:** Response generation time must be distinguished from source measurement time, and source timestamps must be optional when the downstream service provides no authoritative measurement timestamp.
+- **PVT-058:** If inventory enumeration is incomplete, aggregate totals, percentages, health rollups, and empty-state conclusions must be unavailable rather than calculated from the retrieved subset.
 
 ## 8.10 Deferred Platform Capabilities
 
