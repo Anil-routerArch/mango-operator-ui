@@ -533,6 +533,11 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-043:** Affected Device counts may be shown only from OWPROV's computed-affected result.
 - **PVT-044:** OWGW Gateway Default Configurations must not be mixed into scoped OWPROV assignments as if they were equivalent records.
 - **PVT-045:** A server-paginated scoped Configuration API is required before fleet-scale approval.
+- **PVT-060:** Configuration inheritance, precedence, Profile/VariableBlock expansion, and effective per-Device configuration compilation are authoritative OWPROV responsibilities. MDU and the UI must not independently reconstruct or infer those results from Configuration list records.
+- **PVT-061:** The scoped Configuration view must distinguish Configurations assigned directly to the selected scope from assignments on descendant scopes. A descendant assignment must not be presented as effective at the selected parent scope.
+- **PVT-062:** An inherited Configuration or its source metadata may be displayed only when supplied by an authorization-safe OWPROV response. Unauthorized ancestor names, identifiers, Configuration metadata, and contents must not be inferred or exposed.
+- **PVT-063:** Effective intended configuration must be presented at Device scope from OWPROV's compiled result. Assignment, compiled intended configuration, deployment progress, and currently running Device state are distinct concepts and must be labeled separately.
+- **PVT-064:** MDU may proxy or normalize an authoritative OWPROV result for the UI, but it must preserve OWPROV authorization and source semantics and must not implement a parallel inheritance or merge engine.
 
 ## 8.9 Data Quality, Authorization, and Accessibility
 

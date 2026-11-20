@@ -2701,6 +2701,25 @@ Initial integration design: **direct OWPROV workaround**.
 
 The planned UI will retrieve authorized modular Configurations through the existing OWPROV list contract and filter records against the selected scope and descendant IDs. Only authoritative fields may be displayed. Version, lifecycle, and semantic category values must not be invented.
 
+This list is an assignment catalogue, not an effective-configuration resolver. The Property workspace must classify its records as follows:
+
+1. **Direct assignments** have an explicit `entity` or `venue` equal to the selected scope.
+2. **Descendant assignments** have an explicit scope within an authorized descendant of the selected scope. They affect that descendant and must not be presented as effective at the selected parent.
+3. **Inherited assignments** originate from an ancestor and may be displayed only when an authorization-safe OWPROV response identifies the assignment and its source. The browser and MDU must not infer inheritance by walking list records.
+4. **Effective intended Device configuration** is the compiled per-Device result produced by OWPROV `APConfig`, including applicable Device, Venue, Entity, and Profile/VariableBlock inputs. It is not equivalent to any single list record.
+
+OWPROV is authoritative for assignment inheritance, precedence, Profile/VariableBlock expansion, and effective per-Device compilation. MDU must not implement a parallel merge or inheritance engine. It may proxy or normalize an OWPROV result when the UI requires a combined contract, provided that it preserves OWPROV authorization and source semantics.
+
+The existing OWPROV per-Device computed-configuration read is the basis for an effective intended configuration view:
+
+```http
+GET /api/v1/inventory/{serialNumber}?config=true&explain=true
+```
+
+Before its explanation metadata is used by Mango Operator UI, OWPROV must guarantee that the response cannot reveal an ancestor Configuration name, UUID, content, or other source metadata that the caller is not authorized to read. Until that guarantee is verified, the UI must not expose restricted source details. It may show only an authorization-safe compiled result or a neutral unavailable/restricted state.
+
+Configuration assignment, compiled intended configuration, deployment acceptance/progress, and the configuration currently running on a Device are separate states. The UI must label them separately. OWGW Gateway Defaults and runtime evidence must not be presented as direct or inherited OWPROV assignments.
+
 Authorization and completeness rules for this workaround are mandatory:
 
 1. OWPROV must evaluate the authenticated user's scope and permissions before returning each Configuration record. The list response delivered to the browser must contain only Configurations the user is authorized to read.
@@ -2846,6 +2865,10 @@ Scope tabs and hierarchy controls must support keyboard navigation and a visible
 - Use server totals and zero-based pagination for scoped Devices.
 - Render `retrievedCount` as a loaded-subset count rather than a total, and disable pagination and authoritative empty states when inventory is incomplete.
 - Exclude fabricated Configuration lifecycle/version/category.
+- Distinguish direct assignments from descendant assignments and never label a descendant assignment as effective at its parent scope.
+- Do not derive inherited or effective configuration by merging OWPROV Configuration list records in the browser or MDU.
+- Render inherited source metadata only when an authorization-safe OWPROV response permits the caller to read it.
+- Present the OWPROV compiled per-Device result separately from assignment and deployment/runtime state.
 - Clear all authenticated queries and mutations across logout, login/MFA identity changes, failed session restoration, invalid/expired tokens, and authorization-context changes.
 - Verify that an RBAC `403` removes stale protected data without logging out a user whose session remains valid.
 - Switch between users with disjoint Venue grants while document reload is mocked and verify that no cached scope data crosses the identity boundary.
