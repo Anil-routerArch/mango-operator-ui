@@ -524,7 +524,7 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-037:** Venue and Device-type filters and server-side sorting are required before Phase 1 completion and must not be represented as implemented until the UI and public query contract support them.
 - **PVT-038:** A failed or partial OWGW status lookup must produce Unknown and partial-data metadata, not false Offline Devices.
 - **PVT-039:** The browser must not fetch a fixed number of pages and infer all remaining Devices as Offline.
-- **PVT-040:** Device tables must use backend totals and remain accurate at the agreed fleet scale.
+- **PVT-040:** Device tables must use backend totals and remain accurate at the agreed fleet scale. Numeric totals and pagination may be shown only when inventory enumeration is complete and reconciled.
 
 ## 8.8 Scoped Configurations
 
@@ -546,7 +546,7 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-055:** Device health must evaluate all available Phase 1 operational signals; OWGW sanity is one input and must not override certificate, resource, uplink, radio, Configuration-state, or other higher-severity evidence.
 - **PVT-056:** Healthy may be reported only when required health signals are complete and fresh and no Warning or Critical condition exists; missing evidence must resolve to Unknown rather than Healthy.
 - **PVT-057:** Response generation time must be distinguished from source measurement time, and source timestamps must be optional when the downstream service provides no authoritative measurement timestamp.
-- **PVT-058:** If inventory enumeration is incomplete, aggregate totals, percentages, health rollups, and empty-state conclusions must be unavailable rather than calculated from the retrieved subset.
+- **PVT-058:** If inventory enumeration is incomplete, aggregate totals, pagination, percentages, health rollups, and empty-state conclusions must be unavailable rather than calculated from the retrieved subset. A usable subset may expose `retrievedCount`, clearly labeled as records loaded rather than the fleet total; no usable inventory must produce an unavailable/service-error state rather than an authoritative empty result.
 - **PVT-059:** The UI must treat query keys as cache identifiers rather than authorization boundaries and must clear all authenticated queries and mutations on logout, login/MFA identity changes, failed session restoration, invalid or expired tokens, and known authorization-context changes. An ordinary RBAC denial must remove affected protected data without terminating an otherwise valid session.
 
 ## 8.10 Deferred Platform Capabilities

@@ -2497,14 +2497,19 @@ Search and filters must execute before pagination. `orderBy` and `direction` are
 ```ts
 interface ScopedDevicesResponse {
   devices: PropertyDevice[];
-  totalCount: number;
-  pageIndex: number;
-  pageSize: number;
-  totalPages: number;
+  retrievedCount: number;
+  totalCount: number | null;
+  pageIndex: number | null;
+  pageSize: number | null;
+  totalPages: number | null;
   summary: ScopeSummary;
   dataQuality: DataQuality;
 }
 ```
+
+When inventory enumeration is complete and reconciled, MDU applies search and filters before pagination and returns numeric `totalCount`, `pageIndex`, `pageSize`, and `totalPages`. When one or more inventory pages or required scopes fail after a usable subset has been retrieved, MDU may return HTTP 200 with those known records, `retrievedCount` set to the number successfully retrieved, all four pagination fields set to `null`, and `dataQuality.state: 'partial'` with `inventoryComplete: false`. `retrievedCount` is never an authoritative fleet total.
+
+The UI must label such a response as partial, display the loaded count separately from the unavailable total, disable numbered/last-page navigation, avoid authoritative percentages and empty-state conclusions, and provide retry. If no usable inventory can be retrieved, MDU returns `503 Service Unavailable` rather than an empty Device list.
 
 ## 39. Normalized Operational Contracts
 
@@ -2577,6 +2582,8 @@ OWPROV and OWGW expose offset/limit listing and separate count queries rather th
 5. compare each OWGW batch response with the exact serials requested.
 
 If inventory enumeration is incomplete, `inventoryComplete` and every `authoritativeCounts` flag are false, aggregate count fields are `null`, scope health is `unknown`, and the UI must not present a total, zero, percentage, or empty state as authoritative. Successfully measured subset records may still be returned with `state: 'partial'` and a warning.
+
+For scoped Device responses in this state, `retrievedCount` reports only how many records were successfully loaded; it must never be copied into `totalCount` or used to calculate `totalPages`. Pagination becomes available only after complete inventory enumeration and count reconciliation.
 
 If inventory is complete but OWGW status is incomplete, `totalDevices` remains authoritative. Every unmeasured Device is classified as Unknown, never Offline, so availability counts still reconcile as `onlineDevices + offlineDevices + unknownDevices = totalDevices`; health counts likewise include `unknownHealth`. The corresponding inventory, availability, and health count flags may therefore be true even while `statusComplete` is false. `needsAttention` must be `null` and its authority flag false unless every trigger required by the health policy was evaluated. The response state remains `partial`. HTTP 200 may carry partial or stale data only with this explicit metadata.
 
@@ -2794,6 +2801,8 @@ Missing trend buckets must never be rendered as zero, and historical views must 
 |---|---|
 | Hierarchy unavailable | Full workspace error with retry; no fabricated scopes. |
 | Operational result partial | Show known values plus Unknown counts and a visible warning. |
+| Inventory partially retrieved | Show the loaded subset and `retrievedCount`, label the total unavailable, disable pagination, and provide retry. |
+| Inventory unavailable | Return/show `503 Service Unavailable`; do not render an authoritative empty Device state. |
 | Forbidden scope | Permission-safe denial without resource detail leakage. |
 | Missing scope | Not-found state and safe navigation to authorized content. |
 | Mutation validation failure | Preserve safe input and show authoritative backend error. |
@@ -2818,6 +2827,7 @@ Scope tabs and hierarchy controls must support keyboard navigation and a visible
 - Apply search/filter before zero-based pagination.
 - Convert incomplete status evidence to Unknown rather than Offline.
 - Return `null` aggregate counts and Unknown scope health when inventory enumeration is incomplete or its count cannot be reconciled.
+- Return `retrievedCount` for a usable incomplete subset, keep `totalCount` and all pagination fields `null`, and return `503` when no usable inventory exists.
 - Enforce response/source quality-state invariants and distinguish `generatedAt` from optional downstream measurement timestamps.
 - Verify complete inventory plus partial OWGW status reconciles Online + Offline + Unknown to Total without making Needs Attention authoritative.
 - Evaluate certificate, resource, uplink, radio, Configuration-state, and sanity signals using severity precedence; verify high sanity cannot override an expired certificate or failed deployment.
@@ -2834,6 +2844,7 @@ Scope tabs and hierarchy controls must support keyboard navigation and a visible
 - Launch Create Location from the Venue Location selector.
 - Render partial/Unknown separately from Offline.
 - Use server totals and zero-based pagination for scoped Devices.
+- Render `retrievedCount` as a loaded-subset count rather than a total, and disable pagination and authoritative empty states when inventory is incomplete.
 - Exclude fabricated Configuration lifecycle/version/category.
 - Clear all authenticated queries and mutations across logout, login/MFA identity changes, failed session restoration, invalid/expired tokens, and authorization-context changes.
 - Verify that an RBAC `403` removes stale protected data without logging out a user whose session remains valid.
