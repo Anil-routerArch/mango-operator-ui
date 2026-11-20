@@ -553,6 +553,10 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-057:** Response generation time must be distinguished from source measurement time, and source timestamps must be optional when the downstream service provides no authoritative measurement timestamp.
 - **PVT-058:** If inventory enumeration is incomplete, aggregate totals, pagination, percentages, health rollups, and empty-state conclusions must be unavailable rather than calculated from the retrieved subset. A usable subset may expose `retrievedCount`, clearly labeled as records loaded rather than the fleet total; no usable inventory must produce an unavailable/service-error state rather than an authoritative empty result.
 - **PVT-059:** The UI must treat query keys as cache identifiers rather than authorization boundaries and must clear all authenticated queries and mutations on logout, login/MFA identity changes, failed session restoration, invalid or expired tokens, and known authorization-context changes. An ordinary RBAC denial must remove affected protected data without terminating an otherwise valid session.
+- **PVT-065:** The structural Property/Venue tree (`GET /api/v1/properties/tree`) must load independently without waiting for Device inventory enumeration or OWGW operational aggregation. The structural tree must render immediately (< 800ms at 50,000 Devices) to ensure navigation is usable regardless of fleet scale.
+- **PVT-066:** Portfolio and overview operational reads must use short-lived aggregate snapshots (TTL 30s) keyed by authorized principal and scope projection, with single-flight request coalescing so simultaneous requests do not spawn redundant downstream fleet scans. Stale snapshots may be served while asynchronous background refresh is running (up to 120s max stale age).
+- **PVT-067:** MDU must enforce bounded downstream concurrency (max 100 serials per OWGW status batch, max 6 concurrent OWGW requests, max 4 concurrent OWPROV inventory page requests) and a strict overall aggregation deadline (10s). If the deadline is reached or downstream batches fail, unmeasured devices must be marked Unknown and the response must degrade gracefully to `state: 'partial'` with `authoritativeCounts.availability: false`.
+- **PVT-068:** Multi-page inventory enumeration must reconcile unique retrieved records against `countOnly` queries executed before and after pagination. If counts mismatch or inventory mutations (deletions or reassignments) occur between pages, MDU must not present the retrieved count as an authoritative fleet total; it must return `totalCount: null`, disable pagination, and mark data quality as `partial`.
 
 ## 8.10 Deferred Platform Capabilities
 
@@ -1446,6 +1450,10 @@ Phase 1 is ready for product acceptance when:
 30. An authorized user can onboard a Device by entering a valid Serial Number (with automatic delimiter normalization), specify name, device type, and scope binding via OWPROV inventory, and reassign or decommission the device.
 
 31. Dashboard, Property, Venue, and Device views consume and display normalized Device health and server-side scope rollups based on the baseline indicators defined in Section 7.3.1, displaying the primary trigger condition when inspected.
+
+32. The structural Property/Venue hierarchy tree renders immediately and independently (< 800ms at 50,000 Devices) without waiting for Device inventory enumeration or OWGW operational aggregation.
+
+33. Fleet portfolio operational reads reuse coalesced short-lived snapshots and enforce bounded fan-out and timeouts; inventory mutations detected during multi-page enumeration conservatively degrade to partial data with null totals.
 
 # 16. Open Product Decisions
 

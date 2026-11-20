@@ -2361,6 +2361,9 @@ export interface ModularConfigurationApiResponse {
 3. The proposed MDU implementation will normalize and aggregate combined operational reads without maintaining another Property hierarchy store.
 4. The planned UI will use MDU when a read combines OWPROV and OWGW at scope/fleet scale.
 5. The planned UI will use direct authenticated UI-to-OWPROV calls for scope details and lifecycle, Contacts, Locations, eligible Venue Locations, and scoped Configuration reads. OWPROV will perform authoritative authorization.
+6. **Decoupled Structural Tree and Operational State:** MDU MUST use OWPROV's hierarchy tree endpoint (`GET /api/v1/entity?getTree=true`) solely to discover authorized scopes (Entities and Venues). MDU MUST discard/ignore embedded `devices` arrays in the OWPROV tree payload. MDU's `/properties/tree` endpoint MUST return hierarchy structure only, never enumerate Devices, and never contact OWGW. Structurally usable tree rendering MUST NOT wait for Device inventory enumeration or OWGW operational reads.
+7. **Separate Paginated Device Retrieval:** Inventory Devices MUST be retrieved separately through paginated OWPROV inventory calls (`GET /api/v1/inventory`) rather than embedded in the hierarchy tree.
+8. **Upstream OWPROV Tree Limitation:** In the current OWPROV implementation, `GET /api/v1/entity?getTree=true` embeds Device serial numbers in Entity and Venue records, incurring upstream database serialization overhead. While MDU strips these arrays before presenting `/properties/tree`, OWPROV SHOULD add a lightweight tree option (e.g., `&includeDevices=false`) to eliminate upstream serialization costs at 50,000-Device scale.
 
 ### 36.2 Product Mapping
 
@@ -2427,7 +2430,7 @@ interface PropertyTreeNode {
 
 Every OWPROV Entity is normalized to `property`; every OWPROV Venue is normalized to `venue`.
 
-The tree response must not embed Device serial numbers, Device counts, or enumerate inventory. It is a structural navigation contract and must remain independently cacheable from Device inventory. Authoritative counts and their `dataQuality` are obtained through the portfolio/overview contracts. Device identities are available only through the paginated scoped-Device endpoints.
+The tree response must not embed Device serial numbers, Device counts, or enumerate inventory. It is a structural navigation contract and must remain independently cacheable from Device inventory. The endpoint MUST NEVER query OWGW or wait for Device operational reads. Authoritative counts and their `dataQuality` are obtained through the portfolio/overview contracts. Device identities are available only through the paginated scoped-Device endpoints.
 
 ### 38.2 Portfolio
 
@@ -2447,6 +2450,13 @@ interface PropertyPortfolioResponse {
 ```
 
 The proposed initial implementation may aggregate authorized row summaries in one request. Hierarchy metadata remains separately cacheable through the tree endpoint. Lazy per-node aggregation is a future scale optimization if performance testing requires it.
+
+**Portfolio Execution and Snapshot Caching Strategy:**
+1. **Short-Lived Aggregate Snapshot:** MDU caches operational summaries in a short-lived in-memory snapshot keyed by the caller's authorized principal and scope projection (default TTL: 30s).
+2. **Request Coalescing (Single-Flight):** When a cache miss occurs, concurrent requests for the same scope projection coalesce on a single downstream scan worker so only one fleet scan runs simultaneously.
+3. **Asynchronous Stale-While-Revalidate:** While a background refresh executes, MDU serves the previous snapshot marked with `dataQuality.state = "stale"` and the existing `generatedAt`/`asOf` timestamp (up to a maximum stale age of 120s).
+4. **Overall Aggregation Deadline:** A hard deadline (default 10s) applies to portfolio aggregation. If downstream calls (OWPROV inventory or OWGW batches) do not complete within this budget, MDU returns a partial result with `dataQuality.state = "partial"`, sets incomplete counts to Unknown, and reports `STATUS_BATCH_INCOMPLETE` rather than blocking the client.
+5. **Decoupled Loading in UI:** The UI MUST fetch `/properties/tree` and `/properties/portfolio` without blocking tree rendering on the portfolio response. Tree nodes render immediately; status pills/summaries fill in once the portfolio/overview loads.
 
 ### 38.3 Scope Overview
 
@@ -2780,7 +2790,7 @@ The initial implementation PR must deliver the planned routes, component structu
 8. Historical Property/Venue health and availability.
 9. Portfolio-wide map geometry and historical health trend data.
 
-## 47. Proposed OWPROV Scale Enhancement
+## 47. Proposed OWPROV Scale Enhancement and Minimum Phase 1 Scale Contract
 
 For efficient Property-scale inventory, OWPROV should add an authorization-safe descendant-aware query equivalent to:
 
@@ -2798,6 +2808,64 @@ GET /api/v1/inventory
 It must include direct Entity Devices and eligible descendant Entity/Venue Devices, apply filters before pagination, return the matching total, and avoid leaking denied scopes. Until then, MDU may resolve authorized scope IDs, retrieve and deduplicate serials, batch OWGW status requests, and report partial data with explicit concurrency and scale limits.
 
 The same authorization ordering applies to Configuration aggregation: authorization must occur before any result is returned to the browser, and any UI filtering may only narrow an already-authorized dataset. Partial pagination must be reported as incomplete rather than interpreted as an authoritative empty or total result.
+
+### 47.1 Upstream OWPROV Lightweight Tree Enhancement
+
+To ensure that the structural tree can scale cleanly to 50,000 Devices without unnecessary upstream memory and serialization load:
+1. OWPROV's `GET /api/v1/entity?getTree=true` currently embeds all device serials inside each Entity and Venue node.
+2. MDU strips these device serials and returns `devices: []` in `/properties/tree`.
+3. However, OWPROV still incurs database read and JSON serialization overhead for 50,000 serial strings on every tree fetch.
+4. OWPROV SHOULD introduce a query parameter:
+   ```http
+   GET /api/v1/entity?getTree=true&includeDevices=false
+   ```
+   When `includeDevices=false` is supplied, OWPROV omits device arrays, returning a pure structural hierarchy in < 200 ms.
+
+### 47.2 Inventory Mutation Handling During Multi-Page Scans
+
+When scanning multi-page inventory from OWPROV using offset pagination, concurrent mutations (such as device reassignment, deletion, or adoption) can shift offset boundaries between successive page requests. Because OWPROV does not provide a transaction snapshot or stable pagination cursor, MDU MUST enforce the following reconciliation rules:
+
+1. **Before-and-After Reconciliation:** MDU MUST call `GET /api/v1/inventory?entity={id}&countOnly=true` (or venue equivalent) immediately before starting pagination and again immediately after completing pagination.
+2. **Consistency Verification:** MDU verifies that:
+   - `countBefore === countAfter`, and
+   - `retrievedUniqueSerials.length === countBefore`.
+3. **Conservative Fallback on Mismatch:**
+   - If `countBefore !== countAfter`, or if the count of unique retrieved records does not match, or if any page request fails or the aggregation deadline is reached:
+   - MDU MUST treat the result as **partial and non-authoritative**.
+   - MDU MUST NOT present the retrieved unique serial count as the authoritative `totalDevices` or `totalCount`. The total MUST be rendered as `null` or marked partial.
+   - `dataQuality.state` MUST be set to `"partial"`, `partial: true`, and an error item with `source: "owprov"` and `code: "INVENTORY_MUTATION_DETECTED"` (or `"PAGE_SCAN_INCOMPLETE"`) MUST be included.
+   - If no usable inventory records could be retrieved at all, MDU MUST return HTTP 503 (`Service Unavailable`).
+4. **Future Revision/Cursor Contract:** To achieve strict snapshot consistency without conservative partial-data degradation, OWPROV SHOULD expose a revision token or cursor-based pagination API (e.g., `&cursor={token}` or `&asOfRevision={rev}`).
+
+### 47.3 Minimum Phase 1 Scale Contract (Option A Execution Strategy)
+
+To ensure predictable system performance and prevent backend exhaustion at 10,000–50,000 Devices, MDU MUST implement the following bounded execution contract:
+
+| Dimension | Phase 1 Contract Ceiling | Description & Enforcement |
+|---|---|---|
+| **OWGW Batch Size** | `100` serials | Maximum serial numbers sent in a single `POST /api/v1/devices/status` batch. |
+| **OWGW Downstream Concurrency** | `6` concurrent requests | Semaphore cap on simultaneous active OWGW batch HTTP requests. |
+| **OWPROV Inventory Page Concurrency** | `4` concurrent requests | Semaphore cap on simultaneous active OWPROV inventory page requests. |
+| **OWPROV Inventory Chunk Size** | `500` records | Limit per page when enumerating inventory across scopes. |
+| **Overall Portfolio Aggregation Deadline** | `10.0` seconds | Request-wide timeout for `GET /properties/portfolio`. If unfinished, returns partial snapshot with Unknown status for incomplete batches. |
+| **Scoped Device Query Deadline** | `5.0` seconds | Request-wide timeout for `GET /properties/{id}/devices`. |
+| **Structural Tree Deadline** | `2.0` seconds | Strict timeout for `GET /properties/tree`. Never waits for inventory or OWGW. |
+| **Per-Request Downstream Timeout** | `2.5` seconds | HTTP client timeout for individual calls to OWGW or OWPROV. |
+| **Operational Aggregate Cache TTL** | `30` seconds | In-memory cache lifetime of computed scope status rollups keyed by `(principal, scopeProjection)`. |
+| **Maximum Stale Age** | `120` seconds | Maximum age for which a stale snapshot can be returned with `dataQuality.state = 'stale'` while an asynchronous background refresh is running. |
+| **Request Coalescing** | Single-flight per scope | Simultaneous requests for the same scope share a single in-flight refresh worker. |
+| **Memory Ceiling per Aggregation** | `<= 50 MB` | In-memory allocation cap in MDU for a 50,000-Device scope aggregation (enforced via streaming serial deduplication and compact status maps). |
+
+### 47.4 Numerical Latency Targets (p95 Ceilings)
+
+The following p95 latency targets define the operational envelope. Final targets will be benchmarked and calibrated during 10k/50k load testing:
+
+| Endpoint / Operation | 10,000 Devices (p95) | 50,000 Devices (p95) | Fallback / Quality Behavior |
+|---|---|---|---|
+| `GET /api/v1/properties/tree` | `< 500 ms` | `< 800 ms` | Independent structural load; never blocked by device/status work. |
+| `GET /api/v1/properties/portfolio` (Cached) | `< 100 ms` | `< 150 ms` | Served directly from MDU snapshot cache. |
+| `GET /api/v1/properties/portfolio` (Cold / Refresh) | `< 3.5 s` | `< 8.0 s` | Coalesced background aggregation; returns stale if available or partial if deadline (10s) reached. |
+| `GET /api/v1/properties/{id}/devices` (Page query) | `< 800 ms` | `< 1.5 s` | Evaluates filters against reusable status snapshot; pages bounded inventory. |
 
 ## 48. Deferred Capabilities
 
@@ -2876,7 +2944,18 @@ Scope tabs and hierarchy controls must support keyboard navigation and a visible
 
 ### 51.3 Scale
 
-Validate 10,000- and 50,000-Device Properties, deep Venue nesting, concurrent portfolio/Device requests, failed OWGW batches, and searches matching records beyond the first logical page. Fleet-scale approval requires agreed latency and resource ceilings.
+Before fleet-scale approval, test at minimum:
+
+- 10,000 Devices in one Property;
+- 50,000 Devices in one Property;
+- deep recursive Venue hierarchy;
+- concurrent overview, portfolio, and scoped Device-list requests under high concurrent user load;
+- concurrent portfolio aggregation + scoped device search executing simultaneously, verifying request coalescing and bounded thread pool usage;
+- one or more failed or timed-out OWGW status batches, verifying graceful degradation to `dataQuality.state = "partial"` with Unknown status and without marking missing devices Offline;
+- concurrent inventory mutations (devices reassigned, added, or deleted between pages during multi-page scans), verifying detection via before/after `countOnly` comparison, fallback to conservative partial state, and null total counts;
+- independent structural tree responsiveness: verifying `GET /api/v1/properties/tree` returns within budget (< 800ms) without waiting for background 50,000-Device operational reads;
+- search/filter on the last logical page of the full scope;
+- p95 latency and memory profiling under 50,000 Devices verifying compliance with Section 47.3 and Section 47.4 ceilings.
 
 ## 52. Property Module Definition of Done
 
