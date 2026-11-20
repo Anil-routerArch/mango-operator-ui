@@ -547,6 +547,7 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-056:** Healthy may be reported only when required health signals are complete and fresh and no Warning or Critical condition exists; missing evidence must resolve to Unknown rather than Healthy.
 - **PVT-057:** Response generation time must be distinguished from source measurement time, and source timestamps must be optional when the downstream service provides no authoritative measurement timestamp.
 - **PVT-058:** If inventory enumeration is incomplete, aggregate totals, percentages, health rollups, and empty-state conclusions must be unavailable rather than calculated from the retrieved subset.
+- **PVT-059:** The UI must treat query keys as cache identifiers rather than authorization boundaries and must clear all authenticated queries and mutations on logout, login/MFA identity changes, failed session restoration, invalid or expired tokens, and known authorization-context changes. An ordinary RBAC denial must remove affected protected data without terminating an otherwise valid session.
 
 ## 8.10 Deferred Platform Capabilities
 

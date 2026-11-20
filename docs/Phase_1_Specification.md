@@ -2727,6 +2727,17 @@ A future contract must enforce authorization, then apply scope filtering, search
 
 Hierarchy metadata and operational summaries must use separate freshness windows. Scope mutations must invalidate tree, portfolio, details, and affected overview queries. Status refresh failures should retain safe previous values as stale, with their age, rather than replacing them with fabricated zeros.
 
+Query keys are cache identifiers, not authorization boundaries. Mango Operator UI must use strict authenticated QueryClient teardown rather than relying on every protected key to contain a principal identifier. All cached queries and mutations must be cleared when:
+
+1. logout begins, before navigation or document reload;
+2. login or MFA completion installs a new token or principal;
+3. session restoration fails or no valid stored session remains;
+4. an access token is invalid or expired;
+5. a successful Management Role or Management Policy mutation can change the effective authorization context; or
+6. an authorization-related `403 Forbidden` shows that cached protected data may no longer be readable.
+
+An ordinary RBAC denial must not terminate an otherwise valid login session. The UI must remove the affected protected queries; when the affected authorization projection cannot be determined safely, it must clear the complete authenticated QueryClient. Invalid- or expired-token responses must clear the cache and follow the normal login redirect flow. Authorization changes made outside the active browser session are enforced by the backends immediately and must clear stale client data when the next refetch or forbidden response detects them.
+
 ## 46. Delivery Status and Planned Follow-up
 
 The Property UI is not present in the target branch for this documentation PR. Sections 41–45 specify the implementation that will follow after this document is approved and merged.
@@ -2824,6 +2835,9 @@ Scope tabs and hierarchy controls must support keyboard navigation and a visible
 - Render partial/Unknown separately from Offline.
 - Use server totals and zero-based pagination for scoped Devices.
 - Exclude fabricated Configuration lifecycle/version/category.
+- Clear all authenticated queries and mutations across logout, login/MFA identity changes, failed session restoration, invalid/expired tokens, and authorization-context changes.
+- Verify that an RBAC `403` removes stale protected data without logging out a user whose session remains valid.
+- Switch between users with disjoint Venue grants while document reload is mocked and verify that no cached scope data crosses the identity boundary.
 - Preserve visible keyboard focus and permission-safe errors.
 
 ### 51.3 Scale
