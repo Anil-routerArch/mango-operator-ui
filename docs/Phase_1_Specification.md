@@ -2463,11 +2463,16 @@ interface PropertyPortfolioResponse {
 The proposed initial implementation may aggregate authorized row summaries in one request. Hierarchy metadata remains separately cacheable through the tree endpoint. Lazy per-node aggregation is a future scale optimization if performance testing requires it.
 
 **Portfolio Execution and Snapshot Caching Strategy:**
+The server-side MDU snapshot cache described below is a planned implementation capability; it is not provided by the current Property service. It MUST NOT be enabled until the authorization-revalidation and invalidation behavior in this section is implemented and tested.
+
 1. **Short-Lived Aggregate Snapshot:** MDU caches operational summaries in a short-lived in-memory snapshot keyed by the caller's authorized principal and scope projection (default TTL: 30s).
 2. **Request Coalescing (Single-Flight):** When a cache miss occurs, concurrent requests for the same scope projection coalesce on a single downstream scan worker so only one fleet scan runs simultaneously.
 3. **Asynchronous Stale-While-Revalidate:** While a background refresh executes, MDU serves the previous snapshot marked with `dataQuality.state = "stale"` and the existing `generatedAt`/`asOf` timestamp (up to a maximum stale age of 120s).
 4. **Overall Aggregation Deadline:** A hard deadline (default 10s) applies to portfolio aggregation. If downstream calls (OWPROV inventory or OWGW batches) do not complete within this budget, MDU returns a partial result with `dataQuality.state = "partial"`, sets incomplete counts to Unknown, and reports `STATUS_BATCH_INCOMPLETE` rather than blocking the client.
 5. **Decoupled Loading in UI:** The UI MUST fetch `/properties/tree` and `/properties/portfolio` without blocking tree rendering on the portfolio response. Tree nodes render immediately; status pills/summaries fill in once the portfolio/overview loads.
+6. **Authorization Revalidation Before Cache Use:** Before returning a cached or stale snapshot, MDU MUST revalidate the caller's current authorized scope projection through OWPROV. The cache key MUST include an authorization/scope fingerprint or equivalent permission revision, not only the principal identifier. A changed or unavailable authorization projection, removed permission, `403` response, logout, or identity change invalidates the affected snapshot. MDU MUST NOT serve stale operational data when authorization revalidation fails.
+
+Integration coverage for the cache implementation MUST revoke `inventory:READ` or remove a scope while a snapshot exists and verify that subsequent requests cannot receive the cached data.
 
 ### 38.3 Scope Overview
 
@@ -2511,34 +2516,33 @@ GET /api/v1/venues/{venueId}/devices
 | `availability` | `online`, `offline`, or `unknown`. |
 | `health` | `healthy`, `warning`, `critical`, or `unknown`. |
 | `type` | Device type/class filter. |
-| `includeDescendants` | Default `false` for Property and Venue requests. When `true`, include only descendants present in the effective authorized tree. |
 
 Search and filters must execute before pagination. `orderBy` and `direction` are deferred from the initial contract and must not be sent until added to MDU.
 
 ```ts
 interface ScopedDevicesResponse {
   devices: PropertyDevice[];
-  retrievedCount: number;
-  totalCount: number | null;
-  pageIndex: number | null;
-  pageSize: number | null;
-  totalPages: number | null;
+  totalCount: number;
+  pageIndex: number;
+  pageSize: number;
+  totalPages: number;
   summary: ScopeSummary;
   effectiveScope: {
     rootId: string;
     rootType: 'property' | 'venue';
-    descendantsRequested: boolean;
     includedAuthorizedDescendants: number;
   };
   dataQuality: DataQuality;
 }
 ```
 
-`includeDescendants=true` is a traversal request, not an authorization grant. An exact Venue role therefore includes no child Venue unless another effective role independently includes that child. An Entity-scoped role may include that Entity's Venue hierarchy for the requested resource, but it does not include child Entities merely because they are structurally below it. MDU intersects traversal with the OWPROV-authorized tree before any inventory or OWGW lookup. The response reports only the number of authorized descendants actually included; it must not reveal excluded descendant identities or counts.
+Scoped Device traversal is always recursive in Phase 1 and has no `includeDescendants` query option. MDU includes the selected scope and every descendant independently present in the OWPROV-authorized tree before performing inventory or OWGW lookup. An exact Venue role therefore includes no child Venue unless another effective role independently includes that child. An Entity-scoped role may include that Entity's permitted Venue hierarchy for the requested resource, but it does not include child Entities merely because they are structurally below it. The response reports only the number of authorized descendants actually included; it must not reveal excluded descendant identities or counts.
 
-When inventory enumeration is complete and reconciled, MDU applies search and filters before pagination and returns numeric `totalCount`, `pageIndex`, `pageSize`, and `totalPages`. When one or more inventory pages or required scopes fail after a usable subset has been retrieved, MDU may return HTTP 200 with those known records, `retrievedCount` set to the number successfully retrieved, all four pagination fields set to `null`, and `dataQuality.state: 'partial'` with `inventoryComplete: false`. `retrievedCount` is never an authoritative fleet total.
+MDU returns a scoped Device page only after inventory enumeration completes and passes the Phase 1 best-effort reconciliation checks. It then applies search and filters before pagination and returns numeric `totalCount`, `pageIndex`, `pageSize`, and `totalPages`.
 
-The UI must label such a response as partial, display the loaded count separately from the unavailable total, disable numbered/last-page navigation, avoid authoritative percentages and empty-state conclusions, and provide retry. If no usable inventory can be retrieved, MDU returns `503 Service Unavailable` rather than an empty Device list.
+If any required OWPROV inventory page or scope fails, the counts mismatch, or another reconciliation inconsistency is detected, MDU returns `503 Service Unavailable` for the scoped Device endpoint and returns no Device records. The UI shows an inventory-unavailable state with Retry and must not render an empty fleet. MDU does not return an unbounded or partially paginated Device subset.
+
+If inventory is complete but one or more OWGW status batches fail, MDU may still return the requested bounded Device page with affected Devices classified as Unknown and `dataQuality.state: 'partial'`. Device membership and pagination remain authoritative in that case; only the operational status evidence is incomplete.
 
 ## 39. Normalized Operational Contracts
 
@@ -2602,17 +2606,17 @@ When more than one condition applies, the response-level state uses this precede
 
 `generatedAt` is always the time MDU produced the response. Source `asOf` values are optional because OWPROV inventory lists and OWGW Device lists do not provide a common snapshot timestamp. OWGW `lastContact`, health-check `recorded`, and dashboard `snapshot` values may be used only for the measurements they actually describe; they must not be promoted into a fabricated fleet-wide timestamp.
 
-OWPROV and OWGW expose offset/limit listing and separate count queries rather than a snapshot-consistent page envelope. MDU must therefore:
+OWPROV and OWGW expose offset/limit listing and separate count queries rather than a snapshot-consistent page envelope. The Phase 1 procedure below is therefore a **best-effort mutation detector**, not proof that every page came from one consistent inventory snapshot. MDU must:
 
 1. exhaust every required authorized OWPROV inventory page;
 2. deduplicate serial numbers;
 3. reconcile the enumerated count with `countOnly` results for the same exact scopes where available;
-4. treat a page failure, count mismatch, or scope change detected during enumeration as incomplete inventory; and
+4. treat a page failure, count mismatch, or any scope change detected during enumeration as incomplete inventory; and
 5. call the existing OWGW batch-select contract, `GET /api/v1/devices?deviceWithStatus=true&select={commaSeparatedSerials}`, and compare each response with the exact serials requested.
 
-If inventory enumeration is incomplete, `inventoryComplete` and every `authoritativeCounts` flag are false, aggregate count fields are `null`, scope health is `unknown`, and the UI must not present a total, zero, percentage, or empty state as authoritative. Successfully measured subset records may still be returned with `state: 'partial'` and a warning.
+If inventory enumeration is incomplete, `inventoryComplete` and every `authoritativeCounts` flag are false, aggregate count fields are `null`, scope health is `unknown`, and the UI must not present a total, zero, percentage, or empty state as authoritative. Portfolio and overview responses may retain structural hierarchy plus explicit partial quality metadata, but they must not expose incomplete inventory as authoritative operational totals.
 
-For scoped Device responses in this state, `retrievedCount` reports only how many records were successfully loaded; it must never be copied into `totalCount` or used to calculate `totalPages`. Pagination becomes available only after complete inventory enumeration and count reconciliation.
+Scoped Device endpoints use a stricter contract: incomplete or unreconciled inventory returns `503 Service Unavailable` with no Device records. A successful `200` scoped Device response therefore always has complete inventory membership and numeric pagination fields. Partial `200` responses are permitted only when inventory is complete and downstream operational status evidence is incomplete; unmeasured status is classified as Unknown.
 
 If inventory is complete but OWGW status is incomplete, `totalDevices` remains authoritative. Every unmeasured Device is classified as Unknown, never Offline, so availability counts still reconcile as `onlineDevices + offlineDevices + unknownDevices = totalDevices`; health counts likewise include `unknownHealth`. The corresponding inventory, availability, and health count flags may therefore be true even while `statusComplete` is false. `needsAttention` must be `null` and its authority flag false unless every trigger required by the health policy was evaluated. The response state remains `partial`. HTTP 200 may carry partial or stale data only with this explicit metadata.
 
@@ -2832,14 +2836,13 @@ For efficient Property-scale inventory, OWPROV should add an authorization-safe 
 GET /api/v1/inventory
   ?entity={propertyId}
   &includeVenues=true
-  &includeDescendants=true
   &search={text}
   &offset={offset}
   &limit={limit}
   &orderBy={field}
 ```
 
-It must include direct Entity Devices and eligible descendant Entity/Venue Devices, apply filters before pagination, return the matching total, and avoid leaking denied scopes. Until then, MDU may resolve authorized scope IDs, retrieve and deduplicate serials, batch OWGW status requests, and report partial data with explicit concurrency and scale limits.
+It must always include direct Entity Devices and eligible authorized descendant Entity/Venue Devices, apply filters before pagination, return the matching total, and avoid leaking denied scopes. Until then, MDU may resolve authorized scope IDs, retrieve and deduplicate serials, batch OWGW status requests, and report partial operational status with explicit concurrency and scale limits.
 
 The same authorization ordering applies to Configuration aggregation: authorization must occur before any result is returned to the browser, and any UI filtering may only narrow an already-authorized dataset. Partial pagination must be reported as incomplete rather than interpreted as an authoritative empty or total result.
 
@@ -2847,7 +2850,7 @@ The same authorization ordering applies to Configuration aggregation: authorizat
 
 To ensure that the structural tree can scale cleanly to 50,000 Devices without unnecessary upstream memory and serialization load:
 1. OWPROV's `GET /api/v1/entity?getTree=true` currently embeds all device serials inside each Entity and Venue node.
-2. MDU strips these device serials and returns `devices: []` in `/properties/tree`.
+2. MDU strips these Device serials from the public `/properties/tree` representation and omits the `devices` field entirely, matching the `PropertyTreeNode` contract in Section 38.1.
 3. However, OWPROV still incurs database read and JSON serialization overhead for 50,000 serial strings on every tree fetch.
 4. OWPROV SHOULD introduce a query parameter:
    ```http
@@ -2857,19 +2860,21 @@ To ensure that the structural tree can scale cleanly to 50,000 Devices without u
 
 ### 47.2 Inventory Mutation Handling During Multi-Page Scans
 
-When scanning multi-page inventory from OWPROV using offset pagination, concurrent mutations (such as device reassignment, deletion, or adoption) can shift offset boundaries between successive page requests. Because OWPROV does not provide a transaction snapshot or stable pagination cursor, MDU MUST enforce the following reconciliation rules:
+When scanning multi-page inventory from OWPROV using offset pagination, concurrent mutations (such as Device reassignment, deletion, or adoption) can shift offset boundaries between successive page requests. Because OWPROV does not provide a transaction snapshot or stable pagination cursor, MDU cannot guarantee that all pages represent one point in time. Phase 1 therefore uses the following bounded, best-effort reconciliation rules:
 
 1. **Before-and-After Reconciliation:** MDU MUST call `GET /api/v1/inventory?entity={id}&countOnly=true` (or venue equivalent) immediately before starting pagination and again immediately after completing pagination.
 2. **Consistency Verification:** MDU verifies that:
    - `countBefore === countAfter`, and
    - `retrievedUniqueSerials.length === countBefore`.
+   Passing both checks means that no inconsistency was detected; it does **not** prove snapshot consistency. A removal and insertion or reassignment can preserve both the total and the number of unique serials while changing page boundaries.
 3. **Conservative Fallback on Mismatch:**
    - If `countBefore !== countAfter`, or if the count of unique retrieved records does not match, or if any page request fails or the aggregation deadline is reached:
    - MDU MUST treat the result as **partial and non-authoritative**.
-   - MDU MUST NOT present the retrieved unique serial count as the authoritative `totalDevices` or `totalCount`. The total MUST be rendered as `null` or marked partial.
+   - Portfolio and overview aggregation MUST NOT present the retrieved unique serial count as the authoritative `totalDevices`; affected aggregate totals are `null` and data quality is partial.
    - `dataQuality.state` MUST be set to `"partial"`, and an error item with `source: "owprov-inventory"` and `code: "INVENTORY_MUTATION_DETECTED"` (or `"PAGE_SCAN_INCOMPLETE"`) MUST be included. A separate `partial` boolean is not used.
-   - If no usable inventory records could be retrieved at all, MDU MUST return HTTP 503 (`Service Unavailable`).
-4. **Future Revision/Cursor Contract:** To achieve strict snapshot consistency without conservative partial-data degradation, OWPROV SHOULD expose a revision token or cursor-based pagination API (e.g., `&cursor={token}` or `&asOfRevision={rev}`).
+   - Scoped Device endpoints MUST return HTTP 503 (`Service Unavailable`) with no Device records whenever their required inventory is incomplete or unreconciled. They do not return a partial Device subset.
+4. **Successful Best-Effort Result:** If both counts match the unique retrieved count and every page succeeds, MDU may use the result for the Phase 1 current-snapshot view. The response and documentation MUST NOT describe it as transaction-consistent or guaranteed to represent one instant in time.
+5. **Future Revision/Cursor Contract:** Strict snapshot consistency requires OWPROV to expose an authorization-filtered snapshot, revision token, or cursor-based pagination API (for example, `&cursor={token}` or `&asOfRevision={revision}`). Until that contract exists, MDU MUST NOT claim that count reconciliation detects every concurrent mutation.
 
 ### 47.3 Minimum Phase 1 Scale Contract (Option A Execution Strategy)
 
@@ -2892,14 +2897,23 @@ To ensure predictable system performance and prevent backend exhaustion at 10,00
 
 ### 47.4 Numerical Latency Targets (p95 Ceilings)
 
-The following p95 latency targets define the operational envelope. Final targets will be benchmarked and calibrated during 10k/50k load testing:
+The following values are Phase 1 engineering objectives. Cached and structural-response targets define the initial operational envelope. Cold **complete** aggregation values are provisional until representative 10,000/50,000-Device benchmarks demonstrate that the downstream services can sustain them within the fan-out limits in Section 47.3.
 
 | Endpoint / Operation | 10,000 Devices (p95) | 50,000 Devices (p95) | Fallback / Quality Behavior |
 |---|---|---|---|
 | `GET /api/v1/properties/tree` | `< 500 ms` | `< 800 ms` | Independent structural load; never blocked by device/status work. |
 | `GET /api/v1/properties/portfolio` (Cached) | `< 100 ms` | `< 150 ms` | Served directly from MDU snapshot cache. |
-| `GET /api/v1/properties/portfolio` (Cold / Refresh) | `< 3.5 s` | `< 8.0 s` | Coalesced background aggregation; returns stale if available or partial if deadline (10s) reached. |
+| `GET /api/v1/properties/portfolio` (Cold complete refresh, provisional) | `< 3.5 s` | `< 8.0 s` | Applies only when complete inventory and required operational evidence are returned; subject to benchmark approval. |
 | `GET /api/v1/properties/{id}/devices` (Page query) | `< 800 ms` | `< 1.5 s` | Evaluates filters against reusable status snapshot; pages bounded inventory. |
+
+Outcome timing is evaluated separately:
+
+1. **Cached response:** measured against the cached target and contains authorization-revalidated snapshot data.
+2. **Cold complete response:** measured against the provisional cold-complete target only when all required data is complete.
+3. **Stale response:** returned within the request deadline from an authorization-valid snapshot while refresh continues; it does not count as a successful cold-complete aggregation.
+4. **Deadline-triggered partial response:** returned within the 10-second portfolio deadline with explicit partial quality and Unknown operational evidence; it does not satisfy or count toward the cold-complete p95 target.
+
+If load testing cannot demonstrate the provisional cold-complete targets without exceeding downstream concurrency, timeout, or memory ceilings, the targets must be recalibrated or the aggregation must move behind asynchronous refresh. The implementation must not increase unbounded fan-out merely to satisfy the provisional latency objective.
 
 ## 48. Deferred Capabilities
 
@@ -2922,8 +2936,8 @@ Missing trend buckets must never be rendered as zero, and historical views must 
 |---|---|
 | Hierarchy unavailable | Full workspace error with retry; no fabricated scopes. |
 | Operational result partial | Show known values plus Unknown counts and a visible warning. |
-| Inventory partially retrieved | Show the loaded subset and `retrievedCount`, label the total unavailable, disable pagination, and provide retry. |
-| Inventory unavailable | Return/show `503 Service Unavailable`; do not render an authoritative empty Device state. |
+| Scoped Device inventory incomplete or unreconciled | Return/show `503 Service Unavailable` with Retry; return no Device records and do not render an authoritative empty fleet. |
+| Portfolio/overview inventory incomplete | Preserve structural navigation, mark operational data partial/unavailable, and do not render incomplete aggregate totals as authoritative. |
 | Forbidden scope | Permission-safe denial without resource detail leakage. |
 | Missing scope | Not-found state and safe navigation to authorized content. |
 | Mutation validation failure | Preserve safe input and show authoritative backend error. |
@@ -2957,7 +2971,7 @@ Scope tabs and hierarchy controls must support keyboard navigation and a visible
 - Apply search/filter before zero-based pagination.
 - Convert incomplete status evidence to Unknown rather than Offline.
 - Return `null` aggregate counts and Unknown scope health when inventory enumeration is incomplete or its count cannot be reconciled.
-- Return `retrievedCount` for a usable incomplete subset, keep `totalCount` and all pagination fields `null`, and return `503` when no usable inventory exists.
+- Return `503` with no Device records when scoped inventory enumeration is incomplete or unreconciled; never return an unbounded partial Device subset.
 - Enforce response/source quality-state invariants and distinguish `generatedAt` from optional downstream measurement timestamps.
 - Verify complete inventory plus partial OWGW status reconciles Online + Offline + Unknown to Total without making Needs Attention authoritative.
 - Evaluate certificate, resource, uplink, radio, Configuration-state, and sanity signals using severity precedence; verify high sanity cannot override an expired certificate or failed deployment.
@@ -2974,7 +2988,7 @@ Scope tabs and hierarchy controls must support keyboard navigation and a visible
 - Launch Create Location from the Venue Location selector.
 - Render partial/Unknown separately from Offline.
 - Use server totals and zero-based pagination for scoped Devices.
-- Render `retrievedCount` as a loaded-subset count rather than a total, and disable pagination and authoritative empty states when inventory is incomplete.
+- Render an inventory-unavailable state with Retry, rather than a partial Device table or authoritative empty state, when a scoped Device request returns `503`.
 - Exclude fabricated Configuration lifecycle/version/category.
 - Distinguish direct assignments from descendant assignments and never label a descendant assignment as effective at its parent scope.
 - Do not derive inherited or effective configuration by merging OWPROV Configuration list records in the browser or MDU.
@@ -2996,10 +3010,10 @@ Before fleet-scale approval, test at minimum:
 - concurrent overview, portfolio, and scoped Device-list requests under high concurrent user load;
 - concurrent portfolio aggregation + scoped device search executing simultaneously, verifying request coalescing and bounded thread pool usage;
 - one or more failed or timed-out OWGW status batches, verifying graceful degradation to `dataQuality.state = "partial"` with Unknown status and without marking missing devices Offline;
-- concurrent inventory mutations (devices reassigned, added, or deleted between pages during multi-page scans), verifying detection via before/after `countOnly` comparison, fallback to conservative partial state, and null total counts;
+- concurrent inventory mutations (Devices reassigned, added, or deleted between pages during multi-page scans), verifying best-effort before/after `countOnly` detection and conservative fallback for detected inconsistencies without claiming snapshot consistency;
 - independent structural tree responsiveness: verifying `GET /api/v1/properties/tree` returns within budget (< 800ms) without waiting for background 50,000-Device operational reads;
 - search/filter on the last logical page of the full scope;
-- p95 latency and memory profiling under 50,000 Devices verifying compliance with Section 47.3 and Section 47.4 ceilings.
+- p95 latency and memory profiling under 50,000 Devices to validate the Section 47.3 hard execution ceilings and either demonstrate or recalibrate the provisional Section 47.4 cold-complete objectives.
 
 ## 52. Property Module Definition of Done
 
