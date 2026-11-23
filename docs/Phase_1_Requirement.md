@@ -1,8 +1,8 @@
 # Mango Cloud MDU UI --- Phase 1 Requirements
 
-**Document status:** Ready for Product and Architecture Approval
-**Version:** 1.3
-**Date:** 19 November 2026
+**Document status:** Ready for Product and Architecture Review
+**Version:** 1.4
+**Date:** 23 November 2026
 
 ------------------------------------------------------------------------
 
@@ -455,7 +455,7 @@ Requirements introduced by this revision use the `PVT-*` namespace so they do no
 
 ## 8.2 Domain Model and Ownership
 
-The UI term **Property** represents every authorized OWPROV Entity, regardless of whether OWPROV classifies it as root, operator, normal, parent, or child. The UI term **Venue** represents every authorized OWPROV Venue, including recursively nested Venues. Synthetic discovery wrappers are not user-facing domain objects.
+The proposed UI term **Property** represents every authorized OWPROV Entity, regardless of whether OWPROV classifies it as root, operator, normal, parent, or child. The UI term **Venue** represents every authorized OWPROV Venue, including recursively nested Venues. Synthetic discovery wrappers are not user-facing domain objects. Final product approval of organizational/container Entity presentation and portfolio counting remains an open decision in Section 16.
 
 ```text
 Property
@@ -474,6 +474,8 @@ Property
 ## 8.3 Portfolio and Navigation
 
 - **PVT-005:** The Properties module must show only authorized Properties and Venues and must not reveal unauthorized ancestors, counts, identifiers, or paths.
+- **PVT-069:** The authoritative hierarchy projection must follow OWPROV's effective scope rules: an Entity-scoped grant may include that Entity's Venue hierarchy for the permitted resource; it does not automatically authorize child Entities. An exact Venue grant authorizes only that Venue unless another role independently authorizes a descendant. An exact Venue denial must continue to override an Entity-level grant for that Venue.
+- **PVT-070:** A Venue returned without an authorized ancestor must be safely re-rooted. The UI and MDU must not reconstruct, request, or display an owning Entity or parent Venue merely to preserve a breadcrumb.
 - **PVT-006:** The portfolio must support recursive expansion, hierarchy search, selection, and navigation for Property → Property, Property → Venue, and Venue → Venue relationships.
 - **PVT-007:** The portfolio must provide authoritative counts for Properties, Venues, nested Venues, Devices, availability, and health when those values are available.
 - **PVT-008:** The selected scope and active tab must be encoded in the URL and survive refresh and browser navigation.
@@ -505,6 +507,10 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-024:** Supported behavior fields such as source-IP behavior, RRM, firmware upgrade, and release-candidate behavior must map losslessly to OWPROV.
 - **PVT-025:** Updates must preserve unknown fields, Device Rules, associations, and collections not owned by the active form.
 - **PVT-026:** The Phase 1 Property workspace must support Contact/Location creation and editing. Contact/Location deletion and editing/appending existing scope notes are not part of the initial implementation increment unless separately approved.
+- **PVT-071:** OWPROV must apply object-level scope authorization to Contact and Location list, `select`, `countOnly`, pagination, and extended-information reads before any records are returned. Browser-side filtering is not an authorization boundary.
+- **PVT-072:** For Contact/Location reads, an Entity-scoped permission covers records owned by that Entity and the permitted associations in its Venue hierarchy. An exact Venue-scoped permission covers Contacts associated with that Venue and Locations assigned or eligible for that Venue. A combined `entity` and `venue` query must treat the Entity as a record filter; it must not require a second independent Entity role after the Venue has been authorized.
+- **PVT-073:** `locationsForVenue` must return the same `locations` response shape for Root and scoped users after authorizing the requested Venue and every returned eligible Location.
+- **PVT-074:** Venue mutations must not make a caller-provided Contact or Location identifier self-authorizing. Newly associated records must exist, be eligible for the target scope, and pass OWPROV authorization before the Venue is updated.
 
 ## 8.6 Property and Venue Lifecycle
 
@@ -518,8 +524,8 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 
 ## 8.7 Scoped Devices
 
-- **PVT-034:** Property Device scope must include Devices directly assigned to the Property and Devices assigned to included descendant Properties and Venues, with serial-number deduplication.
-- **PVT-035:** Venue Device scope must clearly state whether descendants are included.
+- **PVT-034:** Property Device scope must include Devices directly assigned to the Property and Devices assigned to requested descendants that are independently present in the caller's effective authorized hierarchy, with serial-number deduplication. Child Entities are not included merely because their parent Entity is authorized.
+- **PVT-035:** Venue Device scope must clearly state whether descendants were requested and which authorized descendants were included. An exact Venue role must not become a recursive Venue grant merely because `includeDescendants=true` was requested.
 - **PVT-036:** Search and supported availability/health filters must execute before server-side pagination; the proposed initial MDU contract uses zero-based page indexes.
 - **PVT-037:** Venue and Device-type filters and server-side sorting are required before Phase 1 completion and must not be represented as implemented until the UI and public query contract support them.
 - **PVT-038:** A failed or partial OWGW status lookup must produce Unknown and partial-data metadata, not false Offline Devices.
@@ -1385,6 +1391,8 @@ services.
 MDU should consume these capabilities without duplicating their
 underlying data models or authorization logic. Specifically, Configuration Profiles map directly to OWPROV `VariableBlock` services and leverage native dependency tracking (`variableBlock.configurations`) and dynamic compilation (`APConfig`) rather than an independent MDU data store.
 
+The scope-safe Contact/Location behavior and the re-rooted authorized-tree behavior required by this document are implemented on the pending OWPROV authorization branch associated with [OWPROV issue #129](https://github.com/routerarchitects/ra-wlan-cloud-owprov/issues/129) and [OWPROV issue #130](https://github.com/routerarchitects/ra-wlan-cloud-owprov/issues/130), but are not available on OWPROV `main` at the time of this document revision. The scoped Property workflow must not be declared production-ready until those changes are merged, deployed, and pass the required RBAC integration coverage.
+
 The core backend integration behaviors specified in this document—including `VariableBlock` reference semantics (`{"__variableBlock": ["<uuid>"]}` in sections and `variables[]`), reverse configuration dependency tracking (`variableBlock.configurations`), on-demand compilation via `APConfig`, and dependency-safe deletion checks—are validated against authoritative OWPROV backend services and data structures. While low-level implementation specifications and open product policies will be finalized in dedicated technical documents, these requirements reflect established and confirmed platform capabilities rather than provisional assumptions.
 
 ------------------------------------------------------------------------
@@ -1455,6 +1463,10 @@ Phase 1 is ready for product acceptance when:
 
 33. Fleet portfolio operational reads reuse coalesced short-lived snapshots and enforce bounded fan-out and timeouts; inventory mutations detected during multi-page enumeration conservatively degrade to partial data with null totals.
 
+34. Contact and Location list/select/count/pagination responses are filtered by effective Entity/Venue authorization before serialization, and `locationsForVenue` behaves consistently for Root and scoped users.
+
+35. Exact Venue users receive re-rooted authorized Venue nodes without ancestor metadata; Entity grants include only the Entity and Venue hierarchy permitted by OWPROV, not ungranted child Entities.
+
 # 16. Open Product Decisions
 
 The following items require explicit product or architecture approval before implementation freeze:
@@ -1470,6 +1482,8 @@ The following items require explicit product or architecture approval before imp
 5. Numerical performance targets for initial page usability, search and filter response, pagination, Dashboard refresh, and long-running operation feedback.
 
 6. Supported browser versions, minimum desktop viewport, and tablet-layout requirements for Installer workflows.
+
+7. Product confirmation that every authorized OWPROV Entity, including organizational/container Entities, is represented as a Property and whether those containers contribute to the portfolio Property count.
 
 
 Device deletion behavior, Operator-to-Entity behavior, authorization calculation, and underlying cleanup are backend responsibilities and are not Phase 1 MDU UI decisions.
