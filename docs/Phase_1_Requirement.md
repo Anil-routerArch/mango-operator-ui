@@ -1,7 +1,7 @@
 # Mango Cloud MDU UI --- Phase 1 Requirements
 
 **Document status:** Ready for Product and Architecture Review
-**Version:** 1.4
+**Version:** 1.4.1
 **Date:** 23 November 2026
 
 ------------------------------------------------------------------------
@@ -455,7 +455,7 @@ Requirements introduced by this revision use the `PVT-*` namespace so they do no
 
 ## 8.2 Domain Model and Ownership
 
-The proposed UI term **Property** represents every authorized OWPROV Entity, regardless of whether OWPROV classifies it as root, operator, normal, parent, or child. The UI term **Venue** represents every authorized OWPROV Venue, including recursively nested Venues. Synthetic discovery wrappers are not user-facing domain objects. Final product approval of organizational/container Entity presentation and portfolio counting remains an open decision in Section 16.
+The UI term **Property** represents every authorized OWPROV Entity, regardless of whether OWPROV classifies it as root, operator, normal, parent, or child. The UI term **Venue** represents every authorized OWPROV Venue, including recursively nested Venues. Synthetic discovery wrappers and Operator objects are not user-facing Property nodes.
 
 ```text
 Property
@@ -561,7 +561,7 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-059:** The UI must treat query keys as cache identifiers rather than authorization boundaries and must clear all authenticated queries and mutations on logout, login/MFA identity changes, failed session restoration, invalid or expired tokens, and known authorization-context changes. An ordinary RBAC denial must remove affected protected data without terminating an otherwise valid session.
 - **PVT-065:** The structural Property/Venue tree (`GET /api/v1/properties/tree`) must load independently without waiting for Device inventory enumeration or OWGW operational aggregation. The structural tree must render immediately (< 800ms at 50,000 Devices) to ensure navigation is usable regardless of fleet scale.
 - **PVT-066:** Portfolio and overview operational reads must use short-lived aggregate snapshots (TTL 30s) keyed by authorized principal and scope projection, with single-flight request coalescing so simultaneous requests do not spawn redundant downstream fleet scans. Stale snapshots may be served while asynchronous background refresh is running (up to 120s max stale age).
-- **PVT-067:** MDU must enforce bounded downstream concurrency (max 100 serials per OWGW status batch, max 6 concurrent OWGW requests, max 4 concurrent OWPROV inventory page requests) and a strict overall aggregation deadline (10s). If the deadline is reached or downstream batches fail, unmeasured devices must be marked Unknown and the response must degrade gracefully to `state: 'partial'` with `authoritativeCounts.availability: false`.
+- **PVT-067:** MDU must enforce bounded downstream concurrency (max 100 serials per OWGW status batch, max 6 concurrent OWGW requests, max 4 concurrent OWPROV inventory page requests) and a strict overall aggregation deadline (10s). If the deadline is reached or downstream batches fail, unmeasured Devices must be classified as Unknown, `statusComplete` must be `false`, and the response must degrade gracefully to `state: 'partial'`. When inventory enumeration is complete and every Device is represented exactly once across Online, Offline, and Unknown, `authoritativeCounts.availability` may remain `true`; it must be `false` when inventory itself is incomplete or the availability buckets cannot be reconciled to the inventory total.
 - **PVT-068:** Multi-page inventory enumeration must reconcile unique retrieved records against `countOnly` queries executed before and after pagination. If counts mismatch or inventory mutations (deletions or reassignments) occur between pages, MDU must not present the retrieved count as an authoritative fleet total; it must return `totalCount: null`, disable pagination, and mark data quality as `partial`.
 
 ## 8.10 Deferred Platform Capabilities
@@ -1299,14 +1299,9 @@ An Operator is not a loginable User. It is a business/provisioning object used t
 Users may be associated with the Operator Entity through the existing Management Role Assignment mechanism. Authorization is evaluated against the applicable Entity/Property and Venue scope. The Operator object itself is not an independent operational access scope.
 
 All Operator lifecycle, Entity relationship, subscriber relationship, scope, and authorization behavior is handled by the backend service.
--   **OPR-001:** The automatically created Operator Entity is an internal root scope and must not appear as an MDU Property unless the authoritative backend explicitly classifies it as an operational Property.
+-   **OPR-001:** An automatically created Operator Entity must appear as an MDU Property whenever that Entity is present in the caller's authorized Entity projection. No additional operational-Property classification is required.
 -   **OPR-002:** The Operators module must only be available to users authorized to manage Operators.
--   **OPR-003:** Internal Operator Entity identifiers must not appear in:
-      - Property selectors
-      - Property breadcrumbs
-      - Dashboard Property tables
-      - Property counts
-      - Normal Property/Venue navigation
+-   **OPR-003:** The Operator business object must not be emitted as a second Property or substituted for its corresponding Entity. Property selectors, breadcrumbs, tables, counts, and navigation must use the authorized Entity node and Entity identifier exactly once.
 -   **OPR-004:** The Operators table must provide relevant Operator information such as:
     -   Name
     -   Description
@@ -1317,7 +1312,7 @@ All Operator lifecycle, Entity relationship, subscriber relationship, scope, and
 
 - **OPR-006:** Firmware, Subscribers, and Service Classes workflows are not part of Phase 1.
 
-- **OPR-007:** Operator details must show associated operational Properties and Devices only when those relationships are returned by the authoritative backend.
+- **OPR-007:** Operator details may show its corresponding Entity Property and related Devices when those relationships are returned by the authoritative backend.
 
 - **OPR-008:** Operator deletion must require confirmation. The backend service is responsible for dependency validation and cleanup.
 
@@ -1482,9 +1477,6 @@ The following items require explicit product or architecture approval before imp
 5. Numerical performance targets for initial page usability, search and filter response, pagination, Dashboard refresh, and long-running operation feedback.
 
 6. Supported browser versions, minimum desktop viewport, and tablet-layout requirements for Installer workflows.
-
-7. Product confirmation that every authorized OWPROV Entity, including organizational/container Entities, is represented as a Property and whether those containers contribute to the portfolio Property count.
-
 
 Device deletion behavior, Operator-to-Entity behavior, authorization calculation, and underlying cleanup are backend responsibilities and are not Phase 1 MDU UI decisions.
 

@@ -6,7 +6,7 @@
 
 | Attribute | Value |
 | :--- | :--- |
-| **Document Version** | 1.2.1 |
+| **Document Version** | 1.2.2 |
 | **Modules** | Properties & Venues, Administration (Users & Access), Configuration (Configuration Profiles & Modular Configurations) |
 | **Target Codebase** | `mango-operator-ui` (React / TypeScript / TanStack Query / Vite) |
 | **Reference and implementation targets** | `ra-wlan-cloud-owprov-ui` for established OWPROV workflows; planned Property implementation under `mango-operator-ui/src/pages/Properties` and `mango-mdu-service/internal/services/property_service.go` after this specification is approved |
@@ -2458,7 +2458,7 @@ interface PropertyPortfolioResponse {
 }
 ```
 
-The proposed `propertyCount` counts real authorized Entity nodes and excludes synthetic wrappers. Whether organizational/container Entities should be displayed and counted as Properties remains subject to the explicit product decision in Phase 1 Requirements Section 16; implementation must not freeze this count semantics before approval.
+`propertyCount` counts every real authorized Entity node, including authorized Operator and organizational/container Entities. Synthetic wrappers and Operator business objects are excluded, so an Operator and its corresponding Entity cannot be counted as two Properties.
 
 The proposed initial implementation may aggregate authorized row summaries in one request. Hierarchy metadata remains separately cacheable through the tree endpoint. Lazy per-node aggregation is a future scale optimization if performance testing requires it.
 
@@ -2608,7 +2608,7 @@ OWPROV and OWGW expose offset/limit listing and separate count queries rather th
 2. deduplicate serial numbers;
 3. reconcile the enumerated count with `countOnly` results for the same exact scopes where available;
 4. treat a page failure, count mismatch, or scope change detected during enumeration as incomplete inventory; and
-5. compare each OWGW batch response with the exact serials requested.
+5. call the existing OWGW batch-select contract, `GET /api/v1/devices?deviceWithStatus=true&select={commaSeparatedSerials}`, and compare each response with the exact serials requested.
 
 If inventory enumeration is incomplete, `inventoryComplete` and every `authoritativeCounts` flag are false, aggregate count fields are `null`, scope health is `unknown`, and the UI must not present a total, zero, percentage, or empty state as authoritative. Successfully measured subset records may still be returned with `state: 'partial'` and a warning.
 
@@ -2867,7 +2867,7 @@ When scanning multi-page inventory from OWPROV using offset pagination, concurre
    - If `countBefore !== countAfter`, or if the count of unique retrieved records does not match, or if any page request fails or the aggregation deadline is reached:
    - MDU MUST treat the result as **partial and non-authoritative**.
    - MDU MUST NOT present the retrieved unique serial count as the authoritative `totalDevices` or `totalCount`. The total MUST be rendered as `null` or marked partial.
-   - `dataQuality.state` MUST be set to `"partial"`, and an error item with `source: "owprov"` and `code: "INVENTORY_MUTATION_DETECTED"` (or `"PAGE_SCAN_INCOMPLETE"`) MUST be included. A separate `partial` boolean is not used.
+   - `dataQuality.state` MUST be set to `"partial"`, and an error item with `source: "owprov-inventory"` and `code: "INVENTORY_MUTATION_DETECTED"` (or `"PAGE_SCAN_INCOMPLETE"`) MUST be included. A separate `partial` boolean is not used.
    - If no usable inventory records could be retrieved at all, MDU MUST return HTTP 503 (`Service Unavailable`).
 4. **Future Revision/Cursor Contract:** To achieve strict snapshot consistency without conservative partial-data degradation, OWPROV SHOULD expose a revision token or cursor-based pagination API (e.g., `&cursor={token}` or `&asOfRevision={rev}`).
 
@@ -2877,7 +2877,7 @@ To ensure predictable system performance and prevent backend exhaustion at 10,00
 
 | Dimension | Phase 1 Contract Ceiling | Description & Enforcement |
 |---|---|---|
-| **OWGW Batch Size** | `100` serials | Maximum serial numbers sent in a single `POST /api/v1/devices/status` batch. |
+| **OWGW Batch Size** | `100` serials | Maximum serial numbers encoded as a comma-separated `select` value in one existing `GET /api/v1/devices?deviceWithStatus=true&select={serials}` request. |
 | **OWGW Downstream Concurrency** | `6` concurrent requests | Semaphore cap on simultaneous active OWGW batch HTTP requests. |
 | **OWPROV Inventory Page Concurrency** | `4` concurrent requests | Semaphore cap on simultaneous active OWPROV inventory page requests. |
 | **OWPROV Inventory Chunk Size** | `500` records | Limit per page when enumerating inventory across scopes. |
