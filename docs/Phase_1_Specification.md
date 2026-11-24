@@ -9,7 +9,7 @@
 | **Document Version** | 1.2.2 |
 | **Modules** | Properties & Venues, Administration (Users & Access), Configuration (Configuration Profiles & Modular Configurations) |
 | **Target Codebase** | `mango-operator-ui` (React / TypeScript / TanStack Query / Vite) |
-| **Reference and implementation targets** | `ra-wlan-cloud-owprov-ui` for established OWPROV workflows; planned Property implementation under `mango-operator-ui/src/pages/Properties` and `mango-mdu-service/internal/services/property_service.go` after this specification is approved |
+| **Reference and implementation targets** | `ra-wlan-cloud-owprov-ui` for established OWPROV workflows; planned Property UI implementation under `mango-operator-ui/src/pages/Properties` after this specification is approved |
 | **Downstream Microservices** | `OWSEC` (Port 9002), `OWPROV` (Port 9005 / V1 & V2), `OWGW` (Port 9000) |
 | **Target Audience** | Frontend Engineers, QA Automation Engineers, Backend Integration Engineers |
 | **Status** | Authoritative Normative Specification |
@@ -20,17 +20,17 @@
 
 > [!IMPORTANT]
 > **Tab-Wise Implementation Strategy:**  
-> The Phase 1 delivery for `mango-operator-ui` is executed and specified **tab-by-tab**. Each functional tab is specified to industry standards with complete API contracts, component architecture, state machines, validation schemas, and test scenarios. Once the specification for a tab is approved, engineering implements and validates that specific tab end-to-end before proceeding to subsequent modules.
+> The Phase 1 delivery for `mango-operator-ui` is executed and specified **tab-by-tab**. Each functional tab defines its UI-facing data dependencies, component architecture, state behavior, validation rules, and test scenarios. Backend API implementation contracts remain in their responsible service specifications. Once the specification for a tab is approved, engineering implements and validates that specific tab end-to-end before proceeding to subsequent modules.
 >
 > In Phase 1, the core modules specified in this document include:
 > 1. **Users Tab (Administration):** Identity management, authentication lifecycles, user directory with search/filters/pagination, real-time KPI metrics, detailed profile editing, scoped access infrastructure management (MRAs), and user onboarding.
 > 2. **Policies Tab (Administration):** Management policy catalog, headline policy KPIs, resource permissions visualizer, overview aggregation API, and root-only policy lifecycle administration.
 > 3. **Configuration Profiles Tab (Configuration):** Section-level reusable configuration building blocks mapping directly to OWPROV `VariableBlock` resources, with specialized form builders, validation rules, and JSON wire serializers across eight (8) foundational profile sections (`radio`, `interface.ssid`, `interface.ipv4`, `interface.ssid.radius`, `interface.vlan`, `interface.tunnel`, `interface.captive`, `interface.ssid.openroaming`).
 > 4. **Configurations Tab (Configuration):** Modular multi-section configuration authoring, deep recursive variable block scanning (`__variableBlock`) for read-time name resolution (`?select=`), lossless configuration editing with root `variables[]` preservation, and lifecycle management.
-> 5. **Properties Module (Operations):** Authorized Property/Venue hierarchy, portfolio and scope workspaces, direct OWPROV metadata/CRUD workflows, MDU operational aggregation, scoped Devices, and scoped Configurations.
+> 5. **Properties Module (Operations):** Authorized Property/Venue hierarchy, portfolio and scope workspaces, Property/Venue lifecycle forms, scoped Devices, and scoped Configurations from the Mango Operator UI perspective.
 >
 > **Scope of this Document:**  
-> This specification covers the core modules of Phase 1: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab; **Part 3** details Configuration Profiles; **Part 4** details Modular Configurations; and **Part 5** details the Properties module, its OWPROV/OWGW ownership boundaries, MDU aggregation contracts, direct OWPROV lifecycle workflows, and remaining scale/deferred capabilities. This document provides the authoritative normative contract for **data structures, API interactions, business logic, component behavior, validation rules, state management, and error handling**.
+> This specification covers the core modules of Phase 1: **Part 1** details the Users Tab and its associated workflows; **Part 2** details the Policies Tab; **Part 3** details Configuration Profiles; **Part 4** details Modular Configurations; and **Part 5** defines the Mango Operator UI behavior for the Properties module. Part 5 specifies UI-facing data dependencies, component behavior, validation, query state, presentation, navigation, and error handling. Backend authorization, aggregation, persistence, caching, pagination implementation, and service ownership remain contracts of their responsible services and are intentionally outside Part 5.
 
 ---
 
@@ -2416,7 +2416,7 @@ The Property UI consumes authenticated data through frontend API adapters. This 
 type PropertyScopeType = 'property' | 'venue';
 type Availability = 'online' | 'offline' | 'unknown';
 type Health = 'healthy' | 'warning' | 'critical' | 'unknown';
-type DataQualityState = 'complete' | 'partial' | 'stale' | 'unavailable';
+type OperationalQualityState = 'complete' | 'partial' | 'stale' | 'unavailable';
 
 interface PropertyTreeNode {
   id: string;
@@ -2437,9 +2437,30 @@ interface ScopeSummary {
 }
 
 interface DataQuality {
-  state: DataQualityState;
+  inventoryState: 'complete' | 'unavailable';
+  operationalState: OperationalQualityState;
   asOf?: string;
   generatedAt?: string;
+}
+
+interface PropertyDevice {
+  serialNumber: string;
+  name: string;
+  description?: string;
+  deviceType?: string;
+  deviceGroup?: string;
+  entityId?: string;
+  entityName?: string;
+  venueId?: string;
+  venueName?: string;
+  availability: Availability;
+  health: Health;
+  connected: boolean;
+  statusKnown: boolean;
+  sanity?: number;
+  ipAddress?: string;
+  firmware?: string;
+  lastContact?: number | string;
 }
 
 interface ScopedDevicesResponse {
@@ -2455,7 +2476,7 @@ interface ScopedDevicesResponse {
 
 The hierarchy type intentionally has no Device collection. Legacy payload fields not present in the UI type are ignored during normalization.
 
-Scoped Device traversal is recursive Phase 1 behavior. The UI does not send a direct-versus-descendant option. A successful Device response has numeric pagination fields. An unavailable inventory response is rendered as an error with Retry rather than a partial Device table.
+Scoped Device traversal is recursive Phase 1 behavior. The UI does not send a direct-versus-descendant option. A successful Device response has `inventoryState: 'complete'` and numeric pagination fields. `operationalState` may still be partial, stale, or unavailable; Devices without current operational evidence are shown as Unknown. An unavailable inventory response is rendered as an error with Retry rather than a partial Device table.
 
 ## 39. Portfolio UI
 
@@ -2497,6 +2518,8 @@ A Property shows direct child Properties and Venues. A Venue shows direct nested
 Rows display the available name, type, health, Device count, Online count, and Offline count. Clicking or keyboard-activating a row opens that child scope; no separate Open button is required.
 
 ### 40.3 Devices
+
+The scoped Device query is enabled only when the user opens the Devices tab for a selected Property or Venue. It must not preload Device lists for every node in the portfolio hierarchy. The UI should reuse the established Device API adapters, table behavior, status components, and Device-workspace navigation wherever their contracts match the scoped result.
 
 The Devices tab always represents the selected recursive authorized scope and provides:
 
@@ -2648,8 +2671,9 @@ The following remain unavailable or explicitly labeled until suitable data is ex
 - Property owner, manager, and structured type;
 - a persisted primary Contact designation;
 - Configuration version/lifecycle/category when absent;
-- persistent operational issue management; and
-- Contact/Location deletion unless separately approved.
+- persistent operational issue management;
+- Contact/Location deletion unless separately approved; and
+- interactive Device result sorting; Phase 1 uses the stable default order supplied by the scoped Device data source.
 
 ## 45. Frontend Test Requirements
 
@@ -2660,6 +2684,7 @@ Tests must cover:
 - route restoration for every scope tab;
 - Property and Venue overview and child-row navigation;
 - Device search/filter/pagination and Device workspace navigation;
+- on-demand Device loading only after a scope's Devices tab is selected;
 - inventory-unavailable Retry behavior;
 - partial operational status rendering Unknown rather than Offline;
 - Property and Venue create/edit/delete success and error behavior;
@@ -2674,16 +2699,9 @@ Backend unit, integration, authorization, aggregation, database, batching, cache
 
 ## 46. Property UI Delivery Status
 
-The current Property branch implements the main portfolio and workspace component structure, hierarchy navigation, overview, child scopes, scoped Devices, Configurations, Details, lifecycle forms, Contacts, Locations, and unavailable map/trend states.
+The Property UI described in Part 5 is a planned Phase 1 capability to be implemented after this specification is approved. Specification of a route, component, form, or interaction does not claim that it is currently available in the product.
 
-Before the UI contract is considered complete, the branch must be aligned with this specification by:
-
-1. removing the obsolete `includeDescendants` request option because recursive scope is fixed behavior;
-2. replacing the obsolete partial-inventory Device-table contract with unavailable-and-Retry behavior;
-3. using numeric Device pagination fields only on successful responses;
-4. retaining Unknown handling for incomplete operational status;
-5. validating supported Venue and Device-type filters against the UI data contract; and
-6. completing the frontend tests listed in Section 45.
+Implementation is complete only after the UI behavior in Sections 36–45 is delivered and the frontend tests in Section 45 pass. Delivery status must be tracked through implementation work rather than inferred from this specification.
 
 ## 47. Property UI Definition of Done
 

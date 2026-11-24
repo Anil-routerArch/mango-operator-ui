@@ -474,7 +474,7 @@ Property
 - **PVT-069:** The UI must render the hierarchy exactly as supplied by its authorized hierarchy data source and must not infer additional parent, child, or sibling scopes.
 - **PVT-070:** A Venue returned without a visible ancestor must be rendered as an available root. The UI must not invent a parent Property or Venue to complete its breadcrumb.
 - **PVT-006:** The portfolio must support recursive expansion, hierarchy search, selection, and navigation for Property → Property, Property → Venue, and Venue → Venue relationships.
-- **PVT-007:** The portfolio must provide authoritative counts for Properties, Venues, nested Venues, Devices, availability, and health when those values are available.
+- **PVT-007:** The portfolio must provide authoritative counts for Properties, Venues, nested Venues, Devices, availability, and health when those values are available. Each real authorized Entity node rendered as a Property contributes exactly once to the Property count, including authorized root or Operator-classified Entities. Synthetic hierarchy wrappers and separate Operator business records do not contribute to the Property count.
 - **PVT-008:** The selected scope and active tab must be encoded in the URL and survive refresh and browser navigation.
 - **PVT-009:** The portfolio may provide a map only when valid geospatial data exists; otherwise it must provide a usable non-map hierarchy/list view and identify the map as unavailable.
 - **PVT-010:** The selected-scope drawer must provide Overview, child scopes, Devices, and Details without fabricating unsupported trends or metadata.
@@ -524,10 +524,11 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-034:** Property Device scope must include Devices directly assigned to the Property and Devices assigned to every descendant independently present in the caller's effective authorized hierarchy, with serial-number deduplication. Child Entities are not included merely because their parent Entity is authorized.
 - **PVT-035:** Venue Device scope must include the selected Venue and every nested Venue independently present in the caller's effective authorized hierarchy. Recursive traversal is fixed Phase 1 behavior, not an authorization grant: an exact Venue role contributes only that Venue unless another effective role independently authorizes a child Venue.
 - **PVT-036:** Search and supported availability/health filters must apply to the complete scoped result before zero-based pagination.
-- **PVT-037:** Venue and Device-type filters and result sorting are required before Phase 1 completion and must not be represented as implemented until the UI data contract supports them.
+- **PVT-037:** Venue and Device-type filters are required before Phase 1 completion. Interactive Device result sorting is deferred; Phase 1 uses the stable default order returned by the scoped Device data source.
 - **PVT-038:** Missing or partial Device status must be presented as Unknown, not falsely converted to Offline.
 - **PVT-039:** The browser must not fetch a fixed number of pages and infer all remaining Devices as Offline.
 - **PVT-040:** Device tables must use returned totals rather than inferring fleet size in the browser. Numeric totals and pagination may be shown only when the response identifies them as available.
+- **PVT-075:** The UI must request a scoped Device list only after the user selects a Property or Venue and opens its Devices tab. It must reuse established Device presentation and workspace-navigation behavior where compatible and must not preload Device lists for every hierarchy node.
 
 ## 8.8 Scoped Configurations
 
