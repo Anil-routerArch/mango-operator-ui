@@ -2437,7 +2437,6 @@ interface ScopeSummary {
 }
 
 interface DataQuality {
-  inventoryState: 'complete' | 'unavailable';
   operationalState: OperationalQualityState;
   asOf?: string;
   generatedAt?: string;
@@ -2476,7 +2475,11 @@ interface ScopedDevicesResponse {
 
 The hierarchy type intentionally has no Device collection. Legacy payload fields not present in the UI type are ignored during normalization.
 
-Scoped Device traversal is recursive Phase 1 behavior. The UI does not send a direct-versus-descendant option. A successful Device response has `inventoryState: 'complete'` and numeric pagination fields. `operationalState` may still be partial, stale, or unavailable; Devices without current operational evidence are shown as Unknown. An unavailable inventory response is rendered as an error with Retry rather than a partial Device table.
+Scoped Device traversal is recursive Phase 1 behavior. The UI does not send a direct-versus-descendant option.
+
+`ScopedDevicesResponse` is exclusively a complete-inventory success contract. Every successful response contains the complete filtered result represented through authoritative numeric totals and pagination. The UI has no partial-inventory success state. If the frontend adapter receives an incomplete inventory indication, missing totals or pagination, or a subset that cannot be established as complete, it must reject that response, discard any supplied Device subset, and expose an unavailable query state. The Devices tab then shows Retry and renders no Device table, totals, or pagination.
+
+`operationalState` is independent of inventory completeness. It may be partial, stale, or unavailable after complete Device membership has been established; Devices without current operational evidence are shown as Unknown.
 
 ## 39. Portfolio UI
 
@@ -2519,7 +2522,7 @@ Rows display the available name, type, health, Device count, Online count, and O
 
 ### 40.3 Devices
 
-The scoped Device query is enabled only when the user opens the Devices tab for a selected Property or Venue. It must not preload Device lists for every node in the portfolio hierarchy. The UI should reuse the established Device API adapters, table behavior, status components, and Device-workspace navigation wherever their contracts match the scoped result.
+The scoped Device query is enabled only when the user opens the Devices tab for a selected Property or Venue. It must not preload Device lists for every node in the portfolio hierarchy. The UI may reuse compatible presentation, actions, and Device-workspace navigation, but must not reuse page-local filtering or Boolean Online/Offline logic. Scoped filtering applies before pagination, and availability is rendered as `online`, `offline`, or `unknown`; missing status is never converted to Offline.
 
 The Devices tab always represents the selected recursive authorized scope and provides:
 
@@ -2534,7 +2537,7 @@ The Devices tab always represents the selected recursive authorized scope and pr
 
 The UI uses the returned total and page information. It does not fetch an arbitrary fixed number of pages and infer the remainder as Offline.
 
-If Device inventory is unavailable, the tab shows an unavailable state with Retry and no authoritative empty result. If Device membership is available but operational status is partial, affected Devices render as Unknown and a visible warning is shown.
+If complete Device inventory cannot be established, the tab discards any returned subset and shows an unavailable state with Retry, no Device rows, no totals, and no pagination. If complete Device membership is available but operational status is partial, affected Devices render as Unknown and a visible warning is shown.
 
 ### 40.4 Configuration
 
@@ -2684,7 +2687,9 @@ Tests must cover:
 - route restoration for every scope tab;
 - Property and Venue overview and child-row navigation;
 - Device search/filter/pagination and Device workspace navigation;
+- filtering before pagination, including matches and Unknown Devices across multiple pages;
 - on-demand Device loading only after a scope's Devices tab is selected;
+- rejection of incomplete Device inventory without rendering supplied rows, totals, or pagination;
 - inventory-unavailable Retry behavior;
 - partial operational status rendering Unknown rather than Offline;
 - Property and Venue create/edit/delete success and error behavior;

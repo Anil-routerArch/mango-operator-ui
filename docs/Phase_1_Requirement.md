@@ -525,7 +525,7 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-035:** Venue Device scope must include the selected Venue and every nested Venue independently present in the caller's effective authorized hierarchy. Recursive traversal is fixed Phase 1 behavior, not an authorization grant: an exact Venue role contributes only that Venue unless another effective role independently authorizes a child Venue.
 - **PVT-036:** Search and supported availability/health filters must apply to the complete scoped result before zero-based pagination.
 - **PVT-037:** Venue and Device-type filters are required before Phase 1 completion. Interactive Device result sorting is deferred; Phase 1 uses the stable default order returned by the scoped Device data source.
-- **PVT-038:** Missing or partial Device status must be presented as Unknown, not falsely converted to Offline.
+- **PVT-038:** When complete Device inventory is available but operational status is missing for an individual Device, that Device must be presented as Unknown rather than falsely converted to Offline.
 - **PVT-039:** The browser must not fetch a fixed number of pages and infer all remaining Devices as Offline.
 - **PVT-040:** Device tables must use returned totals rather than inferring fleet size in the browser. Numeric totals and pagination may be shown only when the response identifies them as available.
 - **PVT-075:** The UI must request a scoped Device list only after the user selects a Property or Venue and opens its Devices tab. It must reuse established Device presentation and workspace-navigation behavior where compatible and must not preload Device lists for every hierarchy node.
@@ -552,7 +552,7 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 - **PVT-055:** The UI must render the supplied Device health classification and reasons without recalculating or overriding them from a single signal.
 - **PVT-056:** Missing health evidence must be displayed as Unknown rather than Healthy.
 - **PVT-057:** The UI must label response time and source measurement time distinctly when both are available and must not fabricate a source timestamp.
-- **PVT-058:** When scoped inventory is unavailable, the UI must show an unavailable state with Retry and must not render a partial table as an authoritative empty fleet.
+- **PVT-058:** Scoped Device inventory is all-or-nothing. When complete inventory cannot be established, the UI must reject and discard any supplied subset, show an unavailable state with Retry, and render no Device rows, totals, or pagination. A partial-inventory success state is not supported.
 - **PVT-059:** The UI must treat query keys as cache identifiers rather than authorization boundaries and must clear all authenticated queries and mutations on logout, login/MFA identity changes, failed session restoration, invalid or expired tokens, and known authorization-context changes. An ordinary RBAC denial must remove affected protected data without terminating an otherwise valid session.
 
 ## 8.10 Deferred Platform Capabilities
@@ -1448,7 +1448,13 @@ Phase 1 is ready for product acceptance when:
 
 35. A Venue returned without visible ancestors is presented as a root and the UI does not fabricate parent identifiers, names, metrics, or breadcrumbs.
 
-# 16. Open Product Decisions
+# 16. Product Decisions
+
+## 16.1 Resolved Product Decisions
+
+1. **Entity-to-Property mapping:** Phase 1 intentionally maps every real authorized OWPROV Entity to one UI Property, including Root and Operator-linked Entities. Each is included once in the portfolio Property count. Synthetic hierarchy wrappers and separate Operator business objects are excluded.
+
+## 16.2 Open Product Decisions
 
 The following items require explicit product or architecture approval before implementation freeze:
 
