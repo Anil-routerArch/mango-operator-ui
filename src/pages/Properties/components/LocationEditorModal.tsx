@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Box, Button, Flex, Input, SimpleGrid, Spinner, Text, chakra } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { toaster } from '@/components/ui/toaster';
-import { parseApiError, useSaveLocation, type LocationDetails, type PropertyScopeType } from '@/api';
+import { CreatedResourceAssociationError, parseApiError, useSaveLocation, type LocationDetails, type PropertyScopeType } from '@/api';
 import { themeColors } from '@/theme';
 import { COUNTRY_LIST } from '@/pages/Configuration/components/ConfigurationSectionsCard/countryList';
 
@@ -33,12 +33,13 @@ export const LocationEditorModal: React.FC<{ scopeType: PropertyScopeType; scope
   const [buildingName, setBuildingName] = useState(location?.buildingName || '');
   const [geoCode, setGeoCode] = useState(location?.geoCode || '');
   const [note, setNote] = useState('');
+  const [createdLocationId, setCreatedLocationId] = useState('');
   const valid = Boolean(name.trim() && addressOne.trim() && city.trim() && state.trim() && postal.trim() && country.trim() && timezone.trim() && ownerPropertyId);
 
   const submit = async () => {
     if (!valid) return;
     try {
-      await saveLocation.mutateAsync({ locationId: location?.id, scopeType, scopeId, payload: {
+      await saveLocation.mutateAsync({ locationId: location?.id, createdLocationId: createdLocationId || undefined, scopeType, scopeId, payload: {
         name: name.trim(), description: description.trim(), type, buildingName: buildingName.trim(),
         addressLines: [addressOne, addressTwo].map((value) => value.trim()).filter(Boolean), city: city.trim(),
         state: state.trim(), postal: postal.trim(), country: country.trim(), timezone: timezone.trim(),
@@ -48,13 +49,18 @@ export const LocationEditorModal: React.FC<{ scopeType: PropertyScopeType; scope
       toaster.create({ title: `Location ${location ? 'updated' : 'created'}`, type: 'success' });
       onClose();
     } catch (error) {
+      if (error instanceof CreatedResourceAssociationError && error.resourceType === 'location') {
+        setCreatedLocationId(error.resourceId);
+        toaster.create({ title: 'Location created, but not associated', description: 'Retry to associate the existing Location with this Venue. A second Location will not be created.', type: 'error' });
+        return;
+      }
       toaster.create({ title: 'Could not save Location', description: parseApiError(error, 'OWPROV rejected the Location'), type: 'error' });
     }
   };
 
   const inputProps = { h: '38px', borderRadius: '11px', fontSize: '12px' } as const;
   return <Flex position="fixed" inset={0} zIndex={3100} bg={themeColors.modal.backdrop} align="center" justify="center" p={4} onMouseDown={(event) => event.target === event.currentTarget && onClose()}><Box w="100%" maxW="720px" maxH="94vh" overflowY="auto" bg="#fff" borderRadius="12px" border="1px solid" borderColor="#1f2937" boxShadow="0 24px 80px rgba(0,0,0,.24)">
-    <Flex px={5} py={3} bg="#eef8ff" justify="space-between" align="center" borderBottom="1px solid" borderColor="#1f2937"><Text fontSize="18px" fontWeight="700">{location ? 'Edit Location' : 'Create Location'}</Text><Flex gap={2}><Button aria-label="Save Location" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="#8ebcf0" color="#fff" disabled={!valid || saveLocation.isPending} onClick={submit}>{saveLocation.isPending ? <Spinner size="xs" /> : <Icon name="save" size={18} />}</Button><Button aria-label="Close" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="transparent" border="1px solid" borderColor="#1f2937" onClick={onClose}><Icon name="x" size={18} /></Button></Flex></Flex>
+    <Flex px={5} py={3} bg="#eef8ff" justify="space-between" align="center" borderBottom="1px solid" borderColor="#1f2937"><Text fontSize="18px" fontWeight="700">{location ? 'Edit Location' : createdLocationId ? 'Finish Location Association' : 'Create Location'}</Text><Flex gap={2}><Button aria-label="Save Location" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="#8ebcf0" color="#fff" disabled={!valid || saveLocation.isPending} onClick={submit}>{saveLocation.isPending ? <Spinner size="xs" /> : <Icon name="save" size={18} />}</Button><Button aria-label="Close" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="transparent" border="1px solid" borderColor="#1f2937" onClick={onClose}><Icon name="x" size={18} /></Button></Flex></Flex>
     <SimpleGrid columns={{ base: 1, md: 2 }} columnGap={4} rowGap={4} px={5} py={4}>
       <Box><FieldLabel required>Name</FieldLabel><Input {...inputProps} value={name} onChange={(e) => setName(e.target.value)} borderColor={!name.trim() ? '#f43f5e' : themeColors.input.border} /></Box>
       <Box><FieldLabel>Description</FieldLabel><Input {...inputProps} value={description} onChange={(e) => setDescription(e.target.value)} /></Box>

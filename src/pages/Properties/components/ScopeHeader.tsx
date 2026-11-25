@@ -7,7 +7,7 @@ import { getPropertyLifecycleKind } from '../propertyUtils';
 
 export type PropertyTab = 'overview' | 'scopes' | 'devices' | 'configurations' | 'details';
 
-export const ScopeHeader: React.FC<{ node: PropertyTreeNode; path: PropertyTreeNode[]; activeTab: PropertyTab; onNavigate: (tab: PropertyTab) => void; onBreadcrumb: (node?: PropertyTreeNode) => void; onCreateProperty: () => void; onCreateVenue: () => void; onDelete: () => void; onRefresh: () => void }> = ({ node, path, activeTab, onNavigate, onBreadcrumb, onCreateProperty, onCreateVenue, onDelete, onRefresh }) => {
+export const ScopeHeader: React.FC<{ node: PropertyTreeNode; path: PropertyTreeNode[]; activeTab: PropertyTab; onNavigate: (tab: PropertyTab) => void; onBreadcrumb: (node?: PropertyTreeNode) => void; onCreateProperty: () => void; onCreateVenue: () => void; onDelete: () => void; onRefresh: () => void | Promise<void> }> = ({ node, path, activeTab, onNavigate, onBreadcrumb, onCreateProperty, onCreateVenue, onDelete, onRefresh }) => {
   const { data: details } = useScopeDetails(node.type, node.id);
   const lifecycleKind = node.type === 'property' ? getPropertyLifecycleKind(node.id, details) : undefined;
   const propertyClassificationReady = node.type !== 'property' || node.id === ROOT_PROPERTY_ID || Boolean(details);

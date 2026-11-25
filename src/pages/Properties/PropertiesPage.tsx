@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Button, Flex, Spinner, Text, VStack } from '@chakra-ui/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useDeleteScope, usePropertyTree, useScopeDetails, type PropertyScopeType, type PropertyTreeNode } from '@/api';
 import { toaster } from '@/components/ui/toaster';
@@ -29,6 +30,7 @@ const validTabs: PropertyTab[] = ['overview', 'scopes', 'devices', 'configuratio
 
 export const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const params = useParams<{ scopeType?: string; scopeId?: string; tab?: string }>();
   const scopeType = params.scopeType === 'venue' ? 'venue' : params.scopeType === 'property' ? 'property' : undefined;
   const scopeId = params.scopeId;
@@ -52,6 +54,28 @@ export const PropertiesPage: React.FC = () => {
   if (isError || !selected) return <VStack minH="430px" justify="center"><Icon name="alertTriangle" size={30} /><Text fontWeight="700">This scope is not available in your authorized hierarchy.</Text><Flex gap={2}><Button variant="outline" onClick={() => refetch()}>Retry</Button><Button onClick={() => navigate('/properties')}>All Properties</Button></Flex></VStack>;
 
   const open = (type: PropertyScopeType, id: string, tab: PropertyTab = 'overview') => navigate(`/properties/${type}/${encodeURIComponent(id)}/${tab}`);
+  const refreshSelectedScope = async () => {
+    const refreshes: Array<Promise<unknown>> = [
+      queryClient.invalidateQueries({ queryKey: ['property-tree'] }),
+    ];
+    if (activeTab === 'overview' || activeTab === 'scopes') {
+      refreshes.push(queryClient.invalidateQueries({ queryKey: ['scope-overview', selected.type, selected.id] }));
+    } else if (activeTab === 'devices') {
+      refreshes.push(queryClient.invalidateQueries({ queryKey: ['scope-devices', selected.type, selected.id] }));
+    } else if (activeTab === 'configurations') {
+      refreshes.push(queryClient.invalidateQueries({ queryKey: ['scope-configurations'] }));
+    } else if (activeTab === 'details') {
+      refreshes.push(
+        queryClient.invalidateQueries({ queryKey: ['scope-details', selected.type, selected.id] }),
+        queryClient.invalidateQueries({ queryKey: ['scope-contacts'] }),
+        queryClient.invalidateQueries({ queryKey: ['scope-locations'] }),
+      );
+      if (selected.type === 'venue') {
+        refreshes.push(queryClient.invalidateQueries({ queryKey: ['available-venue-locations', selected.id] }));
+      }
+    }
+    await Promise.all(refreshes);
+  };
   const deleteSelected = async () => {
     if (selected.type === 'property' && getPropertyLifecycleKind(selected.id, selectedDetails) !== 'normal') {
       toaster.create({ title: 'This Property cannot be deleted here', description: selectedDetails?.operatorId ? 'Use Operator administration for an Operator-linked Property.' : 'Root cannot be deleted.', type: 'error' });
@@ -69,12 +93,12 @@ export const PropertiesPage: React.FC = () => {
     }
   };
   return <>
-    <ScopeHeader node={selected} path={path} activeTab={activeTab} onNavigate={(tab) => open(selected.type, selected.id, tab)} onBreadcrumb={(node) => node ? open(node.type, node.id) : navigate('/properties')} onCreateProperty={() => setCreateType('property')} onCreateVenue={() => setCreateType('venue')} onDelete={deleteSelected} onRefresh={() => refetch()} />
+    <ScopeHeader node={selected} path={path} activeTab={activeTab} onNavigate={(tab) => open(selected.type, selected.id, tab)} onBreadcrumb={(node) => node ? open(node.type, node.id) : navigate('/properties')} onCreateProperty={() => setCreateType('property')} onCreateVenue={() => setCreateType('venue')} onDelete={deleteSelected} onRefresh={refreshSelectedScope} />
     {activeTab === 'overview' && <ScopeOverviewTab type={selected.type} id={selected.id} onOpenScope={(type, id) => open(type, id)} />}
     {activeTab === 'scopes' && <ScopeChildrenTab type={selected.type} id={selected.id} onOpen={(type, id) => open(type, id)} />}
     {activeTab === 'devices' && <ScopeDevicesTab key={`${selected.type}-${selected.id}`} type={selected.type} id={selected.id} venueOptions={venueOptions} />}
     {activeTab === 'configurations' && <ScopeConfigurationsTab scopeIds={collectScopeIds(selected)} selectedId={selected.id} />}
-    {activeTab === 'details' && <ScopeDetailsTab type={selected.type} id={selected.id} ownerPropertyId={[...path].reverse().find((node) => node.type === 'property')?.id || ''} onDeleted={() => navigate('/properties')} />}
+    {activeTab === 'details' && <ScopeDetailsTab key={`${selected.type}-${selected.id}`} type={selected.type} id={selected.id} ownerPropertyId={[...path].reverse().find((node) => node.type === 'property')?.id || ''} onDeleted={() => navigate('/properties')} />}
     {createType && <ScopeEditorModal selected={selected} initialType={createType} contextual onClose={() => setCreateType(undefined)} onCreated={(type, id) => { setCreateType(undefined); refetch(); open(type, id, 'details'); }} />}
   </>;
 };

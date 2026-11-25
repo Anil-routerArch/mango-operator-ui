@@ -12,11 +12,9 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [availability, setAvailability] = useState(() => searchParams.get('availability') || '');
-  const [attention, setAttention] = useState<'low-sanity' | 'sanity-unavailable' | ''>(() => {
-    const value = searchParams.get('attention');
-    return value === 'low-sanity' || value === 'sanity-unavailable' ? value : '';
-  });
+  const availability = searchParams.get('availability') || '';
+  const attentionParam = searchParams.get('attention');
+  const attention: 'low-sanity' | 'sanity-unavailable' | '' = attentionParam === 'low-sanity' || attentionParam === 'sanity-unavailable' ? attentionParam : '';
   const [deviceType, setDeviceType] = useState('');
   const [venue, setVenue] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
@@ -30,7 +28,7 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  const { data, isLoading, isFetching, isError, refetch } = useScopedDevices(type, id, {
+  const { data, isLoading, isFetching, isPlaceholderData, isError, refetch } = useScopedDevices(type, id, {
     pageIndex,
     pageSize,
     search,
@@ -46,8 +44,6 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
   const authoritativeEmpty = data?.totalCount === 0;
 
   const applyDeviceFilter = (nextAvailability = '', nextAttention: typeof attention = '') => {
-    setAvailability(nextAvailability);
-    setAttention(nextAttention);
     setPageIndex(0);
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
@@ -137,11 +133,22 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
                   <Box
                     as="tr"
                     key={device.serialNumber}
+                    role="link"
+                    tabIndex={isPlaceholderData ? -1 : 0}
+                    aria-label={`Open Device ${device.name || device.serialNumber}`}
+                    aria-disabled={isPlaceholderData || undefined}
                     borderTop="1px solid"
                     borderColor={themeColors.table.rowBorder}
-                    cursor="pointer"
-                    _hover={{ bg: themeColors.brand.accentLight }}
-                    onClick={() => navigate(`/devices?serial=${encodeURIComponent(device.serialNumber)}`)}
+                    cursor={isPlaceholderData ? 'wait' : 'pointer'}
+                    _hover={isPlaceholderData ? undefined : { bg: themeColors.brand.accentLight }}
+                    _focusVisible={{ outline: '2px solid #2563eb', outlineOffset: '-2px' }}
+                    onClick={() => { if (!isPlaceholderData) navigate(`/devices?serial=${encodeURIComponent(device.serialNumber)}`); }}
+                    onKeyDown={(event) => {
+                      if (!isPlaceholderData && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault();
+                        navigate(`/devices?serial=${encodeURIComponent(device.serialNumber)}`);
+                      }
+                    }}
                   >
                     <Box as="td" px={3} py={3}><Text fontSize="12px" fontWeight="700">{device.name}</Text><Text fontSize="10px" color={themeColors.text.muted}>{device.description}</Text></Box>
                     <Box as="td" px={3} py={3} fontSize="11px" fontFamily="mono">{device.serialNumber}</Box>
@@ -162,7 +169,7 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
               <Button
                 size="xs"
                 variant="outline"
-                disabled={pageIndex === 0}
+                disabled={isPlaceholderData || pageIndex === 0}
                 onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
               >
                 Previous
@@ -171,7 +178,7 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
               <Button
                 size="xs"
                 variant="outline"
-                disabled={pageIndex + 1 >= data.totalPages}
+                disabled={isPlaceholderData || pageIndex + 1 >= data.totalPages}
                 onClick={() => setPageIndex((p) => p + 1)}
               >
                 Next

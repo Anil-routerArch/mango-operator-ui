@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Box, Button, Flex, Input, SimpleGrid, Spinner, Text, chakra } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { toaster } from '@/components/ui/toaster';
-import { parseApiError, useSaveContact, type ContactDetails, type PropertyScopeType } from '@/api';
+import { CreatedResourceAssociationError, parseApiError, useSaveContact, type ContactDetails, type PropertyScopeType } from '@/api';
 import { themeColors } from '@/theme';
 
 const splitValues = (value: string) => value.split(',').map((item) => item.trim()).filter(Boolean);
@@ -32,6 +32,7 @@ export const ContactEditorModal: React.FC<{
   const [mobiles, setMobiles] = useState((contact?.mobiles || []).join(', '));
   const [accessPIN, setAccessPIN] = useState(contact?.accessPIN || '');
   const [note, setNote] = useState('');
+  const [createdContactId, setCreatedContactId] = useState('');
   const valid = Boolean(
     name.trim()
     && firstname.trim()
@@ -44,7 +45,7 @@ export const ContactEditorModal: React.FC<{
     if (!valid) return;
     try {
       await saveContact.mutateAsync({
-        contactId: contact?.id, scopeType, scopeId, existingContactIds,
+        contactId: contact?.id, createdContactId: createdContactId || undefined, scopeType, scopeId, existingContactIds,
         payload: {
           name: name.trim(), type, salutation, title: title.trim(), firstname: firstname.trim(),
           lastname: lastname.trim(), initials: initials.trim(), visual: contact?.visual || '',
@@ -57,6 +58,11 @@ export const ContactEditorModal: React.FC<{
       toaster.create({ title: `Contact ${contact ? 'updated' : 'created'}`, type: 'success' });
       onClose();
     } catch (error) {
+      if (error instanceof CreatedResourceAssociationError && error.resourceType === 'contact') {
+        setCreatedContactId(error.resourceId);
+        toaster.create({ title: 'Contact created, but not associated', description: 'Retry to associate the existing Contact with this Venue. A second Contact will not be created.', type: 'error' });
+        return;
+      }
       toaster.create({ title: 'Could not save Contact', description: parseApiError(error, 'OWPROV rejected the Contact'), type: 'error' });
     }
   };
@@ -65,7 +71,7 @@ export const ContactEditorModal: React.FC<{
   return <Flex position="fixed" inset={0} zIndex={3100} bg={themeColors.modal.backdrop} align="center" justify="center" p={4} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <Box w="100%" maxW="720px" maxH="92vh" overflowY="auto" bg="#fff" borderRadius="12px" border="1px solid" borderColor="#1f2937" boxShadow="0 24px 80px rgba(0,0,0,.24)">
       <Flex px={5} py={3} bg="#eef8ff" justify="space-between" align="center" borderBottom="1px solid" borderColor="#1f2937">
-        <Text fontSize="18px" fontWeight="700">{contact ? 'Edit Contact' : 'Create Contact'}</Text>
+        <Text fontSize="18px" fontWeight="700">{contact ? 'Edit Contact' : createdContactId ? 'Finish Contact Association' : 'Create Contact'}</Text>
         <Flex gap={2}>
           <Button aria-label="Save Contact" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="#8ebcf0" color="#fff" disabled={!valid || saveContact.isPending} onClick={submit}>{saveContact.isPending ? <Spinner size="xs" /> : <Icon name="save" size={18} />}</Button>
           <Button aria-label="Close" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="transparent" border="1px solid" borderColor="#1f2937" onClick={onClose}><Icon name="x" size={18} /></Button>

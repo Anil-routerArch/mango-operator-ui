@@ -213,6 +213,20 @@ export interface LocationInput {
   notes?: Array<{ note: string }>;
 }
 
+export class CreatedResourceAssociationError extends Error {
+  readonly resourceType: 'contact' | 'location';
+  readonly resourceId: string;
+  readonly associationError: unknown;
+
+  constructor(resourceType: 'contact' | 'location', resourceId: string, associationError: unknown) {
+    super(`${resourceType === 'contact' ? 'Contact' : 'Location'} was created but could not be associated with the Venue`);
+    this.name = 'CreatedResourceAssociationError';
+    this.resourceType = resourceType;
+    this.resourceId = resourceId;
+    this.associationError = associationError;
+  }
+}
+
 export interface ScopedDevicesFilters {
   pageIndex?: number;
   pageSize?: number;
@@ -396,8 +410,9 @@ export const useAvailableVenueLocations = (venueId?: string) =>
 export const useSaveContact = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ contactId, payload, scopeType, scopeId, existingContactIds = [] }: {
+    mutationFn: async ({ contactId, createdContactId, payload, scopeType, scopeId, existingContactIds = [] }: {
       contactId?: string;
+      createdContactId?: string;
       payload: ContactInput;
       scopeType: PropertyScopeType;
       scopeId: string;
@@ -407,11 +422,21 @@ export const useSaveContact = () => {
         const { data } = await axiosProv.put<ContactDetails>(`contact/${encodeURIComponent(contactId)}`, payload);
         return data;
       }
-      const { data } = await axiosProv.post<ContactDetails>('contact/0', payload);
+      let data: ContactDetails;
+      if (createdContactId) {
+        data = { id: createdContactId };
+      } else {
+        const response = await axiosProv.post<ContactDetails>('contact/0', payload);
+        data = response.data;
+      }
       if (scopeType === 'venue' && data.id) {
-        await axiosProv.put(`venue/${encodeURIComponent(scopeId)}`, {
-          contacts: [...new Set([...existingContactIds, data.id])],
-        });
+        try {
+          await axiosProv.put(`venue/${encodeURIComponent(scopeId)}`, {
+            contacts: [...new Set([...existingContactIds, data.id])],
+          });
+        } catch (error) {
+          throw new CreatedResourceAssociationError('contact', data.id, error);
+        }
       }
       return data;
     },
@@ -425,8 +450,9 @@ export const useSaveContact = () => {
 export const useSaveLocation = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ locationId, payload, scopeType, scopeId }: {
+    mutationFn: async ({ locationId, createdLocationId, payload, scopeType, scopeId }: {
       locationId?: string;
+      createdLocationId?: string;
       payload: LocationInput;
       scopeType: PropertyScopeType;
       scopeId: string;
@@ -435,9 +461,19 @@ export const useSaveLocation = () => {
         const { data } = await axiosProv.put<LocationDetails>(`location/${encodeURIComponent(locationId)}`, payload);
         return data;
       }
-      const { data } = await axiosProv.post<LocationDetails>('location/0', payload);
+      let data: LocationDetails;
+      if (createdLocationId) {
+        data = { id: createdLocationId };
+      } else {
+        const response = await axiosProv.post<LocationDetails>('location/0', payload);
+        data = response.data;
+      }
       if (scopeType === 'venue' && data.id) {
-        await axiosProv.put(`venue/${encodeURIComponent(scopeId)}`, { location: data.id });
+        try {
+          await axiosProv.put(`venue/${encodeURIComponent(scopeId)}`, { location: data.id });
+        } catch (error) {
+          throw new CreatedResourceAssociationError('location', data.id, error);
+        }
       }
       return data;
     },

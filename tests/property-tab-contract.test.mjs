@@ -116,6 +116,60 @@ test('ScopeDevicesTab.tsx uses authoritative pagination and tri-state availabili
   );
 });
 
+test('Property Details editing state is isolated by selected scope', () => {
+  const pagePath = path.join(ROOT_DIR, 'src', 'pages', 'Properties', 'PropertiesPage.tsx');
+  const content = fs.readFileSync(pagePath, 'utf-8');
+
+  assert.match(
+    content,
+    /<ScopeDetailsTab key=\{`\$\{selected\.type\}-\$\{selected\.id\}`\}/,
+    'ScopeDetailsTab must remount when the selected scope changes'
+  );
+});
+
+test('Venue Contact and Location retries reuse resources created before association failure', () => {
+  const apiContent = fs.readFileSync(path.join(ROOT_DIR, 'src', 'api', 'properties.ts'), 'utf-8');
+  const contactContent = fs.readFileSync(path.join(ROOT_DIR, 'src', 'pages', 'Properties', 'components', 'ContactEditorModal.tsx'), 'utf-8');
+  const locationContent = fs.readFileSync(path.join(ROOT_DIR, 'src', 'pages', 'Properties', 'components', 'LocationEditorModal.tsx'), 'utf-8');
+
+  assert.ok(apiContent.includes('CreatedResourceAssociationError'));
+  assert.ok(apiContent.includes('createdContactId') && apiContent.includes('createdLocationId'));
+  assert.ok(contactContent.includes('setCreatedContactId(error.resourceId)'));
+  assert.ok(locationContent.includes('setCreatedLocationId(error.resourceId)'));
+  assert.ok(contactContent.includes('A second Contact will not be created.'));
+  assert.ok(locationContent.includes('A second Location will not be created.'));
+});
+
+test('Refresh Scope invalidates the active scope query instead of only the structural tree', () => {
+  const pageContent = fs.readFileSync(path.join(ROOT_DIR, 'src', 'pages', 'Properties', 'PropertiesPage.tsx'), 'utf-8');
+
+  assert.ok(pageContent.includes('refreshSelectedScope'));
+  assert.ok(pageContent.includes("['scope-overview', selected.type, selected.id]"));
+  assert.ok(pageContent.includes("['scope-devices', selected.type, selected.id]"));
+  assert.ok(pageContent.includes("['scope-configurations']"));
+  assert.ok(pageContent.includes("['scope-details', selected.type, selected.id]"));
+});
+
+test('Scoped Device placeholder rows are inert and Device filters follow the URL', () => {
+  const devicesContent = fs.readFileSync(path.join(ROOT_DIR, 'src', 'pages', 'Properties', 'components', 'ScopeDevicesTab.tsx'), 'utf-8');
+
+  assert.ok(devicesContent.includes('isPlaceholderData'));
+  assert.ok(devicesContent.includes("tabIndex={isPlaceholderData ? -1 : 0}"));
+  assert.ok(devicesContent.includes('disabled={isPlaceholderData || pageIndex === 0}'));
+  assert.ok(devicesContent.includes("const availability = searchParams.get('availability') || ''"));
+  assert.ok(!devicesContent.includes('setAvailability('));
+  assert.ok(!devicesContent.includes('setAttention('));
+});
+
+test('Scoped Device rows support keyboard navigation', () => {
+  const devicesContent = fs.readFileSync(path.join(ROOT_DIR, 'src', 'pages', 'Properties', 'components', 'ScopeDevicesTab.tsx'), 'utf-8');
+
+  assert.ok(devicesContent.includes('role="link"'));
+  assert.ok(devicesContent.includes('onKeyDown={(event)'));
+  assert.ok(devicesContent.includes("event.key === 'Enter' || event.key === ' '"));
+  assert.ok(devicesContent.includes('_focusVisible'));
+});
+
 test('Property realtime updates availability and refreshes factual aggregates', () => {
   const devicesApi = fs.readFileSync(path.join(ROOT_DIR, 'src', 'api', 'devices.ts'), 'utf-8');
   const propertiesApi = fs.readFileSync(path.join(ROOT_DIR, 'src', 'api', 'properties.ts'), 'utf-8');
