@@ -432,9 +432,9 @@ Requirements introduced by this revision use the `PVT-*` namespace so they do no
 - **PROP-010:** The Property view must provide access to Devices requiring attention.
 - **PROP-011:** Child-scope presentation must support health/availability inspection and navigation.
 - **PROP-012:** The Property page must clearly represent parent-child relationships between Properties and Venues.
-- **PROP-013:** Authorized users must be able to create a child Property with a required name, contextual parent, and supported optional metadata.
+- **PROP-013:** Subject to RBAC, authorized users may create a child Property only under the Root Property or an Operator-linked Property; a normal Property must not offer child-Property creation.
 - **PROP-014:** Authorized users must be able to update supported Property metadata.
-- **PROP-015:** Property deletion must require confirmation and must display any returned dependency error without reporting false success.
+- **PROP-015:** Property deletion must be available only for normal Properties, require confirmation, and display any returned dependency error without reporting false success. Root cannot be deleted, and an Operator-linked Property must be deleted only through Operator administration.
 - **PROP-016:** The UI must refresh Property lifecycle state from its authenticated data source and must not maintain a conflicting browser-only Property record.
 
 - **VEN-001:** The Venue header must identify the Venue and show only authorized hierarchy context.
@@ -511,13 +511,18 @@ The selected scope exposes the following tabs where applicable: Overview; **Prop
 
 ## 8.6 Property and Venue Lifecycle
 
-- **PVT-027:** An authorized user may create a child Property with required `name` and contextual `parent`, plus supported description, note, source-IP, and Device Rule fields.
-- **PVT-028:** An authorized user may create a top-level Venue using exactly one `entity` binding or a nested Venue using exactly one `parent` Venue binding.
+- **PVT-027:** Subject to RBAC, child-Property creation is available only when the selected parent is the real Root Entity (`0000-0000-0000`) or has a non-empty `operatorId`. The form requires `name` and the contextual `parent`, and may include supported description, note, source-IP, and Device Rule fields.
+- **PVT-028:** A Venue cannot be created directly under the Root Entity. A non-Root Property must first exist; a top-level Venue then uses exactly one non-Root `entity` binding, while a nested Venue uses exactly one `parent` Venue binding.
 - **PVT-029:** Venue creation may include supported description, note, source-IP, Device Rules, and Location.
 - **PVT-030:** Create, update, and delete actions must use the authenticated Property API adapters and must treat the returned success or error as authoritative.
 - **PVT-031:** Deletion must require explicit confirmation and must not imply cascading deletion of children, Devices, Contacts, Locations, or Configurations.
 - **PVT-032:** Mutation controls must prevent duplicate submission, preserve safe user input on failure, surface the authoritative error, and refresh affected hierarchy/detail data on success.
 - **PVT-033:** Unsaved-form navigation warnings are required before Phase 1 completion and must not be claimed until implemented.
+- **PVT-080:** The UI must classify a real Entity as Root by the exact ID `0000-0000-0000`, as Operator-linked by a non-empty `operatorId`, and otherwise as a normal Property. A synthetic hierarchy wrapper must not be classified as Root.
+- **PVT-081:** Lifecycle controls must reflect the selected Entity type and the user's permissions: Root and Operator-linked Properties may offer child-Property creation; normal Properties may offer deletion; all real Properties may offer supported metadata editing; and Root must not offer direct Venue creation or deletion.
+- **PVT-082:** When the hierarchy response lacks the metadata needed to classify a selected Property, the UI must load its authorized Entity details before displaying lifecycle controls.
+- **PVT-083:** Hiding or disabling lifecycle actions is a UI safeguard only. OWPROV authorization, type restrictions, and dependency validation remain authoritative, and rejected mutations must be surfaced without false success.
+- **PVT-084:** Operator business-object metadata and its linked Entity metadata must remain independently editable; the Properties module must not introduce implicit name or metadata synchronization.
 
 ## 8.7 Scoped Devices
 

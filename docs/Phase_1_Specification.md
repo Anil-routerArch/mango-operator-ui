@@ -2570,15 +2570,37 @@ Edit mode must:
 
 ### 41.1 Property and Venue
 
-The create control opens a contextual form:
+The UI classifies each real Entity before presenting lifecycle actions:
 
-- A child Property uses the selected Property as its parent.
-- A top-level Venue uses the selected Property.
-- A nested Venue uses the selected Venue as its parent.
+- **Root Property:** the Entity ID is exactly `0000-0000-0000`.
+- **Operator-linked Property:** `operatorId` is non-empty and the Entity is not Root.
+- **Normal Property:** the Entity is neither Root nor Operator-linked.
+- A synthetic hierarchy wrapper is navigation context and is never classified as Root or exposed as a mutable Property.
+
+If the hierarchy response does not contain `operatorId` or other metadata required for classification, the UI loads the selected Entity's authorized detail record before rendering its action controls.
+
+The available controls are determined by both the Entity classification and the current user's permissions:
+
+| Selected scope | Create child Property | Create Venue | Edit metadata | Delete through Properties |
+| --- | --- | --- | --- | --- |
+| Root Property | Show when permitted | Hidden | Show when permitted | Hidden |
+| Operator-linked Property | Show when permitted | Show when permitted | Show when permitted | Hidden |
+| Normal Property | Hidden | Show when permitted | Show when permitted | Show when permitted |
+| Venue | Hidden | Show nested Venue when permitted | Show when permitted | Show when permitted |
+
+The create control opens a contextual form only for an available action:
+
+- A child Property uses Root or an Operator-linked Property as its `parent`.
+- A Venue cannot be created directly under Root. The user must first create a child Property, then create the top-level Venue using that non-Root Property as its `entity`.
+- A nested Venue uses the selected Venue as its `parent`.
 
 The form supports the fields exposed by the current UI: name, description, note, supported behavior fields, and Location where applicable.
 
-Delete requires explicit confirmation. The UI does not claim cascading deletion and displays dependency or permission errors returned by the request.
+Root is never deletable. An Operator-linked Property is not deleted through the Properties module; its lifecycle is handled through Operator administration with authoritative dependency validation. A normal Property or Venue requires explicit confirmation before deletion. The UI does not claim cascading deletion and displays dependency or permission errors returned by the request.
+
+Control visibility is a usability safeguard, not an authorization boundary. OWPROV remains authoritative for RBAC, Entity-type restrictions, Venue-parent restrictions, and dependency validation. The UI must not report success when the service rejects a mutation.
+
+Operator business-object metadata and linked Entity metadata remain independent. Editing either record does not implicitly synchronize its name or other fields.
 
 ### 41.2 Contacts
 
@@ -2693,6 +2715,10 @@ Tests must cover:
 - inventory-unavailable Retry behavior;
 - partial operational status rendering Unknown rather than Offline;
 - Property and Venue create/edit/delete success and error behavior;
+- lifecycle action visibility for Root, Operator-linked, and normal Properties, including users without the required permission;
+- Root offering child-Property creation but not direct Venue creation or deletion;
+- Operator-linked Property deletion being absent from the Properties module; and
+- normal Properties offering Venue creation and permitted deletion but not child-Property creation;
 - Contact and Location required fields, payloads, association refresh, and failure preservation;
 - Venue Create Location flow;
 - Configuration incomplete-list warnings and absence of fabricated metadata;
