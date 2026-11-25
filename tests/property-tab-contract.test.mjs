@@ -99,7 +99,7 @@ test('ScopeDevicesTab.tsx uses authoritative pagination and tri-state availabili
   const content = fs.readFileSync(devicesTabPath, 'utf-8');
 
   assert.ok(
-    content.includes("<option value=\"unknown\">Unknown</option>"),
+    content.includes("<option value=\"availability:unknown\">Unknown</option>"),
     'ScopeDevicesTab must allow filtering Unknown availability'
   );
   assert.ok(
@@ -241,7 +241,9 @@ test('Property overview lists factual offline and low-sanity Devices needing att
   const devicesApi = fs.readFileSync(path.join(ROOT_DIR, 'src', 'api', 'devices.ts'), 'utf-8');
 
   assert.ok(propertiesApi.includes('sanity?: number;'));
-  assert.ok(portfolio.includes("device.availability === 'offline' || typeof device.sanity !== 'number' || device.sanity < 90"));
+  assert.ok(portfolio.includes("if (device.availability === 'offline') return 'offline'"));
+  assert.ok(portfolio.includes("if (typeof device.sanity !== 'number') return 'sanity-unavailable'"));
+  assert.ok(portfolio.includes("if (device.sanity < 90) return 'low-sanity'"));
   assert.ok(portfolio.includes('Devices needing attention'));
   assert.ok(portfolio.includes('Needs attention ·'));
   assert.ok(portfolio.includes('Sanity unavailable'));

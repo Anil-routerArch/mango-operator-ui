@@ -114,7 +114,7 @@ export const PropertyTreeMap: React.FC<PropertyTreeMapProps> = ({
         childrenNodes.push({
           id: `device/${serial}`,
           type: 'device',
-          name: serial,
+          name: device.name || serial,
           serialNumber: serial,
           deviceCount: 0,
           availability: device.availability,

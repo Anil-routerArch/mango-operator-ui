@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Button, Flex, Input, SimpleGrid, Spinner, Text, VStack, chakra } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { Header } from '@/layout/Header';
@@ -59,8 +59,23 @@ interface AttentionDevice extends PropertyMapDevice {
   scopeType: PropertyScopeType;
 }
 
+type AttentionReason = 'offline' | 'low-sanity' | 'sanity-unavailable';
+
+interface DeviceSearchMatch {
+  device: PropertyMapDevice;
+  scope: PropertyMapNode;
+  path: PropertyMapNode[];
+}
+
+const getAttentionReason = (device: PropertyMapDevice): AttentionReason | undefined => {
+  if (device.availability === 'offline') return 'offline';
+  if (typeof device.sanity !== 'number') return 'sanity-unavailable';
+  if (device.sanity < 90) return 'low-sanity';
+  return undefined;
+};
+
 const deviceNeedsAttention = (device: PropertyMapDevice) =>
-  device.availability === 'offline' || typeof device.sanity !== 'number' || device.sanity < 90;
+  getAttentionReason(device) !== undefined;
 
 const buildAttentionIndex = (nodes: PropertyMapNode[]) => {
   const byScope = new Map<string, AttentionDevice[]>();
@@ -79,11 +94,38 @@ const buildAttentionIndex = (nodes: PropertyMapNode[]) => {
   return byScope;
 };
 
-const filterNodes = (nodes: PropertyTreeNode[], query: string, type: string): PropertyTreeNode[] => nodes.flatMap((node) => {
-  const children = filterNodes(node.children || [], query, type);
+const collectDeviceMatches = (nodes: PropertyMapNode[], query: string): DeviceSearchMatch[] => {
+  if (!query) return [];
+  const matches: DeviceSearchMatch[] = [];
+  const visit = (node: PropertyMapNode, parents: PropertyMapNode[]) => {
+    const path = [...parents, node];
+    for (const device of node.devices) {
+      if (`${device.name || ''} ${device.serialNumber}`.toLowerCase().includes(query)) {
+        matches.push({ device, scope: node, path });
+      }
+    }
+    node.children.forEach((child) => visit(child, path));
+  };
+  nodes.forEach((node) => visit(node, []));
+  return matches;
+};
+
+const collectCollapsibleKeys = (nodes: PropertyTreeNode[]): Set<string> => {
+  const keys = new Set<string>();
+  const visit = (items: PropertyTreeNode[]) => items.forEach((node) => {
+    if (node.children.length > 0) keys.add(`${node.type}-${node.id}`);
+    visit(node.children || []);
+  });
+  visit(nodes);
+  return keys;
+};
+
+const filterNodes = (nodes: PropertyTreeNode[], query: string, type: string, deviceScopeKeys: Set<string>): PropertyTreeNode[] => nodes.flatMap((node) => {
+  const children = filterNodes(node.children || [], query, type, deviceScopeKeys);
+  const devicePathMatch = deviceScopeKeys.has(`${node.type}-${node.id}`);
   const matches = (!query || `${node.name} ${node.id}`.toLowerCase().includes(query))
     && (!type || node.type === type);
-  return matches || children.length ? [{ ...node, children }] : [];
+  return devicePathMatch || matches || children.length ? [{ ...node, children }] : [];
 });
 
 const PortfolioRow: React.FC<{
@@ -102,7 +144,7 @@ const PortfolioRow: React.FC<{
   const attentionCount = attentionByScope.get(key)?.length || 0;
   return (
     <>
-      <Box as="tr" bg={selected?.id === node.id && selected.type === node.type ? '#eaf3ff' : '#fff'} borderTop="1px solid" borderColor={themeColors.table.rowBorder} _hover={{ bg: '#f8fbff' }} onClick={() => onSelect(node)} cursor="pointer">
+      <Box id={`property-row-${encodeURIComponent(key)}`} as="tr" bg={selected?.id === node.id && selected.type === node.type ? '#eaf3ff' : '#fff'} borderTop="1px solid" borderColor={themeColors.table.rowBorder} _hover={{ bg: '#f8fbff' }} onClick={() => onSelect(node)} cursor="pointer">
         <Box as="td" px={3} py="10px">
           <Flex align="center" gap={2} pl={`${depth * 28}px`}>
             <Button aria-label={open ? 'Collapse' : 'Expand'} visibility={node.children.length ? 'visible' : 'hidden'} size="xs" minW="20px" w="20px" h="20px" p={0} bg="transparent" color={themeColors.text.primary} _hover={{ bg: '#e2e8f0', color: '#0f172a' }} onClick={(event) => { event.stopPropagation(); onToggle(key); }}>
@@ -137,6 +179,17 @@ const SelectionPanel: React.FC<{ node: PropertyTreeNode; attentionDevices: Atten
   const summary = node.summary;
   const childProperties = node.children.filter((child) => child.type === 'property');
   const childVenues = node.children.filter((child) => child.type === 'venue');
+  const attentionGroups = useMemo(() => ({
+    offline: attentionDevices.filter((device) => getAttentionReason(device) === 'offline'),
+    'low-sanity': attentionDevices.filter((device) => getAttentionReason(device) === 'low-sanity'),
+    'sanity-unavailable': attentionDevices.filter((device) => getAttentionReason(device) === 'sanity-unavailable'),
+  }), [attentionDevices]);
+  const openDevices = (reason?: AttentionReason | 'online' | 'unknown') => {
+    const params = new URLSearchParams();
+    if (reason === 'offline' || reason === 'online' || reason === 'unknown') params.set('availability', reason);
+    if (reason === 'low-sanity' || reason === 'sanity-unavailable') params.set('attention', reason);
+    navigate(`/properties/${node.type}/${encodeURIComponent(node.id)}/devices${params.size ? `?${params.toString()}` : ''}`);
+  };
   const tabs: Array<{ id: typeof tab; label: string }> = [
     { id: 'overview', label: 'Overview' },
     { id: 'scopes', label: node.type === 'property' ? `Scopes (${node.children.length})` : `Venues (${node.children.length})` },
@@ -154,12 +207,14 @@ const SelectionPanel: React.FC<{ node: PropertyTreeNode; attentionDevices: Atten
       {tab === 'overview' && (
         <>
           <SimpleGrid columns={3} gap={2} p={3}>
-            {[['Properties', childProperties.length], ['Venues', childVenues.length], ['Devices', summary?.totalDevices], ['Online', summary?.onlineDevices], ['Offline', summary?.offlineDevices], ['Unknown', summary?.unknownDevices]].map(([label, value]) => (
-              <Box key={String(label)} border="1px solid" borderColor={themeColors.panel.border} borderRadius="7px" py={3} textAlign="center">
+            {[['Properties', childProperties.length], ['Venues', childVenues.length], ['Devices', summary?.totalDevices], ['Online', summary?.onlineDevices], ['Offline', summary?.offlineDevices], ['Unknown', summary?.unknownDevices]].map(([label, value]) => {
+              const deviceFilter = label === 'Devices' ? undefined : String(label).toLowerCase() as AttentionReason | 'online' | 'unknown';
+              const isDeviceMetric = ['Devices', 'Online', 'Offline', 'Unknown'].includes(String(label));
+              return <Box as={isDeviceMetric ? 'button' : 'div'} key={String(label)} border="1px solid" borderColor={themeColors.panel.border} borderRadius="7px" py={3} textAlign="center" cursor={isDeviceMetric ? 'pointer' : 'default'} _hover={isDeviceMetric ? { borderColor: themeColors.brand.primary, bg: themeColors.brand.accentLight } : undefined} onClick={isDeviceMetric ? () => openDevices(deviceFilter) : undefined}>
                 <Text fontSize="15px" fontWeight="700">{value ?? '—'}</Text>
                 <Text fontSize="9px" color={themeColors.text.muted}>{label}</Text>
-              </Box>
-            ))}
+              </Box>;
+            })}
           </SimpleGrid>
           <Box mx={4} mb={3} p={3} border="1px solid" borderColor={themeColors.panel.border} borderRadius="7px">
             <Text fontSize="12px" fontWeight="700" mb={2}>Summary</Text>
@@ -173,11 +228,21 @@ const SelectionPanel: React.FC<{ node: PropertyTreeNode; attentionDevices: Atten
                 <Text fontSize="12px" fontWeight="700" color="#9a3412">Devices needing attention</Text>
                 <Text fontSize="11px" fontWeight="700" color="#c2410c">{attentionDevices.length}</Text>
               </Flex>
-              <VStack align="stretch" gap={0} maxH="240px" overflowY="auto">
-                {attentionDevices.map((device) => (
+              <VStack align="stretch" gap={0} maxH="320px" overflowY="auto">
+                {([
+                  ['offline', 'Offline', attentionGroups.offline],
+                  ['low-sanity', 'Low sanity', attentionGroups['low-sanity']],
+                  ['sanity-unavailable', 'Sanity unavailable', attentionGroups['sanity-unavailable']],
+                ] as Array<[AttentionReason, string, AttentionDevice[]]>).filter(([, , group]) => group.length > 0).map(([reason, label, group]) => <React.Fragment key={reason}>
+                  <Flex px={3} py={2} bg="#fffbeb" borderTop="1px solid #fed7aa" align="center" justify="space-between">
+                    <Text fontSize="10px" fontWeight="750" color="#9a3412">{label} · {group.length}</Text>
+                    <Button size="xs" h="22px" variant="outline" borderColor="#fdba74" color="#9a3412" onClick={() => openDevices(reason)}>View all</Button>
+                  </Flex>
+                  {group.map((device) => (
                   <Flex key={`${device.scopeType}-${device.scopeId}-${device.serialNumber}`} px={3} py={2.5} borderTop="1px solid #fed7aa" align="center" gap={2} cursor="pointer" _hover={{ bg: '#fffaf5' }} onClick={() => navigate(`/devices?serial=${encodeURIComponent(device.serialNumber)}`)}>
                     <Box flex="1" minW={0}>
-                      <Text fontSize="11px" fontWeight="700" truncate>{device.serialNumber}</Text>
+                      <Text fontSize="11px" fontWeight="700" truncate>{device.name || device.serialNumber}</Text>
+                      {device.name && <Text fontSize="9px" color={themeColors.text.muted} truncate>{device.serialNumber}</Text>}
                       <Text fontSize="9px" color={themeColors.text.muted} truncate>{device.scopeName} · {device.scopeType === 'property' ? 'Property' : 'Venue'}</Text>
                     </Box>
                     <Flex gap={1.5} align="center" flexShrink={0}>
@@ -188,7 +253,8 @@ const SelectionPanel: React.FC<{ node: PropertyTreeNode; attentionDevices: Atten
                       <Icon name="chevronRight" size={14} color={themeColors.text.muted} />
                     </Flex>
                   </Flex>
-                ))}
+                  ))}
+                </React.Fragment>)}
               </VStack>
             </Box>
           )}
@@ -322,12 +388,28 @@ export const PropertyPortfolio: React.FC = () => {
   // replace the independently loaded authorized tree.
   const nodes = useMemo(() => mergeTreeWithSummaries(treeNodes, portfolio?.nodes), [treeNodes, portfolio?.nodes]);
   const attentionByScope = useMemo(() => buildAttentionIndex(propertyMap?.nodes || []), [propertyMap?.nodes]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const deviceMatches = useMemo(() => collectDeviceMatches(propertyMap?.nodes || [], normalizedQuery), [propertyMap?.nodes, normalizedQuery]);
+  const deviceScopeKeys = useMemo(() => {
+    const keys = new Set<string>();
+    deviceMatches.forEach((match) => match.path.forEach((scope) => keys.add(`${scope.type}-${scope.id}`)));
+    return keys;
+  }, [deviceMatches]);
+  const collapsibleKeys = useMemo(() => collectCollapsibleKeys(nodes), [nodes]);
+  const allCollapsed = collapsibleKeys.size > 0 && [...collapsibleKeys].every((key) => expanded.has(key));
 
   const structuralCounts = useMemo(() => countScopes(nodes), [nodes]);
   const currentSelected = selected ? (findTreeNode(nodes, selected.type, selected.id) || nodes[0]) : nodes[0];
   const panelSelection = panelOpen ? currentSelected : undefined;
-  const visible = useMemo(() => filterNodes(nodes, query.trim().toLowerCase(), type), [nodes, query, type]);
+  const visible = useMemo(() => filterNodes(nodes, normalizedQuery, type, deviceScopeKeys), [nodes, normalizedQuery, type, deviceScopeKeys]);
+  const effectiveCollapsed = normalizedQuery ? new Set<string>() : expanded;
   const openNode = (node: PropertyTreeNode) => navigate(`/properties/${node.type}/${encodeURIComponent(node.id)}/overview`);
+
+  useEffect(() => {
+    if (viewMode !== 'tree' || !selected) return;
+    const row = document.getElementById(`property-row-${encodeURIComponent(`${selected.type}-${selected.id}`)}`);
+    row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selected, viewMode]);
 
   const handleRefresh = () => {
     refetchTree();
@@ -383,14 +465,25 @@ export const PropertyPortfolio: React.FC = () => {
         <PropertyMetricCard label="Offline" value={portfolio?.summary?.offlineDevices?.toLocaleString() ?? '—'} icon="power" tone="#dc2626" />
         <PropertyMetricCard label="Unknown" value={portfolio?.summary?.unknownDevices?.toLocaleString() ?? '—'} icon="info" tone="#64748b" />
       </SimpleGrid>
-      <Flex gap={2} mb={4} flexWrap="wrap" align="center">
-        <Flex flex="1" minW="260px" position="relative" align="center"><Box position="absolute" left="11px"><Icon name="search" size={16} /></Box><Input h="40px" pl="36px" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or ID" bg="#fff" /></Flex>
+      <Flex gap={2} mb={deviceMatches.length > 0 ? 2 : 4} flexWrap="wrap" align="center">
+        <Flex flex="1" minW="260px" position="relative" align="center"><Box position="absolute" left="11px"><Icon name="search" size={16} /></Box><Input h="40px" pl="36px" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search scope name, ID, Device name, or serial" bg="#fff" /></Flex>
         <chakra.select value={type} onChange={(event) => setType(event.target.value)} h="40px" px={3} bg="#fff" border="1px solid" borderColor={themeColors.input.border} borderRadius="5px"><option value="">Type: All</option><option value="property">Property</option><option value="venue">Venue</option></chakra.select>
         <Flex ml={{ base: 0, xl: 'auto' }} border="1px solid" borderColor={themeColors.input.border} borderRadius="7px" overflow="hidden" bg="#fff"><Button aria-label="Hierarchy view" minW="46px" h="38px" borderRadius={0} bg={viewMode === 'tree' ? '#1267e5' : '#fff'} color={viewMode === 'tree' ? '#fff' : themeColors.text.primary} onClick={() => setViewMode('tree')}><Icon name="network" size={18} /></Button><Button aria-label="Map view" minW="46px" h="38px" borderRadius={0} bg={viewMode === 'map' ? '#1267e5' : '#fff'} color={viewMode === 'map' ? '#fff' : themeColors.text.primary} onClick={() => setViewMode('map')}><Icon name="globe" size={18} /></Button></Flex>
       </Flex>
+      {deviceMatches.length > 0 && <Box mb={4} border="1px solid" borderColor={themeColors.panel.border} borderRadius="8px" bg="#fff" overflow="hidden">
+        <Flex px={3} py={2} bg={themeColors.canvas.bg} justify="space-between"><Text fontSize="11px" fontWeight="700">Matching Devices</Text><Text fontSize="10px" color={themeColors.text.muted}>{deviceMatches.length}</Text></Flex>
+        <VStack align="stretch" gap={0} maxH="210px" overflowY="auto">
+          {deviceMatches.map(({ device, path, scope }) => <Flex key={`${scope.type}-${scope.id}-${device.serialNumber}`} px={3} py={2.5} borderTop="1px solid" borderColor={themeColors.table.rowBorder} align="center" gap={3} cursor="pointer" _hover={{ bg: themeColors.brand.accentLight }} onClick={() => navigate(`/devices?serial=${encodeURIComponent(device.serialNumber)}`)}>
+            <Icon name="device" size={17} color="#4f46e5" />
+            <Box flex="1" minW={0}><Text fontSize="11px" fontWeight="700" truncate>{device.name || device.serialNumber}</Text><Text fontSize="9px" color={themeColors.text.muted} truncate>{device.name ? `${device.serialNumber} · ` : ''}{path.map((entry) => entry.name).join(' / ')}</Text></Box>
+            <AvailabilityDot state={device.availability} />
+            <Icon name="chevronRight" size={14} color={themeColors.text.muted} />
+          </Flex>)}
+        </VStack>
+      </Box>}
       {viewMode === 'tree' ? <SimpleGrid columns={{ base: 1, xl: panelSelection ? 3 : 1 }} gap={4} alignItems="start">
         <Box gridColumn={{ xl: panelSelection ? 'span 2' : 'span 1' }} border="1px solid" borderColor={themeColors.panel.border} borderRadius="10px" overflow="hidden" bg="#fff">
-          <Box overflowX="auto"><Box as="table" w="100%" minW="720px" borderCollapse="collapse"><Box as="thead" bg={themeColors.canvas.bg}><Box as="tr">{['Scope / Name', 'Devices', 'Online', 'Offline', 'Unknown', ''].map((label) => <Box as="th" key={label} px={3} py={3} textAlign="left" fontSize="10px" color={themeColors.text.muted}>{label}</Box>)}</Box></Box><Box as="tbody">{visible.map((node) => <PortfolioRow key={`${node.type}-${node.id}`} node={node} depth={0} selected={currentSelected} attentionByScope={attentionByScope} expanded={expanded} onToggle={(key) => setExpanded((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onSelect={(node) => { setSelected(node); setPanelOpen(true); }} onOpen={openNode} />)}</Box></Box></Box>
+          <Box overflowX="auto"><Box as="table" w="100%" minW="720px" borderCollapse="collapse"><Box as="thead" bg={themeColors.canvas.bg}><Box as="tr">{['Scope / Name', 'Devices', 'Online', 'Offline', 'Unknown', ''].map((label) => <Box as="th" key={label} px={3} py={label === 'Scope / Name' ? 1.5 : 3} textAlign="left" fontSize="10px" color={themeColors.text.muted}>{label === 'Scope / Name' ? <Flex align="center" gap={2}><Button aria-label={allCollapsed ? 'Expand all scopes' : 'Collapse all scopes'} title={normalizedQuery ? 'Clear search to change expansion' : allCollapsed ? 'Expand all scopes' : 'Collapse all scopes'} size="xs" minW="28px" w="28px" h="28px" p={0} variant="outline" disabled={Boolean(normalizedQuery) || collapsibleKeys.size === 0} onClick={() => setExpanded(allCollapsed ? new Set() : new Set(collapsibleKeys))}><Box transform={allCollapsed ? 'rotate(90deg)' : 'rotate(-90deg)'} transition="transform 0.15s ease"><Icon name="chevronsRight" size={14} /></Box></Button><Text as="span" fontSize="10px">{label}</Text></Flex> : label}</Box>)}</Box></Box><Box as="tbody">{visible.map((node) => <PortfolioRow key={`${node.type}-${node.id}`} node={node} depth={0} selected={currentSelected} attentionByScope={attentionByScope} expanded={effectiveCollapsed} onToggle={(key) => setExpanded((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} onSelect={(node) => { setSelected(node); setPanelOpen(true); }} onOpen={openNode} />)}</Box></Box></Box>
           {visible.length === 0 && <Text py={12} textAlign="center" fontSize="12px" color={themeColors.text.muted}>No matching scopes.</Text>}
         </Box>
         {panelSelection && <SelectionPanel key={`${panelSelection.type}-${panelSelection.id}`} node={panelSelection} attentionDevices={attentionByScope.get(`${panelSelection.type}-${panelSelection.id}`) || []} onClose={() => setPanelOpen(false)} onOpen={() => openNode(panelSelection)} />}

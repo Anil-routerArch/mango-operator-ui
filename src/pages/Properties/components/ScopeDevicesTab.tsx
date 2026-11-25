@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Button, Flex, Input, SimpleGrid, Spinner, Text, VStack, chakra } from '@chakra-ui/react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { useScopedDevices, useDeviceEventsStream, type PropertyScopeType } from '@/api';
@@ -9,9 +9,14 @@ import { PropertyMetricCard } from './PropertyMetricCard';
 
 export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; venueOptions?: Array<{ id: string; name: string }> }> = ({ type, id, venueOptions = [] }) => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [availability, setAvailability] = useState('');
+  const [availability, setAvailability] = useState(() => searchParams.get('availability') || '');
+  const [attention, setAttention] = useState<'low-sanity' | 'sanity-unavailable' | ''>(() => {
+    const value = searchParams.get('attention');
+    return value === 'low-sanity' || value === 'sanity-unavailable' ? value : '';
+  });
   const [deviceType, setDeviceType] = useState('');
   const [venue, setVenue] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
@@ -31,6 +36,7 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
     search,
     venue: venue || undefined,
     availability: availability || undefined,
+    attention: attention || undefined,
     type: deviceType || undefined,
   });
 
@@ -38,6 +44,20 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
   useDeviceEventsStream(currentSerials);
 
   const authoritativeEmpty = data?.totalCount === 0;
+
+  const applyDeviceFilter = (nextAvailability = '', nextAttention: typeof attention = '') => {
+    setAvailability(nextAvailability);
+    setAttention(nextAttention);
+    setPageIndex(0);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (nextAvailability) next.set('availability', nextAvailability);
+      else next.delete('availability');
+      if (nextAttention) next.set('attention', nextAttention);
+      else next.delete('attention');
+      return next;
+    }, { replace: true });
+  };
 
   return (
     <VStack align="stretch" gap={4}>
@@ -55,10 +75,10 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
       )}
       <Flex justify="space-between" align="flex-end"><Box><Text fontSize="20px" fontWeight="700">Devices</Text><Text fontSize="11px" color={themeColors.text.muted}>Devices assigned anywhere in this scope.</Text></Box></Flex>
       {data && <SimpleGrid columns={{ base: 1, sm: 2, xl: 4 }} gap={3}>
-        <PropertyMetricCard label="Total Devices" value={data.summary.totalDevices != null ? data.summary.totalDevices.toLocaleString() : '—'} icon="device" tone="#4f46e5" />
-        <PropertyMetricCard label="Online" value={data.summary.onlineDevices != null ? data.summary.onlineDevices.toLocaleString() : '—'} icon="wifi" tone="#16a34a" />
-        <PropertyMetricCard label="Offline" value={data.summary.offlineDevices != null ? data.summary.offlineDevices.toLocaleString() : '—'} icon="power" tone="#dc2626" />
-        <PropertyMetricCard label="Unknown" value={data.summary.unknownDevices != null ? data.summary.unknownDevices.toLocaleString() : '—'} icon="info" tone="#64748b" />
+        <PropertyMetricCard label="Total Devices" value={data.summary.totalDevices != null ? data.summary.totalDevices.toLocaleString() : '—'} icon="device" tone="#4f46e5" onClick={() => applyDeviceFilter()} />
+        <PropertyMetricCard label="Online" value={data.summary.onlineDevices != null ? data.summary.onlineDevices.toLocaleString() : '—'} icon="wifi" tone="#16a34a" onClick={() => applyDeviceFilter('online')} />
+        <PropertyMetricCard label="Offline" value={data.summary.offlineDevices != null ? data.summary.offlineDevices.toLocaleString() : '—'} icon="power" tone="#dc2626" onClick={() => applyDeviceFilter('offline')} />
+        <PropertyMetricCard label="Unknown" value={data.summary.unknownDevices != null ? data.summary.unknownDevices.toLocaleString() : '—'} icon="info" tone="#64748b" onClick={() => applyDeviceFilter('unknown')} />
       </SimpleGrid>}
       <Flex gap={2} flexWrap="wrap" align="center">
         <Flex position="relative" align="center" flex="1" minW="230px">
@@ -75,11 +95,22 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
           <option value="">All authorized Venues</option>
           {venueOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
         </chakra.select>}
-        <chakra.select value={availability} onChange={(e) => { setAvailability(e.target.value); setPageIndex(0); }} h="38px" px={3} border="1px solid" borderColor={themeColors.input.border} borderRadius="5px" fontSize="12px" bg="#fff">
+        <chakra.select
+          value={attention ? `attention:${attention}` : availability ? `availability:${availability}` : ''}
+          onChange={(e) => {
+            const [kind, value = ''] = e.target.value.split(':');
+            if (kind === 'attention') applyDeviceFilter('', value as typeof attention);
+            else applyDeviceFilter(value, '');
+          }}
+          h="38px" px={3} border="1px solid" borderColor={themeColors.input.border} borderRadius="5px" fontSize="12px" bg="#fff"
+          aria-label="Filter Devices by availability or attention reason"
+        >
           <option value="">All availability</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-          <option value="unknown">Unknown</option>
+          <option value="availability:online">Online</option>
+          <option value="availability:offline">Offline</option>
+          <option value="availability:unknown">Unknown</option>
+          <option value="attention:low-sanity">Low sanity</option>
+          <option value="attention:sanity-unavailable">Sanity unavailable</option>
         </chakra.select>
         <Button h="38px" variant="outline" onClick={() => refetch()} aria-label="Refresh Devices"><Icon name="refresh" size={16} /></Button>
       </Flex>

@@ -26,6 +26,7 @@ export interface PropertyPortfolio {
 
 export interface PropertyMapDevice {
   serialNumber: string;
+  name?: string;
   availability: AvailabilityState;
   sanity?: number;
 }
@@ -92,6 +93,7 @@ export interface PropertyDevice {
   ipAddress?: string;
   firmware?: string;
   lastContact?: number | string;
+  sanity?: number;
 }
 
 export interface ScopedDevicesResponse {
@@ -218,6 +220,7 @@ export interface ScopedDevicesFilters {
   venue?: string;
   availability?: string;
   type?: string;
+  attention?: 'low-sanity' | 'sanity-unavailable';
 }
 
 const requireCompleteScopedDevicesResponse = (data: ScopedDevicesResponse): ScopedDevicesResponse => {
