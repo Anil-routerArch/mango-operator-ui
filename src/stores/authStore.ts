@@ -5,6 +5,7 @@ import {
   fetchSystemEndpoints,
   getApiErrorMessage,
   teardownSessionAndReload,
+  clearAuthenticatedQueryCache,
 } from '@/api';
 import type { User, LoginCredentials, LoginApiResponse } from '@/types/auth';
 
@@ -53,6 +54,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
 
     if (!savedToken) {
+      clearAuthenticatedQueryCache();
       set({ isInitialized: true, isAuthenticated: false, token: null, user: null });
       return;
     }
@@ -82,6 +84,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(STORAGE_KEY);
       setApiToken(null);
+      clearAuthenticatedQueryCache();
       set({
         token: null,
         user: null,
@@ -117,6 +120,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const token = data.access_token;
 
       // Propagate token to Axios instances to fetch profile and endpoints
+      clearAuthenticatedQueryCache();
       setApiToken(token);
 
       // Concurrently fetch profile and discover endpoints
@@ -149,6 +153,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(STORAGE_KEY);
       setApiToken(null);
+      clearAuthenticatedQueryCache();
 
       const message = getApiErrorMessage(err, 'Invalid credentials. Please try again.');
       set({
@@ -186,6 +191,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const token = data.access_token;
 
       // Propagate token to Axios instances to fetch profile and endpoints
+      clearAuthenticatedQueryCache();
       setApiToken(token);
 
       const [profileRes] = await Promise.all([
@@ -217,6 +223,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem(STORAGE_KEY);
       sessionStorage.removeItem(STORAGE_KEY);
       setApiToken(null);
+      clearAuthenticatedQueryCache();
 
       const message = getApiErrorMessage(err, 'MFA verification failed.');
       set({

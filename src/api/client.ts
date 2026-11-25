@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { AUTH_EXPIRED_TOKEN_CODE, AUTH_INVALID_TOKEN_CODE, DEFAULT_TIMEOUT_MS } from './constants';
+import { clearAuthenticatedQueryCache } from './queryClient';
 
 declare global {
   interface Window {
@@ -146,6 +147,7 @@ export const isLoginRoute = (): boolean => {
  * while window.location.reload() natively preserves the current URL prefix (root, subpath, reverse proxy).
  */
 export const teardownSessionAndReload = () => {
+  clearAuthenticatedQueryCache();
   localStorage.removeItem('access_token');
   sessionStorage.removeItem('access_token');
   setApiToken(null);
@@ -178,6 +180,11 @@ const handleResponseError = (error: AxiosError<ApiErrorData>) => {
       if (!isLoginRoute()) {
         teardownSessionAndReload();
       }
+    } else if (status === 403) {
+      // A valid session may have lost an RBAC grant. Protected cached results
+      // can no longer be trusted, but an ordinary authorization denial must
+      // not terminate the user's session.
+      clearAuthenticatedQueryCache();
     }
 
     // 401 Unauthorized handling on authenticated requests
@@ -201,4 +208,14 @@ allAxiosInstances.forEach((client) => {
 // failures do not terminate the entire OpenWiFi operator session.
 coreAxiosInstances.forEach((client) => {
   client.interceptors.response.use(undefined, handleResponseError);
+});
+
+// MDU failures never terminate the OpenWiFi session. A 403 still invalidates
+// protected cache state because the active authorization projection may have
+// changed since those results were loaded.
+axiosMdu.interceptors.response.use(undefined, (error: AxiosError) => {
+  if (error.response?.status === 403) {
+    clearAuthenticatedQueryCache();
+  }
+  return Promise.reject(error);
 });

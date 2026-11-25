@@ -22,6 +22,7 @@ import type {
   DeviceNote,
 } from '@/types/device';
 import { normalizePlatformDeviceType } from '@/types/device';
+import type { PropertyMapResponse, ScopedDevicesResponse } from './properties';
 
 // Helper: Normalize serial numbers/MACs to lowercase alphanumeric string
 export const normalizeSerial = (serial: string): string => {
@@ -138,6 +139,7 @@ export const useDeviceEventsStream = (serials: string[]) => {
   const socketRef = useRef<WebSocket | null>(null);
   const isAuthenticatedRef = useRef(false);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const propertyRefreshTimeoutRef = useRef<number | null>(null);
   const serialsRef = useRef(serials);
   serialsRef.current = serials;
 
@@ -162,6 +164,20 @@ export const useDeviceEventsStream = (serials: string[]) => {
     }
 
     let isDisposed = false;
+
+    // Device rows are patched immediately below. Aggregate summaries are
+    // recalculated by MDU, so reconcile them after a short debounce instead
+    // of issuing a backend request for every event in a burst.
+    const schedulePropertyRefresh = () => {
+      if (propertyRefreshTimeoutRef.current !== null) return;
+      propertyRefreshTimeoutRef.current = window.setTimeout(() => {
+        propertyRefreshTimeoutRef.current = null;
+        if (isDisposed) return;
+        queryClient.invalidateQueries({ queryKey: ['property-portfolio'] });
+        queryClient.invalidateQueries({ queryKey: ['scope-overview'] });
+        queryClient.invalidateQueries({ queryKey: ['scope-devices'] });
+      }, 750);
+    };
 
     const connectWebSocket = () => {
       if (isDisposed) return;
@@ -189,6 +205,10 @@ export const useDeviceEventsStream = (serials: string[]) => {
             isAuthenticatedRef.current = true;
             // Send current viewport serials (sends [] if viewport has no devices)
             ws.send(JSON.stringify({ serials: serialsRef.current }));
+            // Reconcile authoritative state on initial connect and reconnect
+            queryClient.invalidateQueries({ queryKey: ['property-portfolio'] });
+            queryClient.invalidateQueries({ queryKey: ['scope-overview'] });
+            queryClient.invalidateQueries({ queryKey: ['scope-devices'] });
             return;
           }
 
@@ -250,6 +270,119 @@ export const useDeviceEventsStream = (serials: string[]) => {
               };
             }
           );
+
+          // Real-time update for Single Device Workspace query cache
+          queryClient.setQueriesData<UnifiedFleetDevice | null>(
+            {
+              predicate: (query) => {
+                const key = query.queryKey[0];
+                const serial = query.queryKey[1];
+                return (
+                  key === 'single-device-overview' &&
+                  typeof serial === 'string' &&
+                  normalizeSerial(serial) === normEventSerial
+                );
+              },
+            },
+            (old) => {
+              if (!old) return old;
+              const copy = { ...old };
+              if (event.type === 'connection') {
+                if (typeof event.connected === 'boolean') {
+                  copy.connected = event.connected;
+                }
+                if (event.connectionIp) {
+                  copy.ipAddress = event.connectionIp;
+                }
+                if (event.firmware) {
+                  copy.firmware = event.firmware;
+                }
+                if (event.timestamp) {
+                  copy.lastContact = event.timestamp;
+                  copy.lastContactTimestamp = event.timestamp;
+                }
+              } else if (event.type === 'state') {
+                if (typeof event.memoryPct === 'number') {
+                  copy.memoryUsedPct = Math.round(event.memoryPct);
+                }
+                if (Array.isArray(event.load) && event.load.length > 0) {
+                  copy.load = event.load[0];
+                }
+                if (event.timestamp) {
+                  copy.lastContact = event.timestamp;
+                  copy.lastContactTimestamp = event.timestamp;
+                }
+              } else if (event.type === 'healthcheck') {
+                if (typeof event.sanity === 'number') {
+                  copy.sanity = event.sanity;
+                }
+                if (event.timestamp) {
+                  copy.lastContact = event.timestamp;
+                  copy.lastContactTimestamp = event.timestamp;
+                }
+              }
+              return copy;
+            }
+          );
+
+          // Real-time update for Scoped Devices query cache (Properties tabs)
+          queryClient.setQueriesData<ScopedDevicesResponse>(
+            {
+              predicate: (query) => query.queryKey[0] === 'scope-devices',
+            },
+            (old) => {
+              if (!old?.devices) return old;
+              const updatedDevices = old.devices.map((dev) => {
+                if (normalizeSerial(dev.serialNumber) !== normEventSerial) {
+                  return dev;
+                }
+                const copy = { ...dev };
+                if (event.type === 'connection') {
+                  if (typeof event.connected === 'boolean') {
+                    copy.connected = event.connected;
+                    copy.availability = event.connected ? 'online' : 'offline';
+                  }
+                  if (event.connectionIp) copy.ipAddress = event.connectionIp;
+                  if (event.firmware) copy.firmware = event.firmware;
+                  if (event.timestamp) copy.lastContact = event.timestamp;
+                } else if (event.type === 'healthcheck') {
+                  if (event.timestamp) copy.lastContact = event.timestamp;
+                }
+                return copy;
+              });
+              return {
+                ...old,
+                devices: updatedDevices,
+              };
+            }
+          );
+
+          if (event.type === 'connection' || event.type === 'healthcheck') {
+            queryClient.setQueryData<PropertyMapResponse>(['property-map'], (old) => {
+              if (!old?.nodes) return old;
+              const updateNodes = (nodes: PropertyMapResponse['nodes']): PropertyMapResponse['nodes'] =>
+                nodes.map((node) => ({
+                  ...node,
+                  devices: node.devices.map((device) => {
+                    if (normalizeSerial(device.serialNumber) !== normEventSerial) return device;
+                    if (event.type === 'connection' && typeof event.connected === 'boolean') {
+                      return { ...device, availability: event.connected ? 'online' : 'offline' };
+                    }
+                    if (event.type === 'healthcheck') {
+                      return { ...device, sanity: typeof event.sanity === 'number' ? event.sanity : undefined };
+                    }
+                    return device;
+                  }),
+                  children: updateNodes(node.children),
+                }));
+              return { ...old, nodes: updateNodes(old.nodes) };
+            });
+          }
+
+          // Property aggregates depend only on current connection availability.
+          if (event.type === 'connection') {
+            schedulePropertyRefresh();
+          }
         } catch (err) {
           console.debug('Failed to parse incoming WebSocket device event:', err);
         }
@@ -275,6 +408,10 @@ export const useDeviceEventsStream = (serials: string[]) => {
       isDisposed = true;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (propertyRefreshTimeoutRef.current !== null) {
+        clearTimeout(propertyRefreshTimeoutRef.current);
+        propertyRefreshTimeoutRef.current = null;
       }
       if (socketRef.current) {
         socketRef.current.close();

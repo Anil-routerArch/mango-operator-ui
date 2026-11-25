@@ -8,7 +8,7 @@ import { DeviceOverviewTab } from './tabs/OverviewTab';
 import { DeviceConfigTab } from './tabs/ConfigurationTab';
 import { DeviceActivityTab } from './tabs/ActivityTab';
 import { useDevicesUiStore } from '@/stores/devicesUiStore';
-import { useDeviceOverview } from '@/api/devices';
+import { useDeviceOverview, useDeviceEventsStream } from '@/api/devices';
 import type { DeviceWorkspaceTab, UnifiedFleetDevice } from '@/types/device';
 
 export interface DeviceWorkspaceProps {
@@ -18,6 +18,9 @@ export interface DeviceWorkspaceProps {
 export const DeviceWorkspace: React.FC<DeviceWorkspaceProps> = ({ serialNumber }) => {
   const [, setSearchParams] = useSearchParams();
   const { workspaceTab, setWorkspaceTab, clearSelectedDevice } = useDevicesUiStore();
+
+  const activeSerials = React.useMemo(() => (serialNumber ? [serialNumber] : []), [serialNumber]);
+  useDeviceEventsStream(activeSerials);
 
   const handleTabChange = (newTab: DeviceWorkspaceTab) => {
     setWorkspaceTab(newTab);

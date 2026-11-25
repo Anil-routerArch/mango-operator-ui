@@ -21,6 +21,7 @@ export const AppRoutes: React.FC = () => {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/properties" element={<PropertiesPage />} />
+          <Route path="/properties/:scopeType/:scopeId/:tab" element={<PropertiesPage />} />
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/configurations" element={<ConfigurationPage />} />
           <Route path="/users" element={<UsersPage />} />
