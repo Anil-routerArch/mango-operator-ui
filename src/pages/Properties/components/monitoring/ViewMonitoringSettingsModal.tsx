@@ -141,7 +141,7 @@ export const ViewMonitoringSettingsModal: React.FC<Props> = ({
                 Telemetry Interval
               </Text>
               <Text fontSize="12px" fontWeight="650" color="#0f172a">
-                {monitoring?.interval ? `${monitoring.interval}s` : '60s'}
+                {monitoring?.interval ? `${monitoring.interval}s` : '—'}
               </Text>
             </Flex>
             <Flex justify="space-between" py={1.5}>
@@ -149,7 +149,7 @@ export const ViewMonitoringSettingsModal: React.FC<Props> = ({
                 Data Retention
               </Text>
               <Text fontSize="12px" fontWeight="650" color="#0f172a">
-                {retentionDays ? `${retentionDays} days (${monitoring?.retention}s)` : '7 days'}
+                {retentionDays ? `${retentionDays} days (${monitoring?.retention}s)` : '—'}
               </Text>
             </Flex>
           </Box>

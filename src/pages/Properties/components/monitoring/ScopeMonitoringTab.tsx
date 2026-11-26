@@ -149,19 +149,30 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
   }
 
   const summary = monitoring.summary;
-  const healthColor =
-    (summary?.avgHealth || 0) >= 90
-      ? { bg: '#dcfce7', border: '#bbf7d0', text: '#15803d' }
-      : (summary?.avgHealth || 0) >= 70
-      ? { bg: '#fef9c3', border: '#fef08a', text: '#a16207' }
-      : { bg: '#fee2e2', border: '#fecaca', text: '#b91c1c' };
+  const neutralColor = {
+    bg: '#f8fafc',
+    border: '#e2e8f0',
+    text: '#64748b',
+  };
 
-  const memoryColor =
-    (summary?.avgMemoryUsed || 0) < 65
-      ? { bg: '#dcfce7', border: '#bbf7d0', text: '#15803d' }
-      : (summary?.avgMemoryUsed || 0) < 80
-      ? { bg: '#fef9c3', border: '#fef08a', text: '#a16207' }
-      : { bg: '#fee2e2', border: '#fecaca', text: '#b91c1c' };
+  const hasHealth = Boolean(summary) && sortedDevices.some((dev) => dev.health > 0);
+  const hasMemory = Boolean(summary) && sortedDevices.some((dev) => dev.memory > 0);
+
+  const healthColor = !hasHealth
+    ? neutralColor
+    : (summary?.avgHealth || 0) >= 90
+    ? { bg: '#dcfce7', border: '#bbf7d0', text: '#15803d' }
+    : (summary?.avgHealth || 0) >= 70
+    ? { bg: '#fef9c3', border: '#fef08a', text: '#a16207' }
+    : { bg: '#fee2e2', border: '#fecaca', text: '#b91c1c' };
+
+  const memoryColor = !hasMemory
+    ? neutralColor
+    : (summary?.avgMemoryUsed || 0) >= 80
+    ? { bg: '#fee2e2', border: '#fecaca', text: '#b91c1c' }
+    : (summary?.avgMemoryUsed || 0) >= 65
+    ? { bg: '#fef9c3', border: '#fef08a', text: '#a16207' }
+    : { bg: '#dcfce7', border: '#bbf7d0', text: '#15803d' };
 
   return (
     <Box>
@@ -173,7 +184,7 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
             Monitoring Active
           </Text>
           <Text fontSize="12px" color="#64748b">
-            · Interval: {monitoring.interval || 60}s · Board: {monitoring.boardId?.slice(0, 8)}...
+            · Interval: {monitoring.interval ? `${monitoring.interval}s` : '—'} · Board: {monitoring.boardId ? `${monitoring.boardId.slice(0, 8)}...` : '—'}
           </Text>
         </Flex>
         <Button
@@ -202,7 +213,7 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
             <Flex align="center" gap={2}>
               <Box w="10px" h="10px" borderRadius="full" bg="#16a34a" />
               <Text fontSize="14px" fontWeight="700" color="#0f172a">
-                {summary?.connectedDevices || 0}
+                {summary?.connectedDevices ?? '—'}
               </Text>
               <Text fontSize="12px" color="#64748b">
                 connected
@@ -211,7 +222,7 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
             <Flex align="center" gap={2}>
               <Box w="10px" h="10px" borderRadius="full" bg="#dc2626" />
               <Text fontSize="14px" fontWeight="700" color="#0f172a">
-                {summary?.disconnectedDevices || 0}
+                {summary?.disconnectedDevices ?? '—'}
               </Text>
               <Text fontSize="12px" color="#64748b">
                 disconnected
@@ -235,7 +246,7 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
           <Flex align="center" gap={2} mt={1}>
             <Icon name="heart" size={26} color={healthColor.text} />
             <Text fontSize="28px" fontWeight="800" color={healthColor.text} lineHeight="1">
-              {summary?.avgHealth ?? 0}%
+              {hasHealth ? `${summary!.avgHealth}%` : '—'}
             </Text>
           </Flex>
         </Box>
@@ -255,7 +266,7 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
           <Flex align="center" gap={2} mt={1}>
             <Icon name="activity" size={26} color={memoryColor.text} />
             <Text fontSize="28px" fontWeight="800" color={memoryColor.text} lineHeight="1">
-              {summary?.avgMemoryUsed ?? 0}%
+              {hasMemory ? `${summary!.avgMemoryUsed}%` : '—'}
             </Text>
           </Flex>
         </Box>
@@ -274,18 +285,18 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
           <Flex justify="space-between" align="baseline">
             <VStack align="start" gap={0.5}>
               <Text fontSize="12px" color="#475569">
-                2G: <strong style={{ color: '#0f172a' }}>{summary?.twoGAssociations ?? 0}</strong>
+                2G: <strong style={{ color: '#0f172a' }}>{summary?.twoGAssociations ?? '—'}</strong>
               </Text>
               <Text fontSize="12px" color="#475569">
-                5G: <strong style={{ color: '#0f172a' }}>{summary?.fiveGAssociations ?? 0}</strong>
+                5G: <strong style={{ color: '#0f172a' }}>{summary?.fiveGAssociations ?? '—'}</strong>
               </Text>
               <Text fontSize="12px" color="#475569">
-                6G: <strong style={{ color: '#0f172a' }}>{summary?.sixGAssociations ?? 0}</strong>
+                6G: <strong style={{ color: '#0f172a' }}>{summary?.sixGAssociations ?? '—'}</strong>
               </Text>
             </VStack>
             <Box textAlign="right">
               <Text fontSize="24px" fontWeight="800" color="#2563eb" lineHeight="1">
-                {summary?.totalAssociations ?? 0}
+                {summary?.totalAssociations ?? '—'}
               </Text>
               <Text fontSize="10px" color="#64748b" textTransform="uppercase" fontWeight="700">
                 Total Clients
@@ -335,7 +346,9 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
 
         {sortedDevices.length === 0 ? (
           <Text py={8} textAlign="center" fontSize="13px" color="#94a3b8">
-            No devices currently reporting telemetry for this board.
+            {!summary
+              ? 'Telemetry temporarily unavailable.'
+              : 'No devices currently reporting telemetry for this board.'}
           </Text>
         ) : (
           <Box overflowX="auto">
