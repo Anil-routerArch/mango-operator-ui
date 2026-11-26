@@ -48,7 +48,10 @@ export const PropertiesPage: React.FC = () => {
 
   if (!params.scopeType && !params.scopeId) return <PropertyPortfolio />;
   if (!scopeType || !scopeId) return <Navigate to="/properties" replace />;
-  if (!validTabs.includes(params.tab as PropertyTab)) {
+  if (
+    !validTabs.includes(params.tab as PropertyTab) ||
+    (scopeType === 'property' && params.tab === 'monitoring')
+  ) {
     return <Navigate to={`/properties/${scopeType}/${encodeURIComponent(scopeId)}/overview`} replace />;
   }
   if (isLoading) return <Flex minH="430px" align="center" justify="center"><Spinner /></Flex>;

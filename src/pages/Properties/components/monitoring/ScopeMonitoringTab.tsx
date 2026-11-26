@@ -37,17 +37,26 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
   const [deviceSortBy, setDeviceSortBy] = useState<'associations' | 'memory' | 'health'>('associations');
 
   // Client lifecycle state
-  const { data: clientMacs = [] } = useVenueMonitoringClients(
-    venueId,
-    Boolean(monitoring?.active)
-  );
+  const {
+    data: clientMacs = [],
+    isLoading: isLoadingClients,
+    isError: isClientsError,
+    refetch: refetchClients,
+  } = useVenueMonitoringClients(venueId, Boolean(monitoring?.active));
   const [selectedMac, setSelectedMac] = useState<string>('');
   const [macSearchInput, setMacSearchInput] = useState<string>('');
+  const LIFECYCLE_PAGE_SIZE = 100;
+  const [eventOffset, setEventOffset] = useState(0);
 
-  const { data: lifecycleEvents = [], isLoading: isLoadingEvents } = useVenueClientLifecycle(
-    venueId,
-    selectedMac || undefined
-  );
+  const {
+    data: lifecycleEvents = [],
+    isLoading: isLoadingEvents,
+    isError: isEventsError,
+    refetch: refetchEvents,
+  } = useVenueClientLifecycle(venueId, selectedMac || undefined, {
+    limit: LIFECYCLE_PAGE_SIZE,
+    offset: eventOffset,
+  });
 
   const filteredMacs = useMemo(() => {
     if (!macSearchInput.trim()) return clientMacs;
@@ -445,24 +454,40 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
             </Text>
           </Box>
 
-          <HStack gap={2}>
+          <HStack gap={2} wrap="wrap">
+            {clientMacs.length >= 500 && (
+              <Badge colorPalette="gray" fontSize="10px" px={2} py={0.5} variant="subtle">
+                Latest 500 stations
+              </Badge>
+            )}
             <Input
               size="xs"
               w="180px"
               placeholder="Search station MAC..."
               value={macSearchInput}
               onChange={(e) => setMacSearchInput(e.target.value)}
+              disabled={isLoadingClients || isClientsError}
             />
             <chakra.select
               value={selectedMac}
-              onChange={(e) => setSelectedMac(e.target.value)}
+              onChange={(e) => {
+                setSelectedMac(e.target.value);
+                setEventOffset(0);
+              }}
               h="30px"
               px={2}
               borderRadius="6px"
               fontSize="12px"
               border="1px solid #cbd5e1"
+              disabled={isLoadingClients || isClientsError}
             >
-              <option value="">Select Station (UE)...</option>
+              <option value="">
+                {isLoadingClients
+                  ? 'Loading stations...'
+                  : isClientsError
+                  ? 'Failed to load stations'
+                  : 'Select Station (UE)...'}
+              </option>
               {filteredMacs.map((m) => (
                 <option key={m} value={m}>
                   {m}
@@ -472,7 +497,24 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
           </HStack>
         </Flex>
 
-        {!selectedMac ? (
+        {isLoadingClients ? (
+          <Flex minH="120px" align="center" justify="center">
+            <Spinner size="md" />
+          </Flex>
+        ) : isClientsError ? (
+          <VStack py={6} gap={2}>
+            <Text color="#dc2626" fontSize="13px" fontWeight="600">
+              Unable to load client stations.
+            </Text>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => refetchClients()}
+            >
+              Retry
+            </Button>
+          </VStack>
+        ) : !selectedMac ? (
           <Box p={6} textAlign="center" borderRadius="8px" bg="#f8fafc" border="1px dashed #e2e8f0">
             <Text fontSize="13px" color="#64748b">
               {clientMacs.length === 0
@@ -484,63 +526,127 @@ export const ScopeMonitoringTab: React.FC<Props> = ({ venueId, venueName }) => {
           <Flex minH="120px" align="center" justify="center">
             <Spinner size="md" />
           </Flex>
+        ) : isEventsError ? (
+          <VStack py={6} gap={2}>
+            <Text color="#dc2626" fontSize="13px" fontWeight="600">
+              Unable to load client lifecycle history for station {selectedMac}.
+            </Text>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => refetchEvents()}
+            >
+              Retry
+            </Button>
+          </VStack>
         ) : lifecycleEvents.length === 0 ? (
-          <Text py={6} textAlign="center" fontSize="13px" color="#94a3b8">
-            No lifecycle events recorded for station {selectedMac}.
-          </Text>
+          <VStack py={6} gap={2}>
+            <Text textAlign="center" fontSize="13px" color="#94a3b8">
+              {eventOffset > 0
+                ? 'No further lifecycle events found.'
+                : `No lifecycle events recorded for station ${selectedMac}.`}
+            </Text>
+            {eventOffset > 0 && (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => setEventOffset((prev) => Math.max(0, prev - LIFECYCLE_PAGE_SIZE))}
+              >
+                Previous Page
+              </Button>
+            )}
+          </VStack>
         ) : (
-          <Box overflowX="auto">
-            <Table.Root size="sm">
-              <Table.Header>
-                <Table.Row bg="#f8fafc">
-                  <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
-                    TIMESTAMP
-                  </Table.ColumnHeader>
-                  <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
-                    RSSI
-                  </Table.ColumnHeader>
-                  <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
-                    RX BYTES
-                  </Table.ColumnHeader>
-                  <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
-                    TX BYTES
-                  </Table.ColumnHeader>
-                  <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
-                    BITRATE
-                  </Table.ColumnHeader>
-                  <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
-                    SSID
-                  </Table.ColumnHeader>
-                  <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
-                    BSSID
-                  </Table.ColumnHeader>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {lifecycleEvents.map((evt, idx) => (
-                  <Table.Row key={`${evt.timestamp}-${idx}`} _hover={{ bg: '#f8fafc' }}>
-                    <Table.Cell fontSize="12px" color="#475569">
-                      {new Date(evt.timestamp * 1000).toLocaleString()}
-                    </Table.Cell>
-                    <Table.Cell fontSize="12px" fontWeight="700" color={evt.rssi && evt.rssi > -60 ? '#16a34a' : '#d97706'}>
-                      {evt.rssi ? `${evt.rssi} dBm` : '—'}
-                    </Table.Cell>
-                    <Table.Cell fontSize="12px">{evt.rx_bytes ? `${Math.round(evt.rx_bytes / 1024)} KB` : '0'}</Table.Cell>
-                    <Table.Cell fontSize="12px">{evt.tx_bytes ? `${Math.round(evt.tx_bytes / 1024)} KB` : '0'}</Table.Cell>
-                    <Table.Cell fontSize="12px">
-                      {evt.rx_bitrate ? `${evt.rx_bitrate} Mbps` : '—'}
-                    </Table.Cell>
-                    <Table.Cell fontSize="12px" fontWeight="600" color="#0f172a">
-                      {evt.ssid || '—'}
-                    </Table.Cell>
-                    <Table.Cell fontSize="11px" fontFamily="monospace" color="#64748b">
-                      {evt.bssid || '—'}
-                    </Table.Cell>
+          <>
+            <Box overflowX="auto">
+              <Table.Root size="sm">
+                <Table.Header>
+                  <Table.Row bg="#f8fafc">
+                    <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
+                      TIMESTAMP
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
+                      RSSI
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
+                      RX BYTES
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
+                      TX BYTES
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
+                      BITRATE
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
+                      SSID
+                    </Table.ColumnHeader>
+                    <Table.ColumnHeader fontSize="11px" fontWeight="700" color="#64748b">
+                      BSSID
+                    </Table.ColumnHeader>
                   </Table.Row>
-                ))}
-              </Table.Body>
-            </Table.Root>
-          </Box>
+                </Table.Header>
+                <Table.Body>
+                  {lifecycleEvents.map((evt, idx) => (
+                    <Table.Row key={`${evt.timestamp}-${idx}`} _hover={{ bg: '#f8fafc' }}>
+                      <Table.Cell fontSize="12px" color="#475569">
+                        {new Date(evt.timestamp * 1000).toLocaleString()}
+                      </Table.Cell>
+                      <Table.Cell fontSize="12px" fontWeight="700" color={evt.rssi && evt.rssi > -60 ? '#16a34a' : '#d97706'}>
+                        {evt.rssi ? `${evt.rssi} dBm` : '—'}
+                      </Table.Cell>
+                      <Table.Cell fontSize="12px">{evt.rx_bytes ? `${Math.round(evt.rx_bytes / 1024)} KB` : '0'}</Table.Cell>
+                      <Table.Cell fontSize="12px">{evt.tx_bytes ? `${Math.round(evt.tx_bytes / 1024)} KB` : '0'}</Table.Cell>
+                      <Table.Cell fontSize="12px">
+                        {evt.rx_bitrate ? `${evt.rx_bitrate} Mbps` : '—'}
+                      </Table.Cell>
+                      <Table.Cell fontSize="12px" fontWeight="600" color="#0f172a">
+                        {evt.ssid || '—'}
+                      </Table.Cell>
+                      <Table.Cell fontSize="11px" fontFamily="monospace" color="#64748b">
+                        {evt.bssid || '—'}
+                      </Table.Cell>
+                    </Table.Row>
+                  ))}
+                </Table.Body>
+              </Table.Root>
+            </Box>
+
+            {/* Lifecycle Events Pagination */}
+            <Flex
+              justify="space-between"
+              align="center"
+              mt={4}
+              pt={3}
+              borderTop="1px solid #f1f5f9"
+              wrap="wrap"
+              gap={2}
+            >
+              <Text fontSize="12px" color="#64748b">
+                Showing events {eventOffset + 1}–{eventOffset + lifecycleEvents.length}
+              </Text>
+              <HStack gap={2}>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={eventOffset === 0 || isLoadingEvents}
+                  onClick={() => setEventOffset((prev) => Math.max(0, prev - LIFECYCLE_PAGE_SIZE))}
+                >
+                  Previous
+                </Button>
+                <Text fontSize="12px" fontWeight="600" color="#0f172a">
+                  Page {Math.floor(eventOffset / LIFECYCLE_PAGE_SIZE) + 1}
+                </Text>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={lifecycleEvents.length < LIFECYCLE_PAGE_SIZE || isLoadingEvents}
+                  onClick={() => setEventOffset((prev) => prev + LIFECYCLE_PAGE_SIZE)}
+                >
+                  Next
+                </Button>
+              </HStack>
+            </Flex>
+          </>
         )}
       </Box>
 
