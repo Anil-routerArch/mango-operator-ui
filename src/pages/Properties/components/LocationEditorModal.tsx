@@ -34,10 +34,11 @@ export const LocationEditorModal: React.FC<{ scopeType: PropertyScopeType; scope
   const [geoCode, setGeoCode] = useState(location?.geoCode || '');
   const [note, setNote] = useState('');
   const [createdLocationId, setCreatedLocationId] = useState('');
+  const isRecovering = Boolean(createdLocationId);
   const valid = Boolean(name.trim() && addressOne.trim() && city.trim() && state.trim() && postal.trim() && country.trim() && timezone.trim() && ownerPropertyId);
 
   const submit = async () => {
-    if (!valid) return;
+    if (!valid && !isRecovering) return;
     try {
       await saveLocation.mutateAsync({ locationId: location?.id, createdLocationId: createdLocationId || undefined, scopeType, scopeId, payload: {
         name: name.trim(), description: description.trim(), type, buildingName: buildingName.trim(),
@@ -58,13 +59,41 @@ export const LocationEditorModal: React.FC<{ scopeType: PropertyScopeType; scope
     }
   };
 
-  const inputProps = { h: '38px', borderRadius: '11px', fontSize: '12px' } as const;
+  const inputProps = { h: '38px', borderRadius: '11px', fontSize: '12px', disabled: isRecovering } as const;
   return <Flex position="fixed" inset={0} zIndex={3100} bg={themeColors.modal.backdrop} align="center" justify="center" p={4} onMouseDown={(event) => event.target === event.currentTarget && onClose()}><Box w="100%" maxW="720px" maxH="94vh" overflowY="auto" bg="#fff" borderRadius="12px" border="1px solid" borderColor="#1f2937" boxShadow="0 24px 80px rgba(0,0,0,.24)">
-    <Flex px={5} py={3} bg="#eef8ff" justify="space-between" align="center" borderBottom="1px solid" borderColor="#1f2937"><Text fontSize="18px" fontWeight="700">{location ? 'Edit Location' : createdLocationId ? 'Finish Location Association' : 'Create Location'}</Text><Flex gap={2}><Button aria-label="Save Location" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="#8ebcf0" color="#fff" disabled={!valid || saveLocation.isPending} onClick={submit}>{saveLocation.isPending ? <Spinner size="xs" /> : <Icon name="save" size={18} />}</Button><Button aria-label="Close" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="transparent" border="1px solid" borderColor="#1f2937" onClick={onClose}><Icon name="x" size={18} /></Button></Flex></Flex>
+    <Flex px={5} py={3} bg="#eef8ff" justify="space-between" align="center" borderBottom="1px solid" borderColor="#1f2937">
+      <Text fontSize="18px" fontWeight="700">{location ? 'Edit Location' : createdLocationId ? 'Finish Location Association' : 'Create Location'}</Text>
+      <Flex gap={2}>
+        <Button
+          aria-label={isRecovering ? 'Retry Association' : 'Save Location'}
+          minW="36px"
+          w={isRecovering ? 'auto' : '36px'}
+          px={isRecovering ? 3 : 0}
+          h="36px"
+          borderRadius="11px"
+          bg="#8ebcf0"
+          color="#fff"
+          disabled={(!isRecovering && !valid) || saveLocation.isPending}
+          onClick={submit}
+        >
+          {saveLocation.isPending ? (
+            <Spinner size="xs" />
+          ) : isRecovering ? (
+            <Flex align="center" gap={1}>
+              <Icon name="refresh" size={16} />
+              <Text fontSize="12px" fontWeight="600">Retry Association</Text>
+            </Flex>
+          ) : (
+            <Icon name="save" size={18} />
+          )}
+        </Button>
+        <Button aria-label="Close" minW="36px" w="36px" h="36px" p={0} borderRadius="11px" bg="transparent" border="1px solid" borderColor="#1f2937" onClick={onClose}><Icon name="x" size={18} /></Button>
+      </Flex>
+    </Flex>
     <SimpleGrid columns={{ base: 1, md: 2 }} columnGap={4} rowGap={4} px={5} py={4}>
       <Box><FieldLabel required>Name</FieldLabel><Input {...inputProps} value={name} onChange={(e) => setName(e.target.value)} borderColor={!name.trim() ? '#f43f5e' : themeColors.input.border} /></Box>
       <Box><FieldLabel>Description</FieldLabel><Input {...inputProps} value={description} onChange={(e) => setDescription(e.target.value)} /></Box>
-      <Box><FieldLabel>Type</FieldLabel><chakra.select value={type} onChange={(e) => setType(e.target.value)} h="38px" px={3} border="1px solid" borderColor={themeColors.input.border} borderRadius="11px" fontSize="12px">{['SERVICE', 'EQUIPMENT', 'AUTO', 'MANUAL', 'SPECIAL', 'CORPORATE', 'UNKNOWN'].map((value) => <option key={value}>{value}</option>)}</chakra.select></Box>
+      <Box><FieldLabel>Type</FieldLabel><chakra.select disabled={isRecovering} value={type} onChange={(e) => setType(e.target.value)} h="38px" px={3} border="1px solid" borderColor={themeColors.input.border} borderRadius="11px" fontSize="12px">{['SERVICE', 'EQUIPMENT', 'AUTO', 'MANUAL', 'SPECIAL', 'CORPORATE', 'UNKNOWN'].map((value) => <option key={value}>{value}</option>)}</chakra.select></Box>
       <Box><FieldLabel>Phones</FieldLabel><Input {...inputProps} value={phones} onChange={(e) => setPhones(e.target.value)} placeholder="+1(202)555-0103" /></Box>
       <Box><FieldLabel>Mobiles</FieldLabel><Input {...inputProps} value={mobiles} onChange={(e) => setMobiles(e.target.value)} placeholder="+1(202)555-0103" /></Box>
       <Box />
@@ -73,13 +102,13 @@ export const LocationEditorModal: React.FC<{ scopeType: PropertyScopeType; scope
         <Input {...inputProps} value={addressLookup} onChange={(e) => setAddressLookup(e.target.value)} onBlur={() => { if (!addressOne.trim() && addressLookup.trim()) setAddressOne(addressLookup.trim()); }} placeholder="Paste an address, then tab away to copy it below" />
         <Text mt={1} fontSize="10px" color={themeColors.text.muted}>Address search and geocoding are not configured in Mango Operator UI. Verify the structured address fields before saving.</Text>
       </Box>
-      <Box><FieldLabel required>Timezone</FieldLabel><chakra.select value={timezone} onChange={(e) => setTimezone(e.target.value)} h="38px" px={3} border="1px solid" borderColor={!timezone ? '#f43f5e' : themeColors.input.border} borderRadius="11px" fontSize="12px"><option value="">None</option>{timezones.map((value) => <option key={value}>{value}</option>)}</chakra.select></Box>
+      <Box><FieldLabel required>Timezone</FieldLabel><chakra.select disabled={isRecovering} value={timezone} onChange={(e) => setTimezone(e.target.value)} h="38px" px={3} border="1px solid" borderColor={!timezone ? '#f43f5e' : themeColors.input.border} borderRadius="11px" fontSize="12px"><option value="">None</option>{timezones.map((value) => <option key={value}>{value}</option>)}</chakra.select></Box>
       <Box><FieldLabel required>Address Line One</FieldLabel><Input {...inputProps} value={addressOne} onChange={(e) => setAddressOne(e.target.value)} borderColor={!addressOne.trim() ? '#f43f5e' : themeColors.input.border} /></Box>
       <Box><FieldLabel>Address Line Two</FieldLabel><Input {...inputProps} value={addressTwo} onChange={(e) => setAddressTwo(e.target.value)} /></Box>
       <Box><FieldLabel required>City</FieldLabel><Input {...inputProps} value={city} onChange={(e) => setCity(e.target.value)} borderColor={!city.trim() ? '#f43f5e' : themeColors.input.border} /></Box>
       <Box><FieldLabel required>State/Province</FieldLabel><Input {...inputProps} value={state} onChange={(e) => setState(e.target.value)} borderColor={!state.trim() ? '#f43f5e' : themeColors.input.border} /></Box>
       <Box><FieldLabel required>ZIP/Postal Code</FieldLabel><Input {...inputProps} value={postal} onChange={(e) => setPostal(e.target.value)} borderColor={!postal.trim() ? '#f43f5e' : themeColors.input.border} /></Box>
-      <Box><FieldLabel required>Country</FieldLabel><chakra.select value={country} onChange={(e) => setCountry(e.target.value)} h="38px" px={3} border="1px solid" borderColor={!country ? '#f43f5e' : themeColors.input.border} borderRadius="11px" fontSize="12px"><option value="">None</option>{COUNTRY_LIST.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</chakra.select></Box>
+      <Box><FieldLabel required>Country</FieldLabel><chakra.select disabled={isRecovering} value={country} onChange={(e) => setCountry(e.target.value)} h="38px" px={3} border="1px solid" borderColor={!country ? '#f43f5e' : themeColors.input.border} borderRadius="11px" fontSize="12px"><option value="">None</option>{COUNTRY_LIST.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</chakra.select></Box>
       <Box><FieldLabel>Building Name</FieldLabel><Input {...inputProps} value={buildingName} onChange={(e) => setBuildingName(e.target.value)} /></Box>
       <Box><FieldLabel>Geo Code</FieldLabel><Input {...inputProps} value={geoCode} onChange={(e) => setGeoCode(e.target.value)} /></Box>
       <Box><FieldLabel>Note</FieldLabel><Input {...inputProps} value={note} onChange={(e) => setNote(e.target.value)} /></Box>

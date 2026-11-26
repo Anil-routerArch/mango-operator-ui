@@ -28,6 +28,10 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
+  useEffect(() => {
+    setPageIndex(0);
+  }, [availability, attention]);
+
   const { data, isLoading, isFetching, isPlaceholderData, isError, refetch } = useScopedDevices(type, id, {
     pageIndex,
     pageSize,
@@ -37,6 +41,13 @@ export const ScopeDevicesTab: React.FC<{ type: PropertyScopeType; id: string; ve
     attention: attention || undefined,
     type: deviceType || undefined,
   });
+
+  useEffect(() => {
+    if (isPlaceholderData || !data) return;
+    if (data.totalPages > 0 && pageIndex >= data.totalPages) {
+      setPageIndex(Math.max(0, data.totalPages - 1));
+    }
+  }, [data?.totalPages, isPlaceholderData, pageIndex]);
 
   const currentSerials = React.useMemo(() => (data?.devices || []).map((d) => d.serialNumber), [data?.devices]);
   useDeviceEventsStream(currentSerials);
