@@ -61,7 +61,8 @@ export type IconName =
   | 'key'
   | 'arrowUp'
   | 'network'
-  | 'globe';
+  | 'globe'
+  | 'gauge';
 
 interface IconProps {
   name: IconName;
@@ -418,6 +419,12 @@ export const Icon: React.FC<IconProps> = ({ name, size = 20, className, color = 
         <line x1="9" y1="8" x2="9" y2="16" />
         <line x1="12" y1="7" x2="12" y2="17" />
         <line x1="15" y1="8" x2="15" y2="16" />
+      </>
+    ),
+    gauge: (
+      <>
+        <path d="m12 14 4-4" />
+        <path d="M3.34 19a10 10 0 1 1 17.32 0" />
       </>
     ),
   };

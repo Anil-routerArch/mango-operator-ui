@@ -1,22 +1,33 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Button, Flex, Text } from '@chakra-ui/react';
 import { Icon } from '@/components/icons/Icon';
 import { themeColors } from '@/theme';
 import { ROOT_PROPERTY_ID, useScopeDetails, type PropertyTreeNode } from '@/api';
+import { useVenueMonitoring } from '@/api/monitoring';
 import { getPropertyLifecycleKind } from '../propertyUtils';
+import { StartMonitoringModal } from './monitoring/StartMonitoringModal';
+import { ViewMonitoringSettingsModal } from './monitoring/ViewMonitoringSettingsModal';
 
-export type PropertyTab = 'overview' | 'scopes' | 'devices' | 'configurations' | 'details';
+export type PropertyTab = 'overview' | 'scopes' | 'devices' | 'configurations' | 'details' | 'monitoring';
 
 export const ScopeHeader: React.FC<{ node: PropertyTreeNode; path: PropertyTreeNode[]; activeTab: PropertyTab; onNavigate: (tab: PropertyTab) => void; onBreadcrumb: (node?: PropertyTreeNode) => void; onCreateProperty: () => void; onCreateVenue: () => void; onDelete: () => void; onRefresh: () => void | Promise<void> }> = ({ node, path, activeTab, onNavigate, onBreadcrumb, onCreateProperty, onCreateVenue, onDelete, onRefresh }) => {
   const { data: details } = useScopeDetails(node.type, node.id);
+  const { data: monitoringData, refetch: refetchMonitoring } = useVenueMonitoring(node.type === 'venue' ? node.id : undefined);
+  const [startMonitoringOpen, setStartMonitoringOpen] = useState(false);
+  const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
+
   const lifecycleKind = node.type === 'property' ? getPropertyLifecycleKind(node.id, details) : undefined;
   const propertyClassificationReady = node.type !== 'property' || node.id === ROOT_PROPERTY_ID || Boolean(details);
   const canCreateProperty = propertyClassificationReady && node.type === 'property' && (lifecycleKind === 'root' || lifecycleKind === 'operator-linked');
   const canCreateVenue = node.type === 'venue' || (propertyClassificationReady && lifecycleKind !== 'root');
   const canDelete = node.type === 'venue' || (propertyClassificationReady && lifecycleKind === 'normal');
   const tabs: Array<{ id: PropertyTab; label: string }> = [
-    { id: 'overview', label: 'Overview' }, { id: 'scopes', label: node.type === 'property' ? 'Properties & Venues' : 'Nested Venues' },
-    { id: 'devices', label: 'Devices' }, { id: 'configurations', label: 'Configuration' }, { id: 'details', label: 'Details' },
+    { id: 'overview', label: 'Overview' },
+    { id: 'scopes', label: node.type === 'property' ? 'Properties & Venues' : 'Nested Venues' },
+    { id: 'devices', label: 'Devices' },
+    ...(node.type === 'venue' ? [{ id: 'monitoring' as PropertyTab, label: 'Monitoring' }] : []),
+    { id: 'configurations', label: 'Configuration' },
+    { id: 'details', label: 'Details' },
   ];
   return <Box mb={5}>
     <Flex align="center" gap={4} mb={2} justify="space-between" flexWrap="wrap">
@@ -28,8 +39,60 @@ export const ScopeHeader: React.FC<{ node: PropertyTreeNode; path: PropertyTreeN
         <Text fontSize="11px" color={themeColors.text.secondary} mt={1}>{node.type === 'property' ? 'Property' : 'Venue'} &nbsp;·&nbsp; {node.id}{details?.location ? ` · Location ${details.location}` : ''}</Text>
       </Box>
       </Flex>
-      <Flex gap={2} align="center">{canDelete && <Button aria-label={`Delete ${node.name}`} minW="36px" w="36px" h="36px" p={0} bg="#e9344f" color="#fff" onClick={onDelete}><Icon name="trash" size={16} /></Button>}{canCreateProperty && <Button h="36px" bg="#c2188b" color="#fff" onClick={onCreateProperty}><Icon name="plus" size={15} /> Property</Button>}{canCreateVenue && <Button h="36px" bg="#8246d8" color="#fff" onClick={onCreateVenue}><Icon name="plus" size={15} /> Venue</Button>}<Button aria-label="Refresh scope" minW="36px" w="36px" h="36px" p={0} variant="outline" onClick={onRefresh}><Icon name="refresh" size={16} /></Button></Flex>
+      <Flex gap={2} align="center">
+        {canDelete && <Button aria-label={`Delete ${node.name}`} minW="36px" w="36px" h="36px" p={0} bg="#e9344f" color="#fff" onClick={onDelete}><Icon name="trash" size={16} /></Button>}
+        {canCreateProperty && <Button h="36px" bg="#c2188b" color="#fff" onClick={onCreateProperty}><Icon name="plus" size={15} /> Property</Button>}
+        {canCreateVenue && <Button h="36px" bg="#8246d8" color="#fff" onClick={onCreateVenue}><Icon name="plus" size={15} /> Venue</Button>}
+        {node.type === 'venue' && (
+          <Button
+            aria-label="Monitoring"
+            title={monitoringData?.active ? 'Monitoring Active (Click for Settings / Stop)' : 'Start Monitoring'}
+            minW="36px"
+            w="36px"
+            h="36px"
+            p={0}
+            bg="#0d9488"
+            _hover={{ bg: '#0f766e' }}
+            color="#fff"
+            onClick={() => {
+              if (monitoringData?.active) {
+                setViewSettingsOpen(true);
+              } else {
+                setStartMonitoringOpen(true);
+              }
+            }}
+          >
+            <Icon name="gauge" size={18} />
+          </Button>
+        )}
+        <Button aria-label="Refresh scope" minW="36px" w="36px" h="36px" p={0} variant="outline" onClick={onRefresh}><Icon name="refresh" size={16} /></Button>
+      </Flex>
     </Flex>
     <Flex borderBottom="1px solid" borderColor={themeColors.panel.divider} gap={{ base: 1, md: 5 }} overflowX="auto">{tabs.map((tab) => <Button key={tab.id} h="44px" px={3} bg="transparent" border="none" borderRadius={0} borderBottomWidth="3px" borderBottomStyle="solid" borderBottomColor={activeTab === tab.id ? '#2563eb' : 'transparent'} outline="none" boxShadow="none" _focusVisible={{ outline: 'none', boxShadow: 'none' }} color={activeTab === tab.id ? '#2563eb' : themeColors.text.primary} fontSize="12px" fontWeight="650" onClick={() => onNavigate(tab.id)}>{tab.label}</Button>)}</Flex>
+
+    {node.type === 'venue' && (
+      <>
+        <StartMonitoringModal
+          venueId={node.id}
+          venueName={node.name}
+          isOpen={startMonitoringOpen}
+          onClose={() => setStartMonitoringOpen(false)}
+          onStarted={() => {
+            refetchMonitoring();
+            onNavigate('monitoring');
+          }}
+        />
+        <ViewMonitoringSettingsModal
+          venueId={node.id}
+          venueName={node.name}
+          monitoring={monitoringData}
+          isOpen={viewSettingsOpen}
+          onClose={() => setViewSettingsOpen(false)}
+          onStopped={() => {
+            refetchMonitoring();
+          }}
+        />
+      </>
+    )}
   </Box>;
 };

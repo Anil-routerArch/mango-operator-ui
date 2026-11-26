@@ -8,3 +8,4 @@ export * from './modularConfigurations';
 export * from './queryClient';
 export * from './devices';
 export * from './properties';
+export * from './monitoring';

@@ -14,6 +14,7 @@ import { ScopeDevicesTab } from './components/ScopeDevicesTab';
 import { ScopeConfigurationsTab } from './components/ScopeConfigurationsTab';
 import { ScopeDetailsTab } from './components/ScopeDetailsTab';
 import { ScopeEditorModal } from './components/ScopeEditorModal';
+import { ScopeMonitoringTab } from './components/monitoring/ScopeMonitoringTab';
 import { collectScopeIds, findTreeNode, flattenTree, getPropertyLifecycleKind } from './propertyUtils';
 
 const findPath = (nodes: PropertyTreeNode[], type?: PropertyScopeType, id?: string, path: PropertyTreeNode[] = []): PropertyTreeNode[] => {
@@ -26,7 +27,7 @@ const findPath = (nodes: PropertyTreeNode[], type?: PropertyScopeType, id?: stri
   return [];
 };
 
-const validTabs: PropertyTab[] = ['overview', 'scopes', 'devices', 'configurations', 'details'];
+const validTabs: PropertyTab[] = ['overview', 'scopes', 'devices', 'configurations', 'details', 'monitoring'];
 
 export const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -73,6 +74,11 @@ export const PropertiesPage: React.FC = () => {
       if (selected.type === 'venue') {
         refreshes.push(queryClient.invalidateQueries({ queryKey: ['available-venue-locations', selected.id] }));
       }
+    } else if (activeTab === 'monitoring' && selected.type === 'venue') {
+      refreshes.push(
+        queryClient.invalidateQueries({ queryKey: ['venue-monitoring', selected.id] }),
+        queryClient.invalidateQueries({ queryKey: ['venue-monitoring-clients', selected.id] })
+      );
     }
     await Promise.all(refreshes);
   };
@@ -97,6 +103,7 @@ export const PropertiesPage: React.FC = () => {
     {activeTab === 'overview' && <ScopeOverviewTab type={selected.type} id={selected.id} onOpenScope={(type, id) => open(type, id)} />}
     {activeTab === 'scopes' && <ScopeChildrenTab type={selected.type} id={selected.id} onOpen={(type, id) => open(type, id)} />}
     {activeTab === 'devices' && <ScopeDevicesTab key={`${selected.type}-${selected.id}`} type={selected.type} id={selected.id} venueOptions={venueOptions} />}
+    {activeTab === 'monitoring' && selected.type === 'venue' && <ScopeMonitoringTab key={selected.id} venueId={selected.id} venueName={selected.name} />}
     {activeTab === 'configurations' && <ScopeConfigurationsTab scopeIds={collectScopeIds(selected)} selectedId={selected.id} />}
     {activeTab === 'details' && <ScopeDetailsTab key={`${selected.type}-${selected.id}`} type={selected.type} id={selected.id} ownerPropertyId={[...path].reverse().find((node) => node.type === 'property')?.id || ''} onDeleted={() => navigate('/properties')} />}
     {createType && <ScopeEditorModal selected={selected} initialType={createType} contextual onClose={() => setCreateType(undefined)} onCreated={(type, id) => { setCreateType(undefined); refetch(); open(type, id, 'details'); }} />}
