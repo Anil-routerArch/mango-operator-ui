@@ -304,6 +304,7 @@ export const usePropertyPortfolio = (enabled = true) =>
       return { ...data, nodes: normalizeTree(data.nodes) };
     },
     staleTime: 30_000,
+    refetchInterval: (query) => (query.state.data?.dataQuality?.state === 'stale' ? 2500 : false),
     retry: 1,
     enabled,
   });

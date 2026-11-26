@@ -74,7 +74,7 @@ test('PropertyPortfolio.tsx decouples structural tree loading from portfolio ope
   );
   assert.ok(
     content.includes("portfolio?.dataQuality?.state === 'stale'") || content.includes("portfolio.dataQuality.state === 'stale'"),
-    'PropertyPortfolio must render stale status warning'
+    'PropertyPortfolio must handle stale status silently in background'
   );
 });
 

@@ -411,6 +411,16 @@ export const PropertyPortfolio: React.FC = () => {
     row?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selected, viewMode]);
 
+  // Silently refresh in background when operational data is stale
+  useEffect(() => {
+    if (portfolio?.dataQuality?.state === 'stale') {
+      const timer = setTimeout(() => {
+        refetchPortfolio();
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [portfolio?.dataQuality?.state, refetchPortfolio]);
+
   const handleRefresh = () => {
     refetchTree();
     refetchPortfolio();
@@ -441,14 +451,6 @@ export const PropertyPortfolio: React.FC = () => {
         <Flex mb={3} p={3} bg={themeColors.status.pending.bg} border="1px solid" borderColor={themeColors.status.pending.border} borderRadius="7px" gap={2}>
           <Icon name="alertTriangle" size={17} color={themeColors.status.pending.text} />
           <Text fontSize="11px">Some live status batches or inventory records are unavailable. Unknown Devices are not counted as Offline.</Text>
-        </Flex>
-      )}
-      {portfolio?.dataQuality?.state === 'stale' && (
-        <Flex mb={3} p={3} bg="#fffbeb" border="1px solid" borderColor="#fde68a" borderRadius="7px" gap={2}>
-          <Icon name="alertTriangle" size={17} color="#d97706" />
-          <Text fontSize="11px" color="#92400e">
-            Operational status was measured as of {formatTimestamp(portfolio.dataQuality.asOf || portfolio.dataQuality.generatedAt)} and is refreshing in background.
-          </Text>
         </Flex>
       )}
       <SimpleGrid columns={{ base: 1, sm: 2, xl: 7 }} gap={3} mb={4}>
